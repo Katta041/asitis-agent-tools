@@ -1,0 +1,22 @@
+{
+  "name": "asitis-agent-tools",
+  "private": true,
+  "description": "Read-only MCP server and Claude Code plugin for markdown and AI agent steering files.",
+  "license": "MIT",
+  "homepage": "https://asitis.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Katta041/asitis-agent-tools.git"
+  },
+  "workspaces": [
+    "packages/mcp"
+  ],
+  "scripts": {
+    "test": "npm test -w @asitis/mcp",
+    "build": "npm run build -w @asitis/mcp",
+    "sync-plugin": "npm run sync-plugin -w @asitis/mcp"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

@@ -1,0 +1,6 @@
+﻿---
+description: Windows path handling
+alwaysApply: true
+---
+Use backslashes in Windows paths.  
+Keep CRLF line endings in .bat files.

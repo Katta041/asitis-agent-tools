@@ -1,0 +1,11 @@
+# Source files are stored and checked out with LF on every platform, so the
+# bundle built on Windows is byte-identical to the one built on Linux or macOS.
+* text=auto eol=lf
+
+# Test fixtures are byte-exact (CRLF, BOM, mixed endings, invalid UTF-8, no final
+# newline). Git must never convert them.
+test-fixtures/** -text -diff -merge
+test-fixtures/** linguist-generated=true
+
+# The vendored server is pinned by SHA-256.
+plugins/asitis/server/asitis-mcp.mjs -text -diff linguist-generated=true

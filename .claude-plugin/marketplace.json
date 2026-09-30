@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "asitis",
+  "description": "AsItIs plugins for Claude Code: markdown that stays byte-clean.",
+  "owner": {
+    "name": "AsItIs",
+    "url": "https://asitis.app/?ref=claude-marketplace"
+  },
+  "plugins": [
+    {
+      "name": "asitis",
+      "source": "./plugins/asitis",
+      "description": "Read-only MCP tools, a byte-clean editing skill, /md-lint, /md-budget and an optional markdown accident guard.",
+      "version": "0.1.0",
+      "category": "productivity"
+    }
+  ]
+}

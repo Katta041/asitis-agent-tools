@@ -1,0 +1,28 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "asitis",
+  "displayName": "AsItIs Markdown",
+  "version": "0.1.0",
+  "description": "Keep markdown and agent steering files byte-clean. Read-only MCP tools to read, outline, lint and budget CLAUDE.md, AGENTS.md, SKILL.md, rules and memory files; a skill that teaches minimal edits; /md-lint and /md-budget; and an optional accident guard for Write and Edit. No network, no writes.",
+  "author": {
+    "name": "AsItIs",
+    "url": "https://asitis.app/?ref=claude-plugin"
+  },
+  "homepage": "https://asitis.app/?ref=claude-plugin",
+  "repository": "https://github.com/Katta041/asitis-agent-tools",
+  "keywords": ["markdown", "claude-md", "agents-md", "skill-md", "lint", "steering-files", "byte-clean"],
+  "userConfig": {
+    "guard_mode": {
+      "type": "string",
+      "title": "Markdown accident guard",
+      "description": "ask: warn and ask before a Write or Edit to a markdown file that would change line endings, strip trailing spaces, drop the BOM or break frontmatter. deny: block it and tell Claude to retry with a minimal edit. off: disable the guard. It is an accident guard, not a security boundary.",
+      "default": "ask"
+    },
+    "footer": {
+      "type": "boolean",
+      "title": "asitis.app line in tool results",
+      "description": "End each AsItIs tool result with one short line linking to asitis.app. Turn off to hide it.",
+      "default": true
+    }
+  }
+}

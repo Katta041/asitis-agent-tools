@@ -1,0 +1,45 @@
+# Draft: publishes @asitis/mcp to npm with trusted publishing (OIDC) and provenance.
+# Manual trigger only. Before the first run, configure a Trusted Publisher for this
+# repository and workflow file on npmjs.com, and create the protected "npm"
+# environment with required reviewers in the repository settings.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (must match packages/mcp/package.json)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+      - name: npm with trusted publishing support
+        run: npm install -g npm@11.5.1
+      - name: Version matches the input
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: test "$(node -p "require('./packages/mcp/package.json').version")" = "$INPUT_VERSION"
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - name: Tarball SHA-256
+        run: |
+          cd packages/mcp
+          npm pack --ignore-scripts
+          sha256sum asitis-mcp-*.tgz
+      - run: npm publish -w @asitis/mcp --access public --provenance

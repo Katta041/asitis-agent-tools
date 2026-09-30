@@ -1,0 +1,6 @@
+---
+description: TypeScript conventions
+globs: src/**/*.ts
+alwaysApply: false
+---
+Use strict mode and explicit return types.

@@ -1,0 +1,2 @@
+# Byte-level fixtures: never let git touch line endings or encodings.
+* -text -diff
