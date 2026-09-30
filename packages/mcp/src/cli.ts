@@ -46,7 +46,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       },
     });
   } catch (e) {
-    fail(`${(e as Error).message.split("\n")[0]}. Run asitis-mcp --help for usage.`);
+    // Node appends a long hint about positionals to unknown-option errors; keep the first sentence.
+    const first = ((e as Error).message.split("\n")[0] ?? "").split(". To specify")[0]!.replace(/\.$/, "");
+    fail(`${first}. Run asitis-mcp --help for usage.`);
   }
   const { values, positionals } = parsed;
   if (values.help) {
