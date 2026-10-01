@@ -46,7 +46,7 @@ Vendor limits checked, with sources in [`src/limits.ts`](src/limits.ts):
 - **Untrusted content.** `read_markdown` labels file content as data, not instructions, and reports hidden instructions and invisible characters up front. This does not stop a model from obeying text it reads; it makes the text visible.
 - **Stronger sandbox, optional.** Run the server under Node's permission model so the runtime itself forbids writes, network and child processes (see below). The Claude Code plugin does this by default.
 
-Known limits: token counts are local approximations (about 4 characters per token for English). A hardlink inside the root to a file elsewhere is read like any other file (reads only). A symlink swapped into a parent folder between the check and the open is a narrow race; the final path component is opened with `O_NOFOLLOW` and checked by inode. Windows junctions and case-insensitive volumes have not been tested yet.
+Known limits: token counts are local approximations (about 4 characters per token for English). A hardlink inside the root to a file elsewhere is read like any other file (reads only). A symlink swapped into a parent folder between the check and the open is a narrow race; the final path component is opened with `O_NOFOLLOW` and checked by inode. On Windows, junctions, case-folded paths, 8.3 short names, `\\?\` and `\\.\` device prefixes, UNC paths and trailing dots or spaces are judged on the real path and tested; alternate data streams (`notes.md:stream`) and reserved device names (`CON`, `NUL.md`) are refused outright.
 
 ## Install
 

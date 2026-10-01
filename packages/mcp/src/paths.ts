@@ -49,11 +49,19 @@ function within(rootReal: string, target: string): string | null {
  * Applied to both the path the agent asked for and the real path it resolves to,
  * so a symlink named notes.md that points at .env is refused too.
  */
-export function policyRefusal(relPosix: string): string | null {
+export function policyRefusal(relPosix: string, platform: NodeJS.Platform = process.platform): string | null {
   const parts = relPosix.split("/");
   const base = parts[parts.length - 1] ?? "";
   const lower = base.toLowerCase();
   const lowerParts = parts.map((p) => p.toLowerCase());
+  if (platform === "win32") {
+    // A root-relative path never contains ":" on Windows except to name an NTFS alternate
+    // data stream (file.md:stream, file.md::$DATA), which would bypass the extension checks.
+    if (relPosix.includes(":")) return `${relPosix} names an alternate data stream; this server only reads a file's main contents`;
+    // CON, NUL, COM1.md and friends open devices, not files, on many Windows versions.
+    const device = parts.find((p) => WINDOWS_DEVICE.test(p.replace(/[. ]+$/, "")));
+    if (device !== undefined) return `${relPosix} uses the reserved Windows device name ${device}; this server only reads files`;
+  }
   if (lower.startsWith(".env")) return `${relPosix} is an environment file that may hold secrets; this server never reads .env files`;
   if (lowerParts.includes(".claude") && /^settings.*\.json$/.test(lower)) {
     return `${relPosix} is a Claude Code settings file (permissions and hooks); this server never reads settings`;
@@ -67,6 +75,9 @@ export function policyRefusal(relPosix: string): string | null {
   }
   return null;
 }
+
+/** Reserved DOS device names, with or without an extension (compared case-insensitively). */
+const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3]|conin\$|conout\$) *(\..*)?$/i;
 
 export interface SandboxOptions {
   allowBroadRoot?: boolean;

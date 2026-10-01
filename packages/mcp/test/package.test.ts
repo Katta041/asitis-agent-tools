@@ -1,5 +1,5 @@
 // Supply-chain and packaging guarantees, plugin consistency, and copy rules.
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -13,6 +13,17 @@ const SHELL = process.platform === "win32";
 const pkg = JSON.parse(readFileSync(path.join(PKG, "package.json"), "utf8"));
 const read = (p: string): string => readFileSync(p, "utf8");
 const sha = (p: string): string => createHash("sha256").update(readFileSync(p)).digest("hex");
+
+/**
+ * Runs npm portably. On Windows `npm` is `npm.cmd`, which spawnSync cannot start without a
+ * shell (status null). Under `npm test`, npm_execpath names npm's JS entry point, so run it
+ * with this Node; otherwise fall back to a shell only for this call.
+ */
+function npm(args: string[], cwd: string): SpawnSyncReturns<string> {
+  const cli = process.env["npm_execpath"];
+  if (cli && /\.[cm]?js$/.test(cli)) return spawnSync(process.execPath, [cli, ...args], { cwd, encoding: "utf8" });
+  return spawnSync("npm", args, { cwd, encoding: "utf8", shell: SHELL });
+}
 
 function files(dir: string, skip: (p: string) => boolean = () => false): string[] {
   const out: string[] = [];
@@ -39,7 +50,8 @@ describe("npm package", () => {
   test("version constant matches package.json", () => expect(VERSION).toBe(pkg.version));
   test("provenance on, public access", () => expect(pkg.publishConfig).toEqual({ access: "public", provenance: true }));
   test("the published tarball contains only the bundle, notices and docs", () => {
-    const r = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd: PKG, encoding: "utf8", shell: SHELL });
+    const r = npm(["pack", "--dry-run", "--json", "--ignore-scripts"], PKG);
+    expect(r.error, "npm could not be started").toBeUndefined();
     expect(r.status, r.stderr).toBe(0);
     const listed = (JSON.parse(r.stdout)[0].files as Array<{ path: string }>).map((f) => f.path).sort();
     expect(listed).toEqual(["CHANGELOG.md", "LICENSE", "README.md", "dist/THIRD_PARTY_NOTICES.md", "dist/asitis-mcp.mjs", "package.json"]);
