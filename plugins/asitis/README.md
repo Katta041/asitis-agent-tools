@@ -25,11 +25,19 @@ Inside a session, `/plugin marketplace add Katta041/asitis-agent-tools` and `/pl
 
 For other assistants (Claude Desktop, Cursor, Codex, Gemini CLI), use the MCP server on its own; config snippets are in the [repository README](../../README.md#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
 
+### Troubleshooting
+
+| You see | What to do |
+|---|---|
+| `asitis-mcp: AsItIs needs Node 22.13 or later; you have 20.18.0. ...` | Install a current Node from [nodejs.org](https://nodejs.org) and restart Claude Code. (Run without the plugin's launcher, older Node prints only `node: bad option: --permission`.) |
+| `asitis-mcp: Refusing your home folder ...` | Start Claude Code in a project folder, not in your home folder. |
+| `asitis-mcp: Node's permission model will not let the server read the root folder ...` | Only when you run the server by hand: list the project folder in `--allow-fs-read` and drop any folder inside it. The plugin does this for you. |
+
 ## Privacy
 
 - No network. The server and the hook make no connections, collect nothing and send nothing.
 - No writes. The server has no write tool and no write code; the hook only reads the file it is asked about.
-- The server runs under Node's permission model: `node --permission` with read access to this plugin and your project folder only, and no write, network or child-process rights. Node enforces that, not just our code.
+- The server runs under Node's permission model: `node --permission` with read access to this plugin and your project folder only, and no write or child-process rights. Node enforces that, not just our code. Node blocks network access too from version 25; on Node 22.13 to 24 the no-network guarantee rests on the code, which contains no network calls. A small launcher (`server/launch.mjs`, about 100 lines, no dependencies) checks the Node version and starts the server with those flags; it reads no files and makes no connections.
 - Tool results go into Claude's context and so reach Anthropic like the rest of your session. That is Claude Code's traffic, not ours.
 
 ## Pinned server
@@ -47,9 +55,11 @@ It exists to catch the common accident: an agent rewrites a whole file with `Wri
 - rewrite more than 30% of an existing file of more than 20 lines;
 - touch a file with invalid UTF-8 bytes, which a text tool will replace.
 
-What it does not do: it does not see `Bash` (`sed -i`, redirects, scripts), `NotebookEdit`, other tools or other programs, and anything running as you can bypass it. When an `Edit`'s LF `old_string` matches only CRLF text, it assumes Claude Code maps the replacement onto CRLF. It never changes the tool call.
+It checks an `Edit` or `MultiEdit` the way Claude Code writes it: Claude Code turns CRLF into LF, applies the edit, and writes every line break back in one style picked from the first 4,096 characters of the file. So a one-word `Edit` to a file with mixed line endings rewrites all of them, and the guard warns about that.
 
-Modes, set with the plugin option **guard_mode** (`/config`, or `CLAUDE_PLUGIN_OPTION_GUARD_MODE`, or `ASITIS_GUARD_MODE`):
+What it does not do: it does not see `Bash` (`sed -i`, redirects, scripts), `NotebookEdit`, other tools or other programs, and anything running as you can bypass it. It never changes the tool call.
+
+Modes, set with the plugin option **guard_mode** (`/plugin configure asitis@asitis`, or `CLAUDE_PLUGIN_OPTION_GUARD_MODE`, or `ASITIS_GUARD_MODE`):
 
 | Mode | Behaviour |
 |---|---|
@@ -57,7 +67,13 @@ Modes, set with the plugin option **guard_mode** (`/config`, or `CLAUDE_PLUGIN_O
 | `deny` | Blocks the change and tells Claude to retry with a minimal edit. |
 | `off` | Disabled. |
 
-It fails closed: if the hook input is not valid JSON or lacks the fields it needs, the change is blocked with a one-line message saying why (`AsItIs guard: the hook input is not valid JSON. The change was blocked to be safe; ...`). Set `guard_mode` to `off` if that ever gets in your way.
+Any other value is treated as `deny`, the safest mode, and the guard says so in its message.
+
+It fails closed:
+- If the hook input is not valid JSON or lacks the fields it needs, the change is blocked with a one-line message saying why (`AsItIs guard: the hook input is not valid JSON. The change was blocked to be safe; ...`).
+- Claude Code gives the hook 10 seconds and lets the change through if a hook times out. The guard therefore stops itself after 7 seconds, and on files over 16 MB, and asks you (blocks in `deny` mode) instead of letting an unchecked change through.
+
+Set `guard_mode` to `off` if that ever gets in your way.
 
 ## Options
 

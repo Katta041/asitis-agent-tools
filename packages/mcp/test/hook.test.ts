@@ -122,8 +122,8 @@ describe("Edit and MultiEdit, not only Write", () => {
   test("an Edit whose LF old_string matches CRLF text is assumed to keep CRLF", () => {
     passes(runHook(pre("Edit", { file_path: CRLF_MDC, old_string: "Use backslashes in Windows paths.  \nKeep", new_string: "Use backslashes in Windows paths.  \nAlways keep" })));
   });
-  test("an Edit that replaces a literal CRLF with LF asks first", () => {
-    asks(runHook(pre("Edit", { file_path: CRLF_MDC, old_string: "paths.  \r\nKeep", new_string: "paths.  \nKeep" })), /converts 1 CRLF/);
+  test("an Edit that swaps a literal CRLF for LF cannot change line endings (Claude Code re-applies the file's style)", () => {
+    passes(runHook(pre("Edit", { file_path: CRLF_MDC, old_string: "paths.  \r\nKeep", new_string: "paths.  \nKeep" })));
   });
   test("an Edit that strips trailing spaces asks first", () => {
     asks(runHook(pre("Edit", { file_path: CRLF_BOM_SKILL, old_string: "hard break  ", new_string: "hard break" })), /strips trailing whitespace/);
@@ -135,7 +135,8 @@ describe("Edit and MultiEdit, not only Write", () => {
     asks(runHook(pre("Edit", { file_path: CRLF_BOM_SKILL, old_string: "﻿---", new_string: "---" })), /byte order mark/);
   });
   test("replace_all is simulated", () => {
-    asks(runHook(pre("Edit", { file_path: CRLF_MDC, old_string: "\r\n", new_string: "\n", replace_all: true })), /converts 6 CRLF/);
+    asks(runHook(pre("Edit", { file_path: CRLF_BOM_SKILL, old_string: "  \n", new_string: "\n", replace_all: true })), /strips trailing whitespace/);
+    passes(runHook(pre("Edit", { file_path: CRLF_MDC, old_string: "\r\n", new_string: "\n", replace_all: true })));
   });
   test("MultiEdit applies edits in order and asks if any breaks the file", () => {
     asks(
@@ -210,5 +211,91 @@ describe("performance", () => {
     const r = runHook(pre("Write", { file_path: big, content }));
     expect(r.json?.["hookSpecificOutput"]["permissionDecision"]).toBe("ask");
     expect(r.ms).toBeLessThan(3000);
+  });
+});
+
+// Claude Code's Edit normalises CRLF to LF, applies the edit, and writes every line
+// break back in one style picked from the first 4,096 characters (read from the
+// Claude Code 2.1.285 binary). The guard must warn when that rewrites line endings.
+describe("Edit line endings, the way Claude Code writes them", () => {
+  let t: ReturnType<typeof tempDir>;
+  beforeAll(() => {
+    t = tempDir("asitis-hook-eol-");
+  });
+  afterAll(() => t.cleanup());
+  const file = (name: string, content: string): string => {
+    const f = path.join(t.dir, name);
+    writeFileSync(f, content);
+    return f;
+  };
+
+  test("a one-word Edit to a mixed-EOL file asks, because every break is rewritten", () => {
+    const mixed = path.join(FIXTURES, "encodings/mixed-eol.md");
+    asks(runHook(pre("Edit", { file_path: mixed, old_string: "line two", new_string: "line 2" })), /CRLF line ending|flattens mixed line endings/);
+  });
+  test("a mostly-CRLF file with one LF line asks too", () => {
+    const f = file("mostly-crlf.md", "# Title\r\none\r\ntwo\r\nthree\nfour\r\n");
+    asks(runHook(pre("Edit", { file_path: f, old_string: "one", new_string: "uno" })), /flattens mixed line endings|adds 1 CRLF/);
+  });
+  test("a CRLF file whose first 4,096 characters have no line break is rewritten to LF, and the guard says so", () => {
+    const f = file("long-first-line.md", "x".repeat(5000) + "\r\nsecond\r\nthird\r\n");
+    asks(runHook(pre("Edit", { file_path: f, old_string: "second", new_string: "2nd" })), /converts 3 CRLF line ending\(s\) to LF/);
+  });
+  test("an all-CRLF and an all-LF file keep their style, so a text Edit passes", () => {
+    passes(runHook(pre("Edit", { file_path: file("crlf.md", "# T\r\na\r\nb\r\n"), old_string: "a", new_string: "A" })));
+    passes(runHook(pre("Edit", { file_path: file("lf.md", "# T\na\nb\n"), old_string: "a", new_string: "A" })));
+  });
+});
+
+describe("guard_mode", () => {
+  const mixed = path.join(FIXTURES, "encodings/mixed-eol.md");
+  const edit = pre("Edit", { file_path: mixed, old_string: "line two", new_string: "line 2" });
+  test.each([["Denied"], ["block"], ["yes"]])("unknown mode %j is treated as deny and warns", (m) => {
+    const r = runHook(edit, { ASITIS_GUARD_MODE: m });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.json?.["hookSpecificOutput"]?.["permissionDecision"]).toBe("deny");
+    expect(r.json?.["systemMessage"]).toMatch(/Unknown guard_mode .* uses deny, the safest mode/);
+  });
+  test("an unknown mode still warns when the edit is clean", () => {
+    const r = runHook(pre("Edit", { file_path: LF_SKILL, old_string: "PDF export", new_string: "PDF export" }), { CLAUDE_PLUGIN_OPTION_GUARD_MODE: "strict" });
+    expect(r.status).toBe(0);
+    expect(r.json?.["hookSpecificOutput"]).toBeUndefined();
+    expect(r.json?.["systemMessage"]).toMatch(/Unknown guard_mode "strict"/);
+  });
+  test("the three documented modes are accepted as is", () => {
+    expect(runHook(edit, { ASITIS_GUARD_MODE: "ask" }).json?.["hookSpecificOutput"]?.["permissionDecision"]).toBe("ask");
+    expect(runHook(edit, { ASITIS_GUARD_MODE: " DENY " }).json?.["hookSpecificOutput"]?.["permissionDecision"]).toBe("deny");
+    passes(runHook(edit, { ASITIS_GUARD_MODE: "off" }));
+  });
+});
+
+describe("fails closed instead of timing out", () => {
+  let t: ReturnType<typeof tempDir>;
+  let big: string;
+  beforeAll(() => {
+    t = tempDir("asitis-hook-time-");
+    big = path.join(t.dir, "huge.md");
+    writeFileSync(big, "| a | b |  \r\n".repeat(1_200_000)); // about 14 MB, CRLF, just under the 16 MB cap
+  });
+  afterAll(() => t.cleanup());
+  test("over its budget the guard asks (ask mode) or blocks (deny mode); it never lets the change through", () => {
+    const e = pre("Edit", { file_path: big, old_string: "| a |", new_string: "| A |" });
+    const r = runHook(e, { ASITIS_GUARD_BUDGET_MS: "1" });
+    asks(r, /could not be checked within 1 ms/);
+    const d = runHook(e, { ASITIS_GUARD_BUDGET_MS: "1", ASITIS_GUARD_MODE: "deny" });
+    expect(d.json?.["hookSpecificOutput"]?.["permissionDecision"]).toBe("deny");
+  });
+  test("a MultiEdit too large to check answers on its own 7 s budget, before the 10 s hook timeout", () => {
+    const f = path.join(t.dir, "clean.md");
+    writeFileSync(f, "| a | b |\r\n".repeat(1_400_000)); // about 14 MB, no trailing spaces
+    const edits = Array.from({ length: 6000 }, (_, i) => ({ old_string: "| a |", new_string: `| a${i} |` }));
+    const r = runHook(pre("MultiEdit", { file_path: f, edits }));
+    expect(r.ms).toBeLessThan(10_000);
+    asks(r, /could not be checked within 7 s/);
+  }, 30_000);
+  test("a file over 16 MB is not waved through unchecked", () => {
+    const f = path.join(t.dir, "over.md");
+    writeFileSync(f, "x".repeat(17 * 1024 * 1024));
+    asks(runHook(pre("Edit", { file_path: f, old_string: "xx", new_string: "y" })), /larger than 16 MB/);
   });
 });

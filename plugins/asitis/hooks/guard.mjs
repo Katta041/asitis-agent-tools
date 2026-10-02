@@ -12,14 +12,28 @@
 //   ask  (default) show the warning and ask you to allow or reject the change
 //   deny           block the change and tell the agent to retry with a minimal edit
 //   off            do nothing
+// Any other value is treated as deny (the safest mode) and the guard says so.
 //
 // Fails closed: if the hook input cannot be read, the change is blocked (exit 2)
-// with a message saying why. Dependency-free, read-only: it never writes files.
+// with a message saying why. Claude Code runs the hook with a 10 s timeout and
+// lets the change through when a hook times out, so the guard keeps its own 7 s
+// budget: a check that cannot finish in time asks (or, in deny mode, blocks)
+// instead of running into the timeout. Dependency-free, read-only: it never
+// writes files.
 
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 const MAX_BYTES = 16 * 1024 * 1024;
+const STARTED = Date.now();
+/** Time budget for one check, well inside the 10 s hook timeout in hooks.json. */
+const BUDGET_MS = Math.min(Number(process.env.ASITIS_GUARD_BUDGET_MS) > 0 ? Number(process.env.ASITIS_GUARD_BUDGET_MS) : 7000, 7000);
+const MODES = new Set(["ask", "deny", "off"]);
+
+class OutOfTime extends Error {}
+function checkTime() {
+  if (Date.now() - STARTED > BUDGET_MS) throw new OutOfTime();
+}
 const MARKDOWN = /\.(md|mdc|markdown|mdx)$/i;
 const STEERING_NAMES = new Set([".cursorrules", ".windsurfrules", ".clinerules"]);
 
@@ -119,25 +133,56 @@ function invalidUtf8(buf) {
 // Simulating the edit tools on the current text.
 
 /**
- * Applies one Edit. Returns the new text, or null when old_string is not found
- * (the tool itself will then fail, so there is nothing to guard).
- * If old_string only matches after its LF line breaks are read as CRLF, the
- * tool is assumed to map the replacement onto the file's CRLF style too.
+ * Claude Code's Edit and MultiEdit do not splice the raw file. As read from the
+ * Claude Code 2.1.285 binary, they:
+ *   1. pick one line-ending style from the first 4,096 characters (CRLF when it
+ *      has more CRLF than bare LF breaks, otherwise LF),
+ *   2. replace every CRLF in the file with LF and apply the edits to that text,
+ *   3. write the result back with every LF turned into the chosen style.
+ * So one Edit to a mixed-EOL file, or to a CRLF file whose first 4,096
+ * characters have no line break, rewrites every line ending. The guard
+ * simulates exactly that, then compares the before and after bytes.
  */
-function applyEdit(text, oldStr, newStr, replaceAll) {
+function editLineEnding(text) {
+  const head = text.slice(0, 4096);
+  let crlf = 0;
+  let lf = 0;
+  for (let i = 0; i < head.length; i++) {
+    if (head.charCodeAt(i) !== 10) continue;
+    if (i > 0 && head.charCodeAt(i - 1) === 13) crlf++;
+    else lf++;
+  }
+  return crlf > lf ? "CRLF" : "LF";
+}
+
+const toLf = (s) => s.replace(/\r\n/g, "\n");
+
+/**
+ * Applies one edit to LF-normalised text. Returns the new text, or null when
+ * old_string is not found (the tool itself will then fail, so there is nothing to guard).
+ */
+function applyEdit(normalised, oldStr, newStr, replaceAll) {
   if (typeof oldStr !== "string" || typeof newStr !== "string") throw new Error("Edit input needs string old_string and new_string");
   if (oldStr === "") return null;
-  const replace = (hay, needle, repl) => {
-    if (replaceAll) return hay.split(needle).join(repl);
-    const i = hay.indexOf(needle);
-    return hay.slice(0, i) + repl + hay.slice(i + needle.length);
-  };
-  if (text.includes(oldStr)) return { text: replace(text, oldStr, newStr), literal: true };
-  const oldCrlf = oldStr.replace(/\r?\n/g, "\r\n");
-  if (oldCrlf !== oldStr && text.includes(oldCrlf)) {
-    return { text: replace(text, oldCrlf, newStr.replace(/\r?\n/g, "\r\n")), literal: false };
+  const needle = toLf(oldStr);
+  const repl = toLf(newStr);
+  const i = normalised.indexOf(needle);
+  if (i < 0) return null;
+  if (replaceAll) return normalised.split(needle).join(repl);
+  return normalised.slice(0, i) + repl + normalised.slice(i + needle.length);
+}
+
+/** The file text Claude Code writes after these edits, or null when an edit does not apply. */
+function simulateEdits(before, edits) {
+  const style = editLineEnding(before);
+  let text = toLf(before);
+  for (const e of edits) {
+    checkTime();
+    const r = applyEdit(text, e.old_string, e.new_string, e.replace_all === true);
+    if (r === null) return null;
+    text = r;
   }
-  return null;
+  return style === "CRLF" ? text.replace(/\n/g, "\r\n") : text;
 }
 
 function analyse(before, after, tool, beforeBuf) {
@@ -158,6 +203,7 @@ function analyse(before, after, tool, beforeBuf) {
   if (fb.finalNewline && !fa.finalNewline) problems.push("drops the final newline");
   if (!fb.finalNewline && fa.finalNewline && before.length > 0) problems.push("adds a final newline the file did not have");
 
+  checkTime();
   // Trailing whitespace: lines whose content survives but loses its trailing spaces.
   const lb = splitLines(before);
   const la = splitLines(after);
@@ -173,6 +219,7 @@ function analyse(before, after, tool, beforeBuf) {
   }
   if (stripped > 0) problems.push(`strips trailing whitespace on ${stripped} line(s) (two trailing spaces are a hard line break in markdown)`);
 
+  checkTime();
   const fmB = frontmatterState(before);
   const fmA = frontmatterState(after);
   if (fmB.present && fmB.closed) {
@@ -193,6 +240,7 @@ function analyse(before, after, tool, beforeBuf) {
     const churn = 1 - kept / lb.length;
     if (churn > 0.3) problems.push(`rewrites ${Math.round(churn * 100)}% of the ${lb.length} existing lines`);
   }
+  checkTime();
   const bad = invalidUtf8(beforeBuf);
   if (bad > 0) problems.push(`the file has ${bad} invalid UTF-8 byte sequence(s) that a text tool will replace with U+FFFD`);
   return problems;
@@ -201,8 +249,14 @@ function analyse(before, after, tool, beforeBuf) {
 // ---------------------------------------------------------------------------
 
 function main() {
-  const mode = String(process.env.CLAUDE_PLUGIN_OPTION_GUARD_MODE ?? process.env.ASITIS_GUARD_MODE ?? "ask").trim().toLowerCase() || "ask";
+  const asked = String(process.env.CLAUDE_PLUGIN_OPTION_GUARD_MODE ?? process.env.ASITIS_GUARD_MODE ?? "ask").trim().toLowerCase() || "ask";
+  const mode = MODES.has(asked) ? asked : "deny";
+  const modeNote = MODES.has(asked)
+    ? ""
+    : ` Unknown guard_mode "${asked.slice(0, 40).replace(/[^\x20-\x7e]/g, "?")}", so the guard uses deny, the safest mode; set guard_mode to ask, deny or off.`;
   if (mode === "off") process.exit(0);
+  // Nothing to report: exit silently, or only with the unknown-mode warning.
+  const pass = () => (modeNote ? emit({ systemMessage: `AsItIs guard:${modeNote}` }) : process.exit(0));
 
   let raw;
   try {
@@ -233,58 +287,69 @@ function main() {
   try {
     st = statSync(file);
   } catch {
-    process.exit(0); // new file: nothing to preserve
+    pass(); // new file: nothing to preserve
   }
-  if (!st.isFile()) process.exit(0);
+  if (!st.isFile()) pass();
+  const name = path.basename(file);
+  const decide = (summary, advice) => {
+    if (mode === "deny") {
+      emit({
+        ...(modeNote ? { systemMessage: `AsItIs guard:${modeNote}` } : {}),
+        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `AsItIs guard: ${summary} ${advice}` },
+      });
+    }
+    emit({
+      systemMessage: `AsItIs guard (accident guard, not a security boundary): ${summary}`,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "ask",
+        permissionDecisionReason: `AsItIs guard: ${summary} Allow only if you meant this.`,
+        additionalContext: `AsItIs guard warned the user: ${summary} ${advice}`,
+      },
+    });
+  };
+
   if (st.size > MAX_BYTES) {
-    emit({ systemMessage: `AsItIs guard: ${path.basename(file)} is larger than 16 MB and was not checked.` });
+    // Too large to check: ask (or block in deny mode) rather than wave it through.
+    decide(`${tool} on ${name} was not checked: the file is larger than 16 MB.${modeNote}`, "Split the change into smaller Edits, or set the plugin option guard_mode to off for this change.");
   }
   const beforeBuf = readFileSync(file);
   const before = new TextDecoder("utf-8", { fatal: false, ignoreBOM: true }).decode(beforeBuf);
 
   let after;
+  let problems;
   try {
     if (tool === "Write") {
       if (typeof ti.content !== "string") block("the Write input has no string content. The change was blocked to be safe.");
       after = ti.content;
-    } else if (tool === "Edit") {
-      const r = applyEdit(before, ti.old_string, ti.new_string, ti.replace_all === true);
-      if (!r) process.exit(0);
-      after = r.text;
     } else {
-      if (!Array.isArray(ti.edits) || ti.edits.length === 0) block("the MultiEdit input has no edits array. The change was blocked to be safe.");
-      after = before;
-      for (const e of ti.edits) {
-        if (!e || typeof e !== "object") block("a MultiEdit edit is not an object. The change was blocked to be safe.");
-        const r = applyEdit(after, e.old_string, e.new_string, e.replace_all === true);
-        if (!r) process.exit(0);
-        after = r.text;
+      let edits;
+      if (tool === "Edit") edits = [ti];
+      else {
+        if (!Array.isArray(ti.edits) || ti.edits.length === 0) block("the MultiEdit input has no edits array. The change was blocked to be safe.");
+        for (const e of ti.edits) if (!e || typeof e !== "object") block("a MultiEdit edit is not an object. The change was blocked to be safe.");
+        edits = ti.edits;
       }
+      after = simulateEdits(before, edits);
+      if (after === null) pass();
     }
+    problems = analyse(before, after, tool, beforeBuf);
   } catch (e) {
+    if (e instanceof OutOfTime) {
+      // Fail closed: never let the 10 s hook timeout wave the change through unchecked.
+      decide(
+        `${tool} on ${name} could not be checked within ${BUDGET_MS >= 1000 ? `${Math.round(BUDGET_MS / 1000)} s` : `${BUDGET_MS} ms`} (the file or the edit is very large), so the guard could not confirm it keeps line endings, trailing spaces, BOM and frontmatter.${modeNote}`,
+        "Split the change into smaller Edits, or set the plugin option guard_mode to off for this change.",
+      );
+    }
     block(`${e.message}. The change was blocked to be safe.`);
   }
 
-  const problems = analyse(before, after, tool, beforeBuf);
-  if (!problems.length) process.exit(0);
+  if (!problems.length) pass();
 
-  const name = path.basename(file);
-  const summary = `${tool} on ${name} ${problems.join("; ")}.`;
+  const summary = `${tool} on ${name} ${problems.join("; ")}.${modeNote}`;
   const advice = "Retry with an Edit whose old_string and new_string differ only in the text you mean to change, keeping the file's line endings, trailing spaces, BOM and frontmatter exactly as they are.";
-  if (mode === "deny") {
-    emit({
-      hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `AsItIs guard: ${summary} ${advice}` },
-    });
-  }
-  emit({
-    systemMessage: `AsItIs guard (accident guard, not a security boundary): ${summary}`,
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "ask",
-      permissionDecisionReason: `AsItIs guard: ${summary} Allow only if you meant this.`,
-      additionalContext: `AsItIs guard warned the user: ${summary} ${advice}`,
-    },
-  });
+  decide(summary, advice);
 }
 
 try {

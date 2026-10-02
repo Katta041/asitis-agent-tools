@@ -2,7 +2,7 @@
 // through Sandbox. The server has no write path at all; this module only opens
 // files read-only.
 
-import { constants, promises as fsp, type Stats } from "node:fs";
+import { constants, promises as fsp, realpathSync, statSync, type Stats } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CAPS } from "./limits.js";
@@ -79,6 +79,55 @@ export function policyRefusal(relPosix: string, platform: NodeJS.Platform = proc
 /** Reserved DOS device names, with or without an extension (compared case-insensitively). */
 const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3]|conin\$|conout\$) *(\..*)?$/i;
 
+const isDenied = (e: unknown): boolean => (e as NodeJS.ErrnoException)?.code === "ERR_ACCESS_DENIED";
+const isMissing = (e: unknown): boolean => ["ENOENT", "ENOTDIR"].includes((e as NodeJS.ErrnoException)?.code ?? "");
+
+/** The --allow-fs-read folders Node was started with (empty without the permission model). */
+function readGrants(): string[] {
+  return process.execArgv.filter((a) => a.startsWith("--allow-fs-read=")).map((a) => a.slice("--allow-fs-read=".length));
+}
+
+/**
+ * Resolves and checks one root folder. The checks use the sync fs API on purpose:
+ * on Node 22.13 a promise-based stat that the permission model denies rejects
+ * outside the promise chain and crashes the process instead of throwing here.
+ */
+export function resolveRoot(g: string): string {
+  const lexical = path.resolve(g);
+  let real: string;
+  try {
+    real = realpathSync(lexical);
+  } catch (e) {
+    if (isMissing(e)) throw new UserError(`Root folder not found: ${g}. Pass an existing folder with --root.`);
+    if (!isDenied(e)) throw new UserError(`Cannot read the root folder ${g} (${(e as NodeJS.ErrnoException).code ?? (e as Error).message}).`);
+    // Node's permission model can deny realpath on a folder it lets us read below
+    // (for example when a parent is a symlink, or a nested folder is also allowed).
+    // The lexical path is still confined: every read below it is checked by Node.
+    real = lexical;
+  }
+  let st: Stats;
+  try {
+    st = statSync(real);
+  } catch (e) {
+    if (isMissing(e)) throw new UserError(`Root folder not found: ${g}. Pass an existing folder with --root.`);
+    if (isDenied(e)) throw new UserError(deniedRootMessage(real));
+    throw new UserError(`Cannot read the root folder ${g} (${(e as NodeJS.ErrnoException).code ?? (e as Error).message}).`);
+  }
+  if (!st.isDirectory()) throw new UserError(`Root is not a folder: ${g}. Pass a folder with --root.`);
+  return real;
+}
+
+function deniedRootMessage(root: string): string {
+  const nested = readGrants().filter((a) => {
+    const rel = path.relative(root, path.resolve(a));
+    return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+  });
+  if (nested.length) {
+    return `Node's permission model will not let the server read the root folder ${root} itself, because --allow-fs-read also lists ${nested.join(", ")}, which is inside it. Remove the nested --allow-fs-read (the root already covers it), or list the root first.`;
+  }
+  return `Node's permission model will not let the server read the root folder ${root}. Add --allow-fs-read=${root} (use the folder's real path if a parent folder is a symlink).`;
+}
+
 export interface SandboxOptions {
   allowBroadRoot?: boolean;
   maxFileBytes?: number;
@@ -98,19 +147,12 @@ export class Sandbox {
     // back to the lexical path for the broad-root check.
     const homes = new Set<string>([path.resolve(os.homedir())]);
     try {
-      homes.add(await fsp.realpath(os.homedir()));
+      homes.add(realpathSync(os.homedir()));
     } catch {
       // not readable; the lexical path is enough
     }
     for (const g of given) {
-      let real: string;
-      try {
-        real = await fsp.realpath(path.resolve(g));
-      } catch {
-        throw new UserError(`Root folder not found: ${g}. Pass an existing folder with --root.`);
-      }
-      const st = await fsp.stat(real);
-      if (!st.isDirectory()) throw new UserError(`Root is not a folder: ${g}. Pass a folder with --root.`);
+      const real = resolveRoot(g);
       if (!opts.allowBroadRoot) {
         if (path.parse(real).root === real) throw new UserError(`Refusing the filesystem root (${real}) as the allowed folder. Pass your project folder with --root, or add --allow-broad-root.`);
         if (homes.has(real)) throw new UserError(`Refusing your home folder (${real}) as the allowed folder. Pass your project folder with --root, or add --allow-broad-root.`);

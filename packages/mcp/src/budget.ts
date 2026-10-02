@@ -112,6 +112,15 @@ function skillListingTokens(doc: Doc): number {
   return approxTokens(`${name}: ${listing}`) + 4;
 }
 
+/** Whether Claude Code loads this skill, command or subagent in a session started at the primary root. */
+export function claudeCodeLoads(d: Doc): "yes" | "nested" | "no" {
+  const rel = d.file.rel;
+  const top = /^\.claude\/skills\/[^/]+\/SKILL\.md$/.test(rel) || /^\.claude\/(commands|agents)\/.+\.md$/i.test(rel);
+  if (top) return "yes";
+  if (/(^|\/)\.claude\/skills\/[^/]+\/SKILL\.md$/.test(rel) || /(^|\/)\.claude\/(commands|agents)\/.+\.md$/i.test(rel)) return "nested";
+  return "no";
+}
+
 export interface ProjectBudget {
   tools: ToolBudget[];
   files: BudgetEntry[];
@@ -161,16 +170,32 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
         entries.push({ path: d.path, tokens: approxTokens(slice), note: "auto memory index (first 200 lines or 25 KB)" });
       }
     }
+    // Only skills, commands and subagents that Claude Code itself loads go into the
+    // every-session listing. Claude Code skills docs (https://code.claude.com/docs/en/skills,
+    // "Where skills live"): project skills are .claude/skills/<skill-name>/SKILL.md in the
+    // folder the session starts in; nested <subdir>/.claude/skills/ "don't load at startup.
+    // They load the first time Claude reads or edits a file in that subdirectory"; plugin
+    // skills (<plugin>/skills/) load only where the plugin is enabled. Commands live in
+    // .claude/commands/ (same docs) and subagents in .claude/agents/
+    // (https://code.claude.com/docs/en/sub-agents). Personal ~/.claude/skills are outside
+    // the allowed folder and are never counted.
     let listing = 0;
     let listed = 0;
+    let nested = 0;
+    let notLoaded = 0;
     for (const d of docs) {
-      if (d.kind.kind === "skill" || d.kind.kind === "claude-command" || d.kind.kind === "claude-agent") {
-        const t = d.kind.kind === "skill" || d.kind.kind === "claude-command" ? skillListingTokens(d) : approxTokens(String(d.frontmatter.data?.["description"] ?? "")) + 4;
-        if (t > 0) { listing += t; listed++; }
-      }
+      const k = d.kind.kind;
+      if (k !== "skill" && k !== "claude-command" && k !== "claude-agent") continue;
+      const where = claudeCodeLoads(d);
+      if (where === "nested") { nested++; continue; }
+      if (where === "no") { notLoaded++; continue; }
+      const t = k === "skill" || k === "claude-command" ? skillListingTokens(d) : approxTokens(String(d.frontmatter.data?.["description"] ?? "")) + 4;
+      if (t > 0) { listing += t; listed++; }
     }
+    if (nested) warnings.push(`${nested} skill(s), command(s) or subagent(s) in nested .claude folders load only once Claude works in that folder; not counted`);
+    if (notLoaded) warnings.push(`${notLoaded} SKILL.md file(s) outside .claude/skills/ are not loaded by Claude Code from that location (for example a plugin or an Agent Skills repository); not counted`);
     if (listed) entries.push({ path: `(listing of ${listed} skills, commands and subagents)`, tokens: listing, note: "names and descriptions load every session; bodies load on use" });
-    if (entries.length) tools.push({ tool: "claude-code", tokens: entries.reduce((a, e) => a + e.tokens, 0), entries, warnings });
+    if (entries.length || warnings.length) tools.push({ tool: "claude-code", tokens: entries.reduce((a, e) => a + e.tokens, 0), entries, warnings });
   }
 
   // Codex

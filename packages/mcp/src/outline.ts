@@ -48,7 +48,9 @@ export function outline(lines: LineIndex, fence: Uint8Array, frontmatterEnd: num
     if (fence[i]) { prevText = null; continue; }
     const len = lines.end(i) - lines.start(i);
     // Only the first few hundred characters of a line matter for headings.
-    const s = len > 1024 ? lines.text.slice(lines.start(i), lines.start(i) + 1024) : lines.line(i);
+    let s = len > 1024 ? lines.text.slice(lines.start(i), lines.start(i) + 1024) : lines.line(i);
+    // The decoded text keeps a leading BOM as U+FEFF; it is not part of the first line's content.
+    if (i === 0 && s.charCodeAt(0) === 0xfeff) s = s.slice(1);
     const h = atx(s);
     if (h) {
       if (headings.length >= CAPS.maxHeadings) { truncated = true; break; }

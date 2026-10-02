@@ -44,7 +44,7 @@ Vendor limits checked, with sources in [`src/limits.ts`](src/limits.ts):
 - **Markdown only.** Only `.md`, `.mdc`, `.markdown`, `.mdx`, `.cursorrules`, `.windsurfrules` and `.clinerules` are read. `.env*`, `.claude/settings*.json`, anything in `.git/` or `node_modules/`, and every other file type are refused, including through a markdown-named symlink that points at them. `@imports` of such files are counted from their size, never read.
 - **Bounded work.** Files over 16 MB are refused (`--max-file-mb`), results are capped, every tool call has a 20 s budget, and every scanner is linear time. The test suite runs 32 adversarial 10 MB inputs (unclosed comments, bracket and backtick storms, 2,000-character import tokens, invalid UTF-8 and more) through every tool under a 3 s per-call budget.
 - **Untrusted content.** `read_markdown` labels file content as data, not instructions, and reports hidden instructions and invisible characters up front. This does not stop a model from obeying text it reads; it makes the text visible.
-- **Stronger sandbox, optional.** Run the server under Node's permission model so the runtime itself forbids writes, network and child processes (see below). The Claude Code plugin does this by default.
+- **Stronger sandbox, optional.** Run the server under Node's permission model so the runtime itself forbids writes and child processes (and network access on Node 25 and later) (see below). The Claude Code plugin does this by default.
 
 Known limits: token counts are local approximations (about 4 characters per token for English). A hardlink inside the root to a file elsewhere is read like any other file (reads only). A symlink swapped into a parent folder between the check and the open is a narrow race; the final path component is opened with `O_NOFOLLOW` and checked by inode. On Windows, junctions, case-folded paths, 8.3 short names, `\\?\` and `\\.\` device prefixes, UNC paths and trailing dots or spaces are judged on the real path and tested; alternate data streams (`notes.md:stream`) and reserved device names (`CON`, `NUL.md`) are refused outright.
 
@@ -52,7 +52,7 @@ Known limits: token counts are local approximations (about 4 characters per toke
 
 Requires Node 22.13 or later.
 
-> **Not on npm yet (coming soon).** Until `@asitis/mcp` is published, run the pinned build from a clone of the repository, which needs no install or build step: `git clone https://github.com/Katta041/asitis-agent-tools.git`, then use `node` with the absolute path to `plugins/asitis/server/asitis-mcp.mjs` wherever the configs below say `npx -y @asitis/mcp@0.1.0`. The [repository README](https://github.com/Katta041/asitis-agent-tools#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli) has those configs written out.
+> **Not on npm yet (coming soon).** Until `@asitis/mcp` is published, run the pinned build from a clone of the repository, which needs no install or build step: `git clone https://github.com/Katta041/asitis-agent-tools.git`, then use `node` with the absolute path to `plugins/asitis/server/asitis-mcp.mjs` wherever the configs below say `npx -y @asitis/mcp@0.2.0`. The [repository README](https://github.com/Katta041/asitis-agent-tools#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli) has those configs written out.
 
 Always pin the version; never use `@latest` in an agent config.
 
@@ -65,7 +65,7 @@ claude plugin marketplace add Katta041/asitis-agent-tools
 claude plugin install asitis@asitis
 ```
 
-Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.1.0 --root "$PWD"`.
+Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.2.0 --root "$PWD"`.
 
 ### Claude Desktop
 
@@ -76,7 +76,7 @@ Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.1.0 --roo
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.1.0", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.0", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -91,7 +91,7 @@ Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.1.0 --roo
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.1.0", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.2.0", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -106,7 +106,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 ```toml
 [mcp_servers.asitis]
 command = "npx"
-args = ["-y", "@asitis/mcp@0.1.0", "--root", "/absolute/path/to/project"]
+args = ["-y", "@asitis/mcp@0.2.0", "--root", "/absolute/path/to/project"]
 ```
 
 ### Gemini CLI
@@ -118,7 +118,7 @@ args = ["-y", "@asitis/mcp@0.1.0", "--root", "/absolute/path/to/project"]
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.1.0", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.0", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -126,10 +126,10 @@ args = ["-y", "@asitis/mcp@0.1.0", "--root", "/absolute/path/to/project"]
 
 ### Hardened: Node's permission model
 
-Run the file directly under Node's permission model so Node itself denies writes, network and child processes:
+Run the file directly under Node's permission model so Node itself denies writes and child processes (and network access on Node 25 and later):
 
 ```bash
-npm install -g @asitis/mcp@0.1.0
+npm install -g @asitis/mcp@0.2.0
 node --permission \
   --allow-fs-read="$(npm root -g)/@asitis/mcp" \
   --allow-fs-read=/absolute/path/to/project \

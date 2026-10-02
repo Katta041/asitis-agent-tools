@@ -18,6 +18,7 @@ export function fenceMask(lines: LineIndex, skipUntilLine = -1): Uint8Array {
     const a = lines.start(i);
     const e = lines.end(i);
     let p = a;
+    if (i === 0 && s.charCodeAt(p) === 0xfeff) p++; // a leading BOM is not content
     let indent = 0;
     while (p < e && s.charCodeAt(p) === 32 && indent < 4) { p++; indent++; }
     const c = s.charCodeAt(p);
@@ -170,6 +171,7 @@ export function classifyInstruction(text: string): string | null {
 
 export function scanComments(lines: LineIndex, fence: Uint8Array): { findings: CommentFinding[]; total: number } {
   const s = lines.text;
+  const spans = new InlineCodeSpans(lines);
   const findings: CommentFinding[] = [];
   let total = 0;
   let pos = 0;
@@ -179,8 +181,9 @@ export function scanComments(lines: LineIndex, fence: Uint8Array): { findings: C
     const startLine = lines.lineOf(open);
     const close = s.indexOf("-->", open + 4);
     const end = close < 0 ? s.length : close + 3;
+    if (fence[startLine]) { pos = end; continue; } // visible as code, not hidden
+    if (spans.inCode(startLine, open)) { pos = open + 4; continue; } // `<!-- -->` in a code span is shown, not hidden
     pos = end;
-    if (fence[startLine]) continue; // visible as code, not hidden
     total++;
     if (findings.length >= CAPS.maxFindingsPerRule) {
       if (close < 0) break;
@@ -193,6 +196,120 @@ export function scanComments(lines: LineIndex, fence: Uint8Array): { findings: C
     if (close < 0) break;
   }
   return { findings, total };
+}
+
+/**
+ * Inline code spans per line, CommonMark style: a backtick run opens a span only
+ * when a later run of the same length on the line closes it; an unmatched run is
+ * literal text. (A stray backtick therefore cannot hide a comment after it.)
+ * Linear per line: each run is matched with the next run of equal length.
+ */
+export class InlineCodeSpans {
+  private line = -1;
+  private spans: Array<[number, number]> = [];
+  constructor(private readonly lines: LineIndex) {}
+  inCode(li: number, at: number): boolean {
+    if (li !== this.line) {
+      this.line = li;
+      this.spans = this.compute(li);
+    }
+    // Spans are sorted and disjoint: binary search for the last span starting at or before `at`.
+    let lo = 0;
+    let hi = this.spans.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (this.spans[mid]![0] <= at) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    return hi >= 0 && at < this.spans[hi]![1];
+  }
+  private compute(li: number): Array<[number, number]> {
+    const s = this.lines.text;
+    const a = this.lines.start(li);
+    const e = this.lines.end(li);
+    if (s.indexOf("`", a) < 0 || s.indexOf("`", a) >= e) return [];
+    const runs: Array<[number, number]> = []; // [start, length]
+    for (let i = a; i < e; ) {
+      if (s.charCodeAt(i) !== 96) { i++; continue; }
+      let n = 0;
+      while (i + n < e && s.charCodeAt(i + n) === 96) n++;
+      runs.push([i, n]);
+      i += n;
+    }
+    // For each run, the index of the next run with the same length.
+    const next = new Int32Array(runs.length).fill(-1);
+    const lastByLen = new Map<number, number>();
+    for (let k = runs.length - 1; k >= 0; k--) {
+      const len = runs[k]![1];
+      next[k] = lastByLen.get(len) ?? -1;
+      lastByLen.set(len, k);
+    }
+    const out: Array<[number, number]> = [];
+    for (let k = 0; k < runs.length; ) {
+      const j = next[k]!;
+      if (j < 0) { k++; continue; }
+      out.push([runs[k]![0], runs[j]![0] + runs[j]![1]]);
+      k = j + 1;
+      if (out.length >= 10_000) break;
+    }
+    return out;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Link reference definitions used as comments: [//]: # (text), [x]: <> "text".
+// They render as nothing, so their title text is hidden like an HTML comment.
+
+export interface RefCommentFinding {
+  line: number; // 1-based
+  instructionLike: boolean;
+  matched: string | null;
+  preview: string;
+}
+
+export function scanRefComments(lines: LineIndex, fence: Uint8Array): RefCommentFinding[] {
+  const s = lines.text;
+  const out: RefCommentFinding[] = [];
+  for (let i = 0; i < lines.count && out.length < CAPS.maxFindingsPerRule; i++) {
+    if (fence[i]) continue;
+    const a = lines.start(i);
+    const e = lines.end(i);
+    let p = a;
+    if (i === 0 && s.charCodeAt(p) === 0xfeff) p++;
+    while (p < e && p - a < 3 && s.charCodeAt(p) === 32) p++;
+    if (s.charCodeAt(p) !== 91 || s.charCodeAt(p + 1) === 94) continue; // [ but not a [^footnote]:
+    const close = boundedIndexOf(s, "]:", p + 1, Math.min(e, p + 1000));
+    if (close < 0) continue;
+    let q = close + 2;
+    while (q < e && (s.charCodeAt(q) === 32 || s.charCodeAt(q) === 9)) q++;
+    // Destination: <...> or a run of non-space characters.
+    const d = q;
+    if (s.charCodeAt(q) === 60) {
+      const gt = boundedIndexOf(s, ">", q + 1, Math.min(e, q + CAPS.maxTargetChars));
+      if (gt < 0) continue;
+      q = gt + 1;
+    } else {
+      while (q < e && q - d < CAPS.maxTargetChars && s.charCodeAt(q) !== 32 && s.charCodeAt(q) !== 9) q++;
+      if (q === d) continue;
+    }
+    const label = s.slice(p + 1, close);
+    const dest = s.slice(d, q);
+    // The comment idiom: a dummy destination (#, <>, //) or the // label.
+    const idiom = label === "//" || dest === "#" || dest === "<>" || dest === "//";
+    while (q < e && (s.charCodeAt(q) === 32 || s.charCodeAt(q) === 9)) q++;
+    const opener = s.charCodeAt(q);
+    const closer = opener === 40 ? 41 : opener === 34 || opener === 39 ? opener : -1;
+    if (closer < 0) continue; // no title: nothing hidden on this line
+    let r = e;
+    while (r > q + 1 && (s.charCodeAt(r - 1) === 32 || s.charCodeAt(r - 1) === 9)) r--;
+    if (s.charCodeAt(r - 1) !== closer || r - 1 <= q) continue;
+    const body = s.slice(q + 1, Math.min(r - 1, q + 1 + COMMENT_SLICE));
+    if (!body.trim()) continue;
+    const matched = classifyInstruction(body);
+    if (!idiom && matched === null) continue; // an ordinary link title (a tooltip), not a comment
+    out.push({ line: i + 1, instructionLike: matched !== null, matched, preview: body.replace(/\s+/g, " ").trim().slice(0, 120) });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +337,30 @@ export function scanHiddenStyles(lines: LineIndex, fence: Uint8Array): number[] 
       if (out.length >= CAPS.maxFindingsPerRule) break;
     }
   }
-  return out;
+  // The HTML hidden attribute: <div hidden>, <p class="x" hidden="">.
+  pos = 0;
+  for (;;) {
+    if (out.length >= CAPS.maxFindingsPerRule) break;
+    const at = s.indexOf("hidden", pos);
+    if (at < 0) break;
+    pos = at + 6;
+    const before = s.charCodeAt(at - 1);
+    const after = s.charCodeAt(at + 6);
+    if (!(before === 32 || before === 9) || !(after === 62 || after === 61 || after === 32 || after === 9 || after === 47)) continue;
+    const li = lines.lineOf(at);
+    if (fence[li]) continue;
+    const lineStart = lines.start(li);
+    // Bounded look-back for the tag opener: "<" + letter, with no ">" in between.
+    let lt = -1;
+    for (let k = at - 1; k >= Math.max(lineStart, at - 200); k--) {
+      const ch = s.charCodeAt(k);
+      if (ch === 62) break;
+      if (ch === 60) { lt = k; break; }
+    }
+    if (lt < 0 || !/[A-Za-z]/.test(s[lt + 1] ?? "")) continue;
+    if (!out.includes(li + 1)) out.push(li + 1);
+  }
+  return out.sort((x, y) => x - y);
 }
 
 // ---------------------------------------------------------------------------

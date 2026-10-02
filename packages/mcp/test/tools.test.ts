@@ -83,7 +83,7 @@ describe("read_markdown", () => {
     const safety = r.structured["safety"] as Record<string, any>;
     expect(safety["invisibleCharacters"]).toBe(4);
     expect(safety["instructionLikeComments"]).toHaveLength(1);
-    expect(r.blocks[0]).toMatch(/hidden HTML comment/);
+    expect(r.blocks[0]).toMatch(/hidden comment/);
   });
 });
 
@@ -128,7 +128,7 @@ describe("lint_steering", () => {
   test("CLAUDE.md: missing @import, broken link, duplicate and contradictory rules; code spans, fences and emails are not imports", async () => {
     const f = await lintOne("CLAUDE.md");
     const byRule = (r: string) => f.issues.filter((i) => i.rule === r);
-    expect(byRule("broken-import").map((i) => [i.line, i.message.slice(0, 22)])).toEqual([[5, "@docs/missing-guide.md"]]);
+    expect(byRule("broken-import").map((i) => [i.line, i.message.slice(0, 22)])).toEqual([[5, "\"@docs/missing-guide.m"]]);
     expect(byRule("broken-link").map((i) => i.line)).toEqual([7]);
     expect(byRule("duplicate-rule").map((i) => i.line)).toEqual([15]);
     expect(byRule("contradiction").map((i) => i.line)).toEqual([14]);

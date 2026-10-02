@@ -5,7 +5,8 @@ import type { Doc } from "./doc.js";
 import type { Kind } from "./kinds.js";
 import { CAPS, VENDOR } from "./limits.js";
 import type { Sandbox } from "./paths.js";
-import { extractImports, extractLinks, isExternalTarget, scanComments, scanHiddenStyles, scanInvisible } from "./scan.js";
+import { hasUnsafe, q } from "./escape.js";
+import { extractImports, extractLinks, isExternalTarget, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
 import { approxTokens } from "./tokens.js";
 
 export type Severity = "error" | "warning" | "info";
@@ -47,8 +48,13 @@ const KNOWN_KEYS: Partial<Record<Kind, { keys: string[]; reader: string }>> = {
   "memory-topic": { keys: ["name", "description", "type", "modified", "created", "updated", "metadata"], reader: "Claude Code memory" },
 };
 
-const IMPORT_KINDS: Kind[] = ["claude-md", "agents-md", "gemini-md", "claude-rule"];
+// Only files that are read with @path imports. Codex has no imports, and Claude Code expands
+// @imports in CLAUDE.md and rules, so an @scope/package in AGENTS.md is just text.
+const IMPORT_KINDS: Kind[] = ["claude-md", "gemini-md", "claude-rule"];
 const SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** Claude API skill upload rules (platform.claude.com Agent Skills overview): no reserved words, no XML tags. */
+const RESERVED_WORDS = ["anthropic", "claude"];
+const XML_TAG = /<\/?[A-Za-z][\w.:-]{0,60}(?:\s[^<>\n]{0,200})?\/?>/;
 
 class Collector {
   readonly issues: Issue[] = [];
@@ -81,8 +87,14 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
       } else {
         const n = String(name);
         if (n.length > VENDOR.skillNameMax) c.add("error", "name-too-long", `name is ${n.length} characters; the Agent Skills spec allows ${VENDOR.skillNameMax}`, line("name"));
-        if (!SKILL_NAME.test(n)) c.add("error", "name-format", `name "${n.slice(0, 80)}" must be lowercase letters, digits and single hyphens (Agent Skills spec)`, line("name"));
-        if (dir && dir !== "." && dir !== n) c.add("warning", "name-dir-mismatch", `name "${n.slice(0, 80)}" does not match its folder "${dir}"; the spec expects them to match`, line("name"));
+        if (!SKILL_NAME.test(n)) c.add("error", "name-format", `name ${q(n, 80)} must be lowercase letters, digits and single hyphens (Agent Skills spec)`, line("name"));
+        if (dir && dir !== "." && dir !== n) c.add("warning", "name-dir-mismatch", `name ${q(n, 80)} does not match its folder ${q(dir, 80)}; the spec expects them to match`, line("name"));
+        const reserved = RESERVED_WORDS.find((w) => n.toLowerCase().includes(w));
+        if (reserved) {
+          c.add("warning", "name-reserved-word", `name contains the reserved word "${reserved}". The Claude API and claude.ai reject skills whose name contains "anthropic" or "claude" (Claude Code itself accepts it)`, line("name"));
+        }
+        const tag = XML_TAG.exec(n);
+        if (tag) c.add("warning", "xml-tag", `name contains an XML tag ${q(tag[0], 60)}; the Claude API and claude.ai reject XML tags in a skill name`, line("name"));
       }
       const desc = data["description"];
       if (desc === undefined || desc === null || (typeof desc === "string" && desc.trim() === "")) {
@@ -91,7 +103,11 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
         c.add("error", "field-type", "description must be a string", line("description"));
       } else {
         if (desc.length > VENDOR.skillDescriptionMax) {
-          c.add("warning", "description-too-long", `description is ${desc.length} characters; the Agent Skills spec allows ${VENDOR.skillDescriptionMax}`, line("description"));
+          c.add("error", "description-too-long", `description is ${desc.length} characters; the Agent Skills spec says it must be at most ${VENDOR.skillDescriptionMax}`, line("description"));
+        }
+        const tag = XML_TAG.exec(desc);
+        if (tag) {
+          c.add("warning", "xml-tag", `description contains an XML tag ${q(tag[0], 60)}. The Claude API and claude.ai reject XML tags in a skill description, and agents can read tags there as instructions`, line("description"));
         }
         const combined = desc.length + (str(data["when_to_use"])?.length ?? 0);
         if (combined > VENDOR.skillListingChars) {
@@ -118,7 +134,7 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
     if (!fm.present && !fm.problems.length) c.add("warning", "missing-frontmatter", ".mdc rules need frontmatter (description, globs, alwaysApply); without it the rule only applies when @-mentioned");
     if (data) {
       if (data["alwaysApply"] !== undefined && typeof data["alwaysApply"] !== "boolean") {
-        c.add("error", "field-type", `alwaysApply must be true or false, not ${JSON.stringify(data["alwaysApply"])}`, line("alwaysApply"));
+        c.add("error", "field-type", `alwaysApply must be true or false, not ${q(JSON.stringify(data["alwaysApply"]) ?? "undefined", 60)}`, line("alwaysApply"));
       }
       if (data["globs"] !== undefined && data["globs"] !== null && !isStrOrList(data["globs"])) c.add("error", "field-type", "globs must be a string or a list of strings", line("globs"));
       if (data["alwaysApply"] !== true && !data["globs"] && !data["description"]) {
@@ -134,7 +150,7 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
     if (data) {
       const t = data["type"];
       if (t !== undefined && !["user", "feedback", "project", "reference"].includes(String(t))) {
-        c.add("warning", "memory-type", `Unknown memory type "${String(t).slice(0, 40)}" (expected user, feedback, project or reference)`, line("type"));
+        c.add("warning", "memory-type", `Unknown memory type ${q(String(t), 40)} (expected user, feedback, project or reference)`, line("type"));
       }
       if (!str(data["description"])) c.add("warning", "missing-description", "Memory files need a description so the index entry says when they matter");
     }
@@ -143,7 +159,7 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
   const known = KNOWN_KEYS[kind];
   if (known && data) {
     for (const k of Object.keys(data)) {
-      if (!known.keys.includes(k)) c.add("info", "unknown-key", `Frontmatter key "${k.slice(0, 60)}" is not read by ${known.reader}; it is kept but ignored`, line(k));
+      if (!known.keys.includes(k)) c.add("info", "unknown-key", `Frontmatter key ${q(k, 60)} is not read by ${known.reader}; it is kept but ignored`, line(k));
     }
   }
 }
@@ -156,6 +172,9 @@ function checkLength(doc: Doc, c: Collector, tokens: number): void {
     c.add("warning", "length", `${lines} lines; Claude Code recommends under ${VENDOR.claudeMdTargetLines} per CLAUDE.md. Move path-specific parts into .claude/rules with paths frontmatter`);
   }
   if (kind === "skill" && lines > VENDOR.skillMaxLines) c.add("warning", "length", `${lines} lines; keep SKILL.md under ${VENDOR.skillMaxLines} and move detail to referenced files`);
+  if (kind === "skill" && tokens > VENDOR.skillBodyTokens) {
+    c.add("warning", "body-tokens", `The SKILL.md body is about ${tokens} tokens; the Agent Skills spec recommends under ${VENDOR.skillBodyTokens.toLocaleString("en-US")} tokens, with detail moved to referenced files`);
+  }
   if (kind === "cursor-rule" && lines > VENDOR.cursorRuleLines) c.add("warning", "length", `${lines} lines; Cursor recommends rules under ${VENDOR.cursorRuleLines} lines`);
   if (kind === "agents-md" && bytes > VENDOR.codexAgentsMdBytes) {
     c.add("warning", "length", `${bytes} bytes; Codex reads at most ${VENDOR.codexAgentsMdBytes} bytes of AGENTS.md by default (project_doc_max_bytes), so the rest is dropped`);
@@ -194,30 +213,42 @@ function checkHidden(doc: Doc, c: Collector): void {
   for (const f of com.findings) {
     if (!f.closed) c.add("warning", "unclosed-comment", `An HTML comment opens here and never closes, so everything after it is hidden in rendered views`, f.line);
     if (f.instructionLike) {
-      c.add("warning", "hidden-instruction", `Hidden HTML comment ${f.matched}: "${f.preview.slice(0, 80)}". It is invisible when rendered but agents reading the raw file see it`, f.line);
+      c.add("warning", "hidden-instruction", `Hidden HTML comment ${f.matched}: ${q(f.preview, 80)}. It is invisible when rendered but agents reading the raw file see it`, f.line);
+    } else benign++;
+  }
+  for (const f of scanRefComments(doc.lines, doc.fence)) {
+    if (f.instructionLike) {
+      c.add("warning", "hidden-instruction", `Hidden link-reference comment ([//]: # style) ${f.matched}: ${q(f.preview, 80)}. It renders as nothing but agents reading the raw file see it`, f.line);
     } else benign++;
   }
   const benignTotal = benign + Math.max(0, com.total - com.findings.length);
   if (benignTotal > 0) {
     const note = doc.kind.kind === "claude-md" ? " Claude Code strips block-level comments before loading CLAUDE.md, but its Read tool still sees them." : "";
-    c.add("info", "hidden-comment", `${benignTotal} HTML comment(s) are hidden in rendered views.${note}`, com.findings.find((f) => !f.instructionLike)?.line ?? 1);
+    c.add("info", "hidden-comment", `${benignTotal} comment(s) (HTML or [//]: # style) are hidden in rendered views.${note}`, com.findings.find((f) => !f.instructionLike)?.line ?? 1);
   }
-  for (const line of scanHiddenStyles(doc.lines, doc.fence)) c.add("warning", "hidden-styled-text", "Inline style hides text (display:none, zero size, zero opacity or white text)", line);
+  for (const line of scanHiddenStyles(doc.lines, doc.fence)) c.add("warning", "hidden-styled-text", "Inline style or the hidden attribute hides text (display:none, zero size, zero opacity, white text or <div hidden>)", line);
 }
 
 function checkRules(doc: Doc, c: Collector): void {
   // Heuristics: exact duplicate rule lines, and "always X" next to "never X".
-  const seen = new Map<string, number>();
+  // Noise control: bold labels ("**Instructions:**") repeat by design, and a short
+  // list item repeated under another heading or parent bullet is structure, not a rule.
+  const seen = new Map<string, { line: number; section: number }>();
+  let section = 0;
   const pos = new Map<string, number>();
   const neg = new Map<string, number>();
   const start = doc.frontmatter.present ? doc.frontmatter.endLine + 1 : 0;
   for (let i = start; i < doc.lines.count; i++) {
     if (doc.fence[i]) continue;
     const len = doc.lines.end(i) - doc.lines.start(i);
-    if (len < 12 || len > 400) continue;
+    if (len > 400) continue;
+    const raw = doc.lines.line(i);
+    if (/^ {0,3}#{1,6}(\s|$)/.test(raw)) { section = i; continue; }
+    if (len < 12) continue;
+    if (BOLD_LABEL.test(raw)) continue;
+    const listItem = /^\s*(?:[-*+]|\d+[.)])\s+/.test(raw);
     const norm = trimEndChars(
-      doc.lines
-        .line(i)
+      raw
         .toLowerCase()
         .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
         .replace(/[*_`]/g, "")
@@ -227,8 +258,11 @@ function checkRules(doc: Doc, c: Collector): void {
     );
     if (norm.length < 12 || norm.startsWith("#") || norm.startsWith("|") || norm.startsWith("<!--")) continue;
     const first = seen.get(norm);
-    if (first !== undefined) c.add("warning", "duplicate-rule", `Same rule as line ${first}; duplicated rules cost context and drift apart when one is edited`, i + 1);
-    else seen.set(norm, i + 1);
+    if (first !== undefined) {
+      // Short list items ("- Quality checklist") repeat as structure under another heading or as sub-items of another bullet.
+      const structural = listItem && norm.length < 40 && (first.section !== section || /^\s+/.test(raw));
+      if (!structural) c.add("warning", "duplicate-rule", `Same rule as line ${first.line}; duplicated rules cost context and drift apart when one is edited`, i + 1);
+    } else seen.set(norm, { line: i + 1, section });
     const p = /^(?:always|you must|must|you should|should|do) (.{4,})$/.exec(norm);
     const n = /^(?:never|do not|don't|must not|mustn't|should not|shouldn't) (.{4,})$/.exec(norm);
     if (p) {
@@ -242,6 +276,9 @@ function checkRules(doc: Doc, c: Collector): void {
     }
   }
 }
+
+/** A line that is only a bold label, such as "**Instructions to user:**" or "- __Note__". Bounded by the 400-character line cap. */
+const BOLD_LABEL = /^\s*(?:[-*+]\s+)?(?:\*\*[^*\n]{1,120}\*\*|__[^_\n]{1,120}__)\s*:?\s*$/;
 
 /** Trims trailing characters from a set without a backtracking regex. */
 function trimEndChars(s: string, chars: string): string {
@@ -275,26 +312,29 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
       state = (await sandbox.probe(t, dir)).state;
       cache.set(t, state);
     }
-    if (state === "missing") c.add("warning", "broken-link", `Relative link target not found: ${l.target.slice(0, 200)}`, l.line);
-    else if (state === "outside") c.add("info", "link-outside-root", `Link points outside the allowed folder and was not checked: ${l.target.slice(0, 200)}`, l.line);
+    if (state === "missing") c.add("warning", "broken-link", `Relative link target not found: ${q(l.target, 200)}`, l.line);
+    else if (state === "outside") c.add("info", "link-outside-root", `Link points outside the allowed folder and was not checked: ${q(l.target, 200)}`, l.line);
   }
   if (!IMPORT_KINDS.includes(doc.kind.kind)) return;
   const imports = extractImports(doc.lines, doc.fence, doc.frontmatter.present ? doc.frontmatter.endLine : -1);
   for (const im of imports) {
     if (im.path.startsWith("~")) {
-      c.add("warning", "import-outside-root", `@${im.path.slice(0, 200)} imports from your home folder. Claude Code asks for approval of external imports; teammates will not have this file`, im.line);
+      c.add("warning", "import-outside-root", `${q("@" + im.path, 200)} imports from your home folder. Claude Code asks for approval of external imports; teammates will not have this file`, im.line);
       continue;
     }
     const probe = await sandbox.probe(im.path, dir);
     if (probe.state === "missing") {
+      // @scope/package (an npm name: one slash, no file extension, not ./ or ../) is far more often a package than a file.
+      const npmName = /^[a-z0-9][\w.-]*\/[a-z0-9][\w-]*$/i.test(im.path) && !/\.[A-Za-z0-9]{1,10}$/.test(im.path);
+      const sure = im.looksLikePath && !npmName;
       c.add(
-        im.looksLikePath ? "warning" : "info",
+        sure ? "warning" : "info",
         "broken-import",
-        `@${im.path.slice(0, 200)} is read as an import but the file does not exist${im.looksLikePath ? "" : ". If this is not a file, wrap it in backticks"}`,
+        `${q("@" + im.path, 200)} is read as an import but the file does not exist${sure ? "" : npmName ? ". If this is an npm package name, not a file, wrap it in backticks" : ". If this is not a file, wrap it in backticks"}`,
         im.line,
       );
     } else if (probe.state === "outside") {
-      c.add("warning", "import-outside-root", `@${im.path.slice(0, 200)} resolves outside the allowed folder; Claude Code shows an approval dialog for external imports`, im.line);
+      c.add("warning", "import-outside-root", `${q("@" + im.path, 200)} resolves outside the allowed folder; Claude Code shows an approval dialog for external imports`, im.line);
     }
   }
 }
@@ -309,6 +349,9 @@ export async function lintDoc(doc: Doc, sandbox: Sandbox): Promise<LintResult> {
   checkHidden(doc, c);
   checkRules(doc, c);
   await checkLinks(doc, sandbox, c);
+  if (hasUnsafe(doc.path)) {
+    c.add("warning", "unsafe-path", `The path ${q(doc.path, 200)} contains control, bidirectional or invisible characters (shown escaped). They can make a name read differently to people and to agents`);
+  }
   const order: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
   c.issues.sort((a, b) => order[a.severity] - order[b.severity] || a.line - b.line);
   return { path: doc.path, kind: doc.kind.kind, load: doc.kind.load, tokens, issues: c.issues };

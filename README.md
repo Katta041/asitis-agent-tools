@@ -101,9 +101,9 @@ args = ["/absolute/path/to/asitis-agent-tools/plugins/asitis/server/asitis-mcp.m
 }
 ```
 
-**Once `@asitis/mcp` is on npm**, replace `"command": "node"` and the file path with `"command": "npx"` and `"-y", "@asitis/mcp@0.1.0"`, for example `"args": ["-y", "@asitis/mcp@0.1.0", "--root", "/absolute/path/to/project"]`. Always pin the version; never use `@latest` in an agent config.
+**Once `@asitis/mcp` is on npm**, replace `"command": "node"` and the file path with `"command": "npx"` and `"-y", "@asitis/mcp@0.2.0"`, for example `"args": ["-y", "@asitis/mcp@0.2.0", "--root", "/absolute/path/to/project"]`. Always pin the version; never use `@latest` in an agent config.
 
-**Hardened**: add Node's permission model so the runtime itself denies writes, network and child processes. This is what the Claude Code plugin does:
+**Hardened**: add Node's permission model so the runtime itself denies writes and child processes (and network access on Node 25 and later). This is what the Claude Code plugin does:
 
 ```bash
 node --permission \

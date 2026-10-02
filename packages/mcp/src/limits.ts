@@ -12,7 +12,9 @@ export const VENDOR = {
   skillListingChars: 1536,
   /** Agent Skills spec (agentskills.io): name 1-64 characters. */
   skillNameMax: 64,
-  /** Agent Skills spec (agentskills.io): description up to 1,024 characters. */
+  /** Agent Skills spec (agentskills.io): SKILL.md body "< 5000 tokens recommended". */
+  skillBodyTokens: 5000,
+  /** Agent Skills spec (agentskills.io): description "Must be 1-1024 characters". */
   skillDescriptionMax: 1024,
   /** Claude Code skills docs: compatibility "a string of up to 500 characters". */
   skillCompatibilityMax: 500,

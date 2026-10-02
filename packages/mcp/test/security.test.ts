@@ -230,6 +230,32 @@ describe("no writes at all", () => {
   });
 });
 
+// Windows path forms. On Windows each must be refused for the right reason; on other
+// systems the same strings are ordinary (odd) names, so they must still be refused or not
+// found, and never return the secret. The lists are shared by both suites below.
+const BACKSLASH_TRAVERSAL = [["..\\outside\\secret.md"], ["docs\\..\\..\\outside\\secret.md"], ["..\\OUTSIDE\\SECRET.MD"], ["..\\Project\\..\\outside\\secret.md"]];
+const CASE_FOLDED_REFUSED: Array<[string, RegExp]> = [[".CLAUDE\\SETTINGS.JSON", /settings file/], [".Git\\notes.md", /inside \.git/], [".ENV.LOCAL", /environment file/], ["NODE_MODULES\\pkg\\README.md", /node_modules/]];
+const ADS = [["README.md:hidden.md"], ["README.md::$DATA"], ["README.md:hidden.md:$DATA"], [".env:x.md"], [".claude\\settings.json:x.md"], ["CLAUDE.md:$I30:$INDEX_ALLOCATION"]];
+const DEVICE_UNC = [
+  ["\\\\?\\" + "OUTSIDE_SECRET"],
+  ["\\\\.\\" + "OUTSIDE_SECRET"],
+  ["\\\\?\\" + "ROOT_DOTDOT"],
+  ["\\\\?\\UNC\\localhost\\" + "DRIVE_SHARE"],
+  ["\\\\localhost\\" + "DRIVE_SHARE"],
+  ["\\\\?\\GLOBALROOT\\Device\\HarddiskVolume1\\secret.md"],
+  ["\\\\.\\PhysicalDrive0"],
+];
+const TRAILING_ESCAPE = [[".. \\outside\\secret.md"], [".. .\\outside\\secret.md"], ["... \\outside\\secret.md"], ["link-dir.\\secret.md"], ["junction-dir \\secret.md"]];
+const TRAILING_REFUSED = [[".env."], [".env "], [".claude.\\settings.json"], [".claude \\settings.json"], [".claude\\settings.json."], ["node_modules.\\pkg\\README.md"], [".git \\notes.md"]];
+const DEVICE_NAMES = [["CON"], ["con.md"], ["NUL.md"], ["aux.md"], ["COM1.md"], ["LPT1.md"], ["CONIN$"], ["docs\\PRN.md"]];
+const fillUnc = (template: string): string => {
+  const secret = path.join(outside, "secret.md");
+  return template
+    .replace("OUTSIDE_SECRET", secret)
+    .replace("ROOT_DOTDOT", `${root}\\..\\outside\\secret.md`)
+    .replace("DRIVE_SHARE", secret.replace(/^([A-Za-z]):/, "$1$"));
+};
+
 // Windows path forms that could alias a file outside the root, or a refused file inside it.
 // Every one must be refused (or not found) without ever returning the secret.
 describe.runIf(WIN)("Windows path tricks", () => {
@@ -260,7 +286,7 @@ describe.runIf(WIN)("Windows path tricks", () => {
     expect(r.text).not.toContain(SECRET);
   });
 
-  test.each([["..\\outside\\secret.md"], ["docs\\..\\..\\outside\\secret.md"], ["..\\OUTSIDE\\SECRET.MD"], ["..\\Project\\..\\outside\\secret.md"]])(
+  test.each(BACKSLASH_TRAVERSAL)(
     "backslash and case-folded traversal %s is refused",
     async (p) => refused(p, /outside the allowed folder/),
   );
@@ -269,7 +295,7 @@ describe.runIf(WIN)("Windows path tricks", () => {
     expect(r.isError, r.text).toBe(false);
     await refused(path.join(outside.toUpperCase(), "SECRET.MD"), /outside the allowed folder/);
   });
-  test.each([[".CLAUDE\\SETTINGS.JSON", /settings file/], [".Git\\notes.md", /inside \.git/], [".ENV.LOCAL", /environment file/], ["NODE_MODULES\\pkg\\README.md", /node_modules/]])(
+  test.each(CASE_FOLDED_REFUSED)(
     "case-folded refused file %s stays refused",
     async (p, re) => refused(p, re),
   );
@@ -285,41 +311,42 @@ describe.runIf(WIN)("Windows path tricks", () => {
     if (settingsShort) await safe(settingsShort, /settings file|not a markdown file|outside the allowed folder/);
   });
 
-  test.each([["README.md:hidden.md"], ["README.md::$DATA"], ["README.md:hidden.md:$DATA"], [".env:x.md"], [".claude\\settings.json:x.md"], ["CLAUDE.md:$I30:$INDEX_ALLOCATION"]])(
+  test.each(ADS)(
     "alternate data stream %s is refused",
     async (p) => refused(p, /alternate data stream|environment file|not a markdown file/),
   );
 
-  test.each([
-    ["\\\\?\\" + "OUTSIDE_SECRET"],
-    ["\\\\.\\" + "OUTSIDE_SECRET"],
-    ["\\\\?\\" + "ROOT_DOTDOT"],
-    ["\\\\?\\UNC\\localhost\\" + "DRIVE_SHARE"],
-    ["\\\\localhost\\" + "DRIVE_SHARE"],
-    ["\\\\?\\GLOBALROOT\\Device\\HarddiskVolume1\\secret.md"],
-    ["\\\\.\\PhysicalDrive0"],
-  ])("device and UNC path %s is refused", async (template) => {
-    const secret = path.join(outside, "secret.md");
-    const p = template
-      .replace("OUTSIDE_SECRET", secret)
-      .replace("ROOT_DOTDOT", `${root}\\..\\outside\\secret.md`)
-      .replace("DRIVE_SHARE", secret.replace(/^([A-Za-z]):/, "$1$"));
+  test.each(DEVICE_UNC)("device and UNC path %s is refused", async (template) => {
+    const p = fillUnc(template);
     await safe(p, /Refused|File not found|outside the allowed folder/);
   });
 
-  test.each([[".. \\outside\\secret.md"], [".. .\\outside\\secret.md"], ["... \\outside\\secret.md"], ["link-dir.\\secret.md"], ["junction-dir \\secret.md"]])(
+  test.each(TRAILING_ESCAPE)(
     "trailing dots and spaces in %s cannot escape",
     async (p) => safe(p),
   );
-  test.each([[".env."], [".env "], [".claude.\\settings.json"], [".claude \\settings.json"], [".claude\\settings.json."], ["node_modules.\\pkg\\README.md"], [".git \\notes.md"]])(
+  test.each(TRAILING_REFUSED)(
     "trailing dots and spaces in %s do not unlock a refused file",
     async (p) => safe(p, /Refused|File not found/),
   );
 
-  test.each([["CON"], ["con.md"], ["NUL.md"], ["aux.md"], ["COM1.md"], ["LPT1.md"], ["CONIN$"], ["docs\\PRN.md"]])(
+  test.each(DEVICE_NAMES)(
     "reserved device name %s is refused without opening a device",
     async (p) => refused(p, /reserved Windows device name|not a markdown file/),
   );
+});
+
+// The same Windows path forms on macOS and Linux, where they are plain file names:
+// each must be refused or not found, and must never return the secret.
+describe.skipIf(WIN)("Windows path forms on other systems", () => {
+  const safe = async (p: string): Promise<void> => refused(p, /Refused|File not found|not a markdown file|outside the allowed folder/);
+  test.each(BACKSLASH_TRAVERSAL)("backslash traversal %s is refused or not found", async (p) => safe(p));
+  test.each(CASE_FOLDED_REFUSED)("case-folded name %s is refused or not found", async (p) => safe(p));
+  test.each(ADS)("stream-style name %s is refused or not found", async (p) => safe(p));
+  test.each(DEVICE_UNC)("device or UNC form %s is refused or not found", async (t) => safe(fillUnc(t)));
+  test.each(TRAILING_ESCAPE)("trailing dots and spaces in %s cannot escape", async (p) => safe(p));
+  test.each(TRAILING_REFUSED)("trailing dots and spaces in %s do not unlock a refused file", async (p) => safe(p));
+  test.each(DEVICE_NAMES)("device name %s is refused or not found", async (p) => safe(p));
 });
 
 // The Windows-only refusals are pure string checks, so they are exercised on every OS too.

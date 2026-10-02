@@ -92,10 +92,11 @@ export function readFrontmatter(lines: LineIndex): Frontmatter {
   const yamlText: string[] = [];
   for (let j = open + 1; j < close; j++) yamlText.push(lines.line(j));
   const src = yamlText.join("\n");
-  const doc = parseDocument(src, { uniqueKeys: true, prettyErrors: false, strict: true });
+  // prettyErrors fills linePos (1-based within the YAML text); without it every error fell back to line 1.
+  const doc = parseDocument(src, { uniqueKeys: true, prettyErrors: true, strict: true });
   if (doc.errors.length > 0) {
     const e = doc.errors[0]!;
-    const lineInFm = e.linePos?.[0]?.line ?? 1;
+    const lineInFm = Math.min(Math.max(e.linePos?.[0]?.line ?? 1, 1), Math.max(close - open - 1, 1));
     const msg = (e.message.split("\n")[0] ?? "parse error").replace(/\s+at line \d+, column \d+:?$/, "");
     out.problems.push({
       rule: "frontmatter-yaml",
