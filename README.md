@@ -1,20 +1,27 @@
 # AsItIs agent tools
 
-**Read-only tools for markdown and AI agent steering files.** An MCP server and a Claude Code plugin that read, outline, lint and budget `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `SKILL.md`, subagents, commands, rules, Cursor `.mdc` rules, Copilot instructions and memory files, without being able to change any of them.
+**Lint CLAUDE.md, AGENTS.md and SKILL.md before your agent reads them.** A free Claude Code plugin and MCP server that checks steering files against the vendors' published rules, estimates the tokens they load every session, and flags hidden instructions: comments addressed to the AI, zero-width and bidirectional characters, styled-away text. Read-only, no network, MIT.
 
-From [AsItIs](https://asitis.app), the markdown editor that never rewrites your file. MIT licensed.
+[![License: MIT](https://img.shields.io/badge/license-MIT-007370)](LICENSE)
+[![Version](https://img.shields.io/github/v/tag/Katta041/asitis-agent-tools?label=version&color=007370)](https://github.com/Katta041/asitis-agent-tools/tags)
+[![Node 22.13+](https://img.shields.io/badge/node-%3E%3D22.13-007370)](https://nodejs.org)
+[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-007370)](https://asitis.app/claude-code)
 
-- **No writes.** There is no write, patch or delete tool, and no write code in the server.
-- **No network.** No telemetry, no update check, no remote calls. It speaks MCP over stdio only.
-- **One folder.** It reads only markdown under the folder you start it with.
+```bash
+claude plugin marketplace add Katta041/asitis-agent-tools
+claude plugin install asitis@asitis
+```
 
-| Part | Where | What it is |
-|---|---|---|
-| MCP server `@asitis/mcp` | [`packages/mcp`](packages/mcp) | Five read-only tools for any MCP client. One bundled file, zero runtime dependencies. |
-| Claude Code plugin `asitis` | [`plugins/asitis`](plugins/asitis) | The server (vendored, pinned by SHA-256, run under Node's permission model), a byte-clean editing skill, `/asitis:md-lint`, `/asitis:md-budget` and an optional accident guard hook. |
-| Fixtures | [`test-fixtures`](test-fixtures) | Byte-exact simulated steering files and encodings used by the tests. |
+Then run `/asitis:md-lint` or `/asitis:md-budget` in a session. No install? Paste a file into the [browser checker](https://asitis.app/tools/steering-file-checker): same linter, nothing uploaded.
 
-This repository is also a Claude Code plugin marketplace (`.claude-plugin/marketplace.json`).
+<!-- Hero GIF goes here once recorded (see the plan below), for example:
+![Claude Code running /asitis:md-lint on a sample project](docs/hero.gif) -->
+
+- **Lint:** frontmatter on line 1 and valid YAML, SKILL.md name and description rules, CLAUDE.md 200 lines, SKILL.md 500 lines, Codex's 32 KiB, broken links and `@imports`, duplicate and contradictory rules.
+- **Budget:** approximate tokens per file and per tool for what loads every session (Claude Code, Codex, Gemini CLI, Cursor, Copilot).
+- **Hidden content:** HTML and `[//]: #` comments that read like instructions, invisible Unicode, bidi controls, `display:none` text.
+- **Guard (optional):** warns before Claude rewrites a whole markdown file or strips its line endings, trailing spaces or BOM. An accident guard, not a security boundary.
+- **Read-only:** no write tool, no network code, runs under Node's permission model in the plugin.
 
 ## Install
 
