@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Katta041/asitis-mcp",
+  "title": "AsItIs",
+  "description": "Read-only MCP server for markdown and agent steering files: read, outline, lint, context budget.",
+  "websiteUrl": "https://asitis.app/?ref=mcp-registry",
+  "repository": {
+    "url": "https://github.com/Katta041/asitis-agent-tools",
+    "source": "github",
+    "subfolder": "packages/mcp"
+  },
+  "version": "0.2.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@asitis/mcp",
+      "version": "0.2.2",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "named",
+          "name": "--root",
+          "description": "Absolute path of the project folder the server may read. Repeat --root for a second folder, such as a memory folder outside the project. Without it the server reads the folder it was started in, which in many MCP clients is not your project (and the home folder or filesystem root is refused).",
+          "format": "filepath",
+          "placeholder": "/absolute/path/to/project",
+          "isRequired": true,
+          "isRepeated": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 // Supply-chain and packaging guarantees, plugin consistency, and copy rules.
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { VERSION } from "../src/version.js";
@@ -36,6 +36,18 @@ function files(dir: string, skip: (p: string) => boolean = () => false): string[
   return out;
 }
 
+/**
+ * The files git tracks under `dir` (staged files included), so local build artifacts
+ * (a stray `npm pack` .tgz, dist output) are never scanned as authored copy. Outside a
+ * git checkout it falls back to walking the tree, still skipping .tgz files.
+ */
+function authoredFiles(dir: string, skip: (p: string) => boolean): string[] {
+  const r = spawnSync("git", ["ls-files", "-z", "--cached", "--", "."], { cwd: dir, encoding: "utf8" });
+  const listed = r.status === 0 ? r.stdout.split("\0").filter(Boolean).map((f) => path.join(dir, f)) : null;
+  const all = listed && listed.length > 0 ? listed : files(dir, (p) => skip(p) || p.endsWith(".tgz"));
+  return all.filter((p) => !skip(p) && !p.endsWith(".tgz") && existsSync(p) && statSync(p).isFile());
+}
+
 describe("npm package", () => {
   test("zero runtime dependencies and no install scripts", () => {
     expect(pkg.dependencies ?? {}).toEqual({});
@@ -48,6 +60,20 @@ describe("npm package", () => {
     expect(pkg.devDependencies["@modelcontextprotocol/sdk"]).toBe("1.31.0");
   });
   test("version constant matches package.json", () => expect(VERSION).toBe(pkg.version));
+  test("MCP Registry metadata: server.json matches package.json (validated with mcp-publisher validate)", () => {
+    const server = JSON.parse(read(path.join(PKG, "server.json")));
+    // GitHub auth grants io.github.<login>/*, matched case-sensitively, and the login is Katta041.
+    expect(pkg.mcpName).toBe("io.github.Katta041/asitis-mcp");
+    expect(server.name).toBe(pkg.mcpName);
+    expect(server.$schema).toMatch(/^https:\/\/static\.modelcontextprotocol\.io\/schemas\/\d{4}-\d{2}-\d{2}\/server\.schema\.json$/);
+    expect(server.name).toMatch(/^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/);
+    expect(server.description.length).toBeLessThanOrEqual(100);
+    expect(server.version).toBe(pkg.version);
+    expect(server.packages).toHaveLength(1);
+    const p = server.packages[0];
+    expect(p).toMatchObject({ registryType: "npm", identifier: pkg.name, version: pkg.version, transport: { type: "stdio" } });
+    expect(p.packageArguments.map((a: { name: string }) => a.name)).toEqual(["--root"]);
+  });
   test("provenance on, public access", () => expect(pkg.publishConfig).toEqual({ access: "public", provenance: true }));
   test("the published tarball contains only the bundle, notices and docs", () => {
     const r = npm(["pack", "--dry-run", "--json", "--ignore-scripts"], PKG);
@@ -138,11 +164,17 @@ describe("Claude Code plugin", () => {
 const ATTRIBUTION = new RegExp(["Co-" + "Authored-By", "Generated " + "with", "generated " + "by (claude|ai|chatgpt)"].join("|"), "i");
 
 describe("copy rules: no em-dashes, no emoji, no AI attribution in anything we author", () => {
-  // Everything in the repository except dependencies, build output, the vendored
-  // bundle with its third-party notices, the lockfile, and the byte-level fixtures
-  // (which contain emoji and odd bytes on purpose).
+  // Every git-tracked file in the repository except the vendored bundle with its
+  // third-party notices, the lockfile, and the byte-level fixtures (which contain emoji
+  // and odd bytes on purpose). Untracked build artifacts (a local .tgz, dist) are never scanned.
   const SKIP = new Set(["node_modules", ".git", "dist", "test-fixtures", "package-lock.json", "asitis-mcp.mjs", "THIRD_PARTY_NOTICES.md"]);
-  const authored = files(REPO, (p) => SKIP.has(path.basename(p))).filter((p) => statSync(p).isFile());
+  const authored = authoredFiles(REPO, (p) => path.relative(REPO, p).split(path.sep).some((s) => SKIP.has(s)));
+  test("build artifacts are not scanned: only git-tracked files, never a local .tgz or dist output", () => {
+    expect(authored.length).toBeGreaterThan(10);
+    expect(authored.some((p) => p.endsWith(".tgz"))).toBe(false);
+    expect(authored.some((p) => p.includes(path.join(PKG, "dist")))).toBe(false);
+    expect(authored).toContain(path.join(PLUGIN, "hooks", "guard.mjs"));
+  });
   test.each(authored.map((p) => path.relative(REPO, p)))("%s", (rel) => {
     const text = read(path.resolve(REPO, rel));
     expect(text, "em-dash").not.toContain(String.fromCharCode(0x2014));

@@ -17,18 +17,26 @@
 //
 // Fails closed: if the hook input cannot be read, the change is blocked (exit 2)
 // with a message saying why. Claude Code runs the hook with a 10 s timeout and
-// lets the change through when a hook times out, so the guard keeps its own 7 s
-// budget: a check that cannot finish in time asks (or, in deny mode, blocks)
-// instead of running into the timeout. Dependency-free, read-only: it never
-// writes files.
+// lets the change through when a hook times out, so the guard keeps its own 6 s
+// budget, counted from process start: a check that cannot finish in time asks
+// (or, in deny mode, blocks) instead of running into the timeout. The 4 s of
+// headroom covers what the budget cannot interrupt on a slow machine: spawning
+// node, reading and decoding a file of up to 16 MB, and the last unchecked step
+// of the analysis. Dependency-free, read-only: it never writes files.
 
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 const MAX_BYTES = 16 * 1024 * 1024;
-const STARTED = Date.now();
-/** Time budget for one check, well inside the 10 s hook timeout in hooks.json. */
-const BUDGET_MS = Math.min(Number(process.env.ASITIS_GUARD_BUDGET_MS) > 0 ? Number(process.env.ASITIS_GUARD_BUDGET_MS) : 7000, 7000);
+/** When the process started, so node start-up counts against the budget too. */
+const STARTED = Date.now() - Math.round(process.uptime() * 1000);
+/**
+ * Time budget for one check, well inside the 10 s hook timeout in hooks.json.
+ * ASITIS_GUARD_BUDGET_MS can only lower it (tests use that to exercise the
+ * fail-closed path without depending on machine speed).
+ */
+const DEFAULT_BUDGET_MS = 6000;
+const BUDGET_MS = Math.min(Number(process.env.ASITIS_GUARD_BUDGET_MS) > 0 ? Number(process.env.ASITIS_GUARD_BUDGET_MS) : DEFAULT_BUDGET_MS, DEFAULT_BUDGET_MS);
 const MODES = new Set(["ask", "deny", "off"]);
 
 class OutOfTime extends Error {}

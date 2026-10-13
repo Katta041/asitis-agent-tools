@@ -2,6 +2,15 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-10-14
+
+### Added
+- Official MCP Registry metadata: `mcpName` (`io.github.Katta041/asitis-mcp`) in `package.json` and a `server.json` that describes the npm package, its stdio transport and the `--root` argument. No change to the server itself.
+
+### Fixed
+- The guard hook test that checks the fail-closed time budget no longer depends on machine speed. It lowers the budget through `ASITIS_GUARD_BUDGET_MS` instead of timing a large MultiEdit against the clock.
+- The copy-rules test scans only files tracked by git, so a local `npm pack` tarball or build output is never reported as authored copy.
+
 ## [0.2.1] - 2026-10-13
 
 ### Fixed

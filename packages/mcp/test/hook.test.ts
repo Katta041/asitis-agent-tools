@@ -274,8 +274,10 @@ describe("fails closed instead of timing out", () => {
   let big: string;
   beforeAll(() => {
     t = tempDir("asitis-hook-time-");
-    big = path.join(t.dir, "huge.md");
-    writeFileSync(big, "| a | b |  \r\n".repeat(1_200_000)); // about 14 MB, CRLF, just under the 16 MB cap
+    big = path.join(t.dir, "big.md");
+    // About 1 MB, CRLF, trailing spaces. The budget is lowered to 1 ms, so the size does not
+    // matter for the outcome; a small file keeps the run fast on a busy machine.
+    writeFileSync(big, "| a | b |  \r\n".repeat(80_000));
   });
   afterAll(() => t.cleanup());
   test("over its budget the guard asks (ask mode) or blocks (deny mode); it never lets the change through", () => {
@@ -285,14 +287,40 @@ describe("fails closed instead of timing out", () => {
     const d = runHook(e, { ASITIS_GUARD_BUDGET_MS: "1", ASITIS_GUARD_MODE: "deny" });
     expect(d.json?.["hookSpecificOutput"]?.["permissionDecision"]).toBe("deny");
   });
-  test("a MultiEdit too large to check answers on its own 7 s budget, before the 10 s hook timeout", () => {
+  // Deterministic: the budget is lowered through ASITIS_GUARD_BUDGET_MS (which can only
+  // lower it) and is counted from process start, so the budget is always spent before
+  // the first check, whatever the machine speed. No wall-clock assertion.
+  test("a MultiEdit too large to check answers on its own budget instead of finishing the check", () => {
     const f = path.join(t.dir, "clean.md");
-    writeFileSync(f, "| a | b |\r\n".repeat(1_400_000)); // about 14 MB, no trailing spaces
-    const edits = Array.from({ length: 6000 }, (_, i) => ({ old_string: "| a |", new_string: `| a${i} |` }));
-    const r = runHook(pre("MultiEdit", { file_path: f, edits }));
-    expect(r.ms).toBeLessThan(10_000);
-    asks(r, /could not be checked within 7 s/);
-  }, 30_000);
+    writeFileSync(f, "| a | b |\r\n".repeat(30_000)); // about 300 KB, CRLF, no trailing spaces: a clean edit
+    const edits = Array.from({ length: 200 }, (_, i) => ({ old_string: "| a |", new_string: `| a${i} |` }));
+    const e = pre("MultiEdit", { file_path: f, edits });
+    passes(runHook(e)); // within the default budget the same MultiEdit is checked and clean
+    asks(runHook(e, { ASITIS_GUARD_BUDGET_MS: "1" }), /MultiEdit on clean\.md could not be checked within 1 ms/);
+    const d = runHook(e, { ASITIS_GUARD_BUDGET_MS: "1", ASITIS_GUARD_MODE: "deny" });
+    expect(d.status, d.stderr).toBe(0);
+    expect(d.json?.["hookSpecificOutput"]?.["permissionDecision"]).toBe("deny");
+    expect(d.json?.["hookSpecificOutput"]?.["permissionDecisionReason"]).toMatch(/could not be checked within 1 ms/);
+  });
+  test("an invalid override falls back to the default budget instead of disabling the check", () => {
+    const f = path.join(t.dir, "small.md");
+    writeFileSync(f, "# T\r\na\r\nb\r\n");
+    const e = pre("Edit", { file_path: f, old_string: "a", new_string: "A" });
+    for (const v of ["0", "-5", "abc", ""]) passes(runHook(e, { ASITIS_GUARD_BUDGET_MS: v }));
+  });
+  test("the default budget leaves at least 3 s of the 10 s hook timeout for start-up and the last unchecked step", () => {
+    const src = readFileSync(HOOK, "utf8");
+    const m = /const DEFAULT_BUDGET_MS = (\d+);/.exec(src);
+    expect(m).not.toBeNull();
+    const budget = Number(m![1]);
+    const hooks = JSON.parse(readFileSync(path.join(PLUGIN, "hooks/hooks.json"), "utf8"));
+    const timeoutS = hooks.hooks.PreToolUse[0].hooks[0].timeout as number;
+    expect(timeoutS).toBe(10);
+    expect(budget).toBe(6000);
+    expect(timeoutS * 1000 - budget).toBeGreaterThanOrEqual(3000);
+    // The budget counts from process start, so node start-up is inside it.
+    expect(src).toMatch(/const STARTED = Date\.now\(\) - Math\.round\(process\.uptime\(\) \* 1000\);/);
+  });
   test("a file over 16 MB is not waved through unchecked", () => {
     const f = path.join(t.dir, "over.md");
     writeFileSync(f, "x".repeat(17 * 1024 * 1024));

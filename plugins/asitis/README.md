@@ -71,7 +71,7 @@ Any other value is treated as `deny`, the safest mode, and the guard says so in 
 
 It fails closed:
 - If the hook input is not valid JSON or lacks the fields it needs, the change is blocked with a one-line message saying why (`AsItIs guard: the hook input is not valid JSON. The change was blocked to be safe; ...`).
-- Claude Code gives the hook 10 seconds and lets the change through if a hook times out. The guard therefore stops itself after 7 seconds, and on files over 16 MB, and asks you (blocks in `deny` mode) instead of letting an unchecked change through.
+- Claude Code gives the hook 10 seconds and lets the change through if a hook times out. The guard therefore stops itself after 6 seconds (counted from when the hook process starts), and on files over 16 MB, and asks you (blocks in `deny` mode) instead of letting an unchecked change through.
 
 Set `ASITIS_GUARD_MODE` to `off` if that ever gets in your way.
 

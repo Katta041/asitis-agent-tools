@@ -2,6 +2,15 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-10-14
+
+### Fixed
+- The guard hook's own time budget is 6 s instead of 7 s and now counts from the moment the hook process starts. Node start-up and the work the budget cannot interrupt (reading and decoding a file of up to 16 MB) used to fall outside it, so on a slow machine the check could run into Claude Code's 10 s hook timeout, which lets the change through. The guard now always answers first: it asks, or blocks in `deny` mode.
+- The guard's fail-closed test is deterministic: it lowers the budget through `ASITIS_GUARD_BUDGET_MS` (which can only lower it) instead of measuring wall-clock time.
+
+### Changed
+- The bundled server is `@asitis/mcp` 0.2.2, which adds MCP Registry metadata and no behaviour changes.
+
 ## [0.2.1] - 2026-10-13
 
 ### Fixed

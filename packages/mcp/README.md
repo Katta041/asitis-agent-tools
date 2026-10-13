@@ -63,7 +63,7 @@ claude plugin marketplace add Katta041/asitis-agent-tools
 claude plugin install asitis@asitis
 ```
 
-Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.2.1 --root "$PWD"`.
+Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.2.2 --root "$PWD"`.
 
 ### Claude Desktop
 
@@ -74,7 +74,7 @@ Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.2.1 --roo
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.2", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -89,7 +89,7 @@ Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.2.1 --roo
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.1", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.2.2", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -104,7 +104,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 ```toml
 [mcp_servers.asitis]
 command = "npx"
-args = ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]
+args = ["-y", "@asitis/mcp@0.2.2", "--root", "/absolute/path/to/project"]
 ```
 
 ### Gemini CLI
@@ -116,7 +116,7 @@ args = ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.2", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -127,7 +127,7 @@ args = ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]
 Run the file directly under Node's permission model so Node itself denies writes and child processes (and network access on Node 25 and later):
 
 ```bash
-npm install -g @asitis/mcp@0.2.1
+npm install -g @asitis/mcp@0.2.2
 node --permission \
   --allow-fs-read="$(npm root -g)/@asitis/mcp" \
   --allow-fs-read=/absolute/path/to/project \
