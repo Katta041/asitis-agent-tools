@@ -50,7 +50,9 @@ The plugin never downloads the server at runtime. See [`plugins/asitis/README.md
 
 ### Other MCP clients (Claude Desktop, Cursor, Codex, Gemini CLI)
 
-`@asitis/mcp` is **not on npm yet (coming soon)**. Until it is, run the server from a clone. The plugin folder already contains the built, pinned server, so no install or build step is needed:
+`@asitis/mcp` is on npm: use `"command": "npx"` with `"args": ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]`. Always pin the version; never use `@latest` in an agent config.
+
+Or run it from a clone. The plugin folder already contains the built, pinned server, so no install or build step is needed:
 
 ```bash
 git clone https://github.com/Katta041/asitis-agent-tools.git
@@ -107,8 +109,6 @@ args = ["/absolute/path/to/asitis-agent-tools/plugins/asitis/server/asitis-mcp.m
   }
 }
 ```
-
-**Once `@asitis/mcp` is on npm**, replace `"command": "node"` and the file path with `"command": "npx"` and `"-y", "@asitis/mcp@0.2.1"`, for example `"args": ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]`. Always pin the version; never use `@latest` in an agent config.
 
 **Hardened**: add Node's permission model so the runtime itself denies writes and child processes (and network access on Node 25 and later). This is what the Claude Code plugin does:
 

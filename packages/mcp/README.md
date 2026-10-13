@@ -52,8 +52,6 @@ Known limits: token counts are local approximations (about 4 characters per toke
 
 Requires Node 22.13 or later.
 
-> **Not on npm yet (coming soon).** Until `@asitis/mcp` is published, run the pinned build from a clone of the repository, which needs no install or build step: `git clone https://github.com/Katta041/asitis-agent-tools.git`, then use `node` with the absolute path to `plugins/asitis/server/asitis-mcp.mjs` wherever the configs below say `npx -y @asitis/mcp@0.2.1`. The [repository README](https://github.com/Katta041/asitis-agent-tools#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli) has those configs written out.
-
 Always pin the version; never use `@latest` in an agent config.
 
 ### Claude Code
