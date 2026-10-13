@@ -2,6 +2,12 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-10-13
+
+### Fixed
+- `hidden-instruction` no longer fires on a product name alone, such as a comment saying a file was made with Claude Code, or "claude" inside a URL. A comment must speak to the assistant: by name followed by a comma or colon ("Claude, ..."), with the name as the subject of a directive ("Copilot should ..."), or with the existing cues ("ignore previous instructions", "you must", "note to the AI:"). URLs are ignored when classifying. ([#2](https://github.com/Katta041/asitis-agent-tools/issues/2))
+- `duplicate-rule` compares whole list items and whole sentences, with wrapped lines joined first, instead of single lines. Markup-only lines such as `</details>`, short labels such as "Code comments:", and short emphasis sentences such as "No exceptions." are not rules. On a sample of 200 public CLAUDE.md and AGENTS.md files this removes all 5 noisy findings and keeps the 4 real duplicates. ([#3](https://github.com/Katta041/asitis-agent-tools/issues/3))
+
 ## [0.2.0] - 2026-10-03
 
 ### Fixed

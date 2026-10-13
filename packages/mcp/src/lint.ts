@@ -229,52 +229,142 @@ function checkHidden(doc: Doc, c: Collector): void {
   for (const line of scanHiddenStyles(doc.lines, doc.fence)) c.add("warning", "hidden-styled-text", "Inline style or the hidden attribute hides text (display:none, zero size, zero opacity, white text or <div hidden>)", line);
 }
 
+/** One rule candidate: a whole list item or a whole paragraph, with wrapped lines joined (issue #3). */
+interface Block {
+  text: string; // joined with single spaces
+  lineAt: number[]; // offset in `text` where each source line starts
+  firstLine: number; // 0-based
+  listItem: boolean;
+  nested: boolean; // the list item is indented under another
+  section: number;
+}
+
+const LIST_MARKER = /^\s*(?:[-*+]|\d{1,9}[.)])\s+/;
+const HEADING = /^ {0,3}#{1,6}(\s|$)/;
+/** Thematic breaks and setext underlines: ---, ***, ___, ===. */
+const RULE_LINE = /^ {0,3}(?:[-*_=] *){3,}$/;
+/** Lines that are only HTML tags (`</details>`, `<summary>Example</summary>` is not: it has text). */
+const MARKUP_ONLY = /^\s*(?:<\/?[A-Za-z][\w.:-]{0,60}(?:\s[^<>\n]{0,300})?\/?>\s*){1,12}$/;
+const MAX_BLOCK_CHARS = 2000;
+/** An HTML tag inside a rule ("<summary>Example</summary>" compares as "example"). */
+const HTML_TAG = /<\/?[A-Za-z][\w.:-]{0,60}(?:\s[^<>\n]{0,300})?\/?>/g;
+
+/** Splits a joined block at sentence ends (". " before a capital, digit, quote or markup), keeping start offsets. */
+function sentences(text: string): Array<{ at: number; text: string }> {
+  const out: Array<{ at: number; text: string }> = [];
+  let from = 0;
+  for (let i = 0; i < text.length - 2; i++) {
+    const ch = text.charCodeAt(i);
+    if ((ch !== 46 && ch !== 33 && ch !== 63) || text.charCodeAt(i + 1) !== 32) continue;
+    const next = text[i + 2]!;
+    if (!/[A-Z0-9`*_"'([]/.test(next)) continue;
+    // "e.g. Foo", "i.e. Bar", "vs. Baz": a lowercase one- or two-letter word before the dot is an abbreviation.
+    if (ch === 46 && /(?:^|[\s(.])(?:[a-z]{1,2}|etc|vs)$/.test(text.slice(Math.max(from, i - 4), i))) continue;
+    out.push({ at: from, text: text.slice(from, i + 1) });
+    from = i + 2;
+  }
+  out.push({ at: from, text: text.slice(from) });
+  return out;
+}
+
+function normRule(s: string): string {
+  return trimEndChars(
+    s
+      .toLowerCase()
+      .replace(LIST_MARKER, "")
+      .replace(HTML_TAG, " ")
+      .replace(/[*_`]/g, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+    ".!;:, ",
+  );
+}
+
 function checkRules(doc: Doc, c: Collector): void {
-  // Heuristics: exact duplicate rule lines, and "always X" next to "never X".
-  // Noise control: bold labels ("**Instructions:**") repeat by design, and a short
-  // list item repeated under another heading or parent bullet is structure, not a rule.
+  // Heuristics: duplicate rules, and "always X" next to "never X".
+  // A rule is a whole list item or a sentence of a paragraph, with wrapped lines joined
+  // first, so the continuation lines of two different sentences ("the contribution
+  // guide.") never match. Markup-only lines (`</details>`), headings, tables, comments
+  // and thematic breaks are not rules.
+  // Noise control: bold labels ("**Instructions:**") and short labels ("Code comments:")
+  // repeat by design, and a short list item repeated under another heading or parent
+  // bullet is structure, not a rule.
   const seen = new Map<string, { line: number; section: number }>();
-  let section = 0;
   const pos = new Map<string, number>();
   const neg = new Map<string, number>();
   const start = doc.frontmatter.present ? doc.frontmatter.endLine + 1 : 0;
-  for (let i = start; i < doc.lines.count; i++) {
-    if (doc.fence[i]) continue;
-    const len = doc.lines.end(i) - doc.lines.start(i);
-    if (len > 400) continue;
-    const raw = doc.lines.line(i);
-    if (/^ {0,3}#{1,6}(\s|$)/.test(raw)) { section = i; continue; }
-    if (len < 12) continue;
-    if (BOLD_LABEL.test(raw)) continue;
-    const listItem = /^\s*(?:[-*+]|\d+[.)])\s+/.test(raw);
-    const norm = trimEndChars(
-      raw
-        .toLowerCase()
-        .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
-        .replace(/[*_`]/g, "")
-        .replace(/\s+/g, " ")
-        .trim(),
-      ".!;:, ",
-    );
-    if (norm.length < 12 || norm.startsWith("#") || norm.startsWith("|") || norm.startsWith("<!--")) continue;
-    const first = seen.get(norm);
-    if (first !== undefined) {
-      // Short list items ("- Quality checklist") repeat as structure under another heading or as sub-items of another bullet.
-      const structural = listItem && norm.length < 40 && (first.section !== section || /^\s+/.test(raw));
-      if (!structural) c.add("warning", "duplicate-rule", `Same rule as line ${first.line}; duplicated rules cost context and drift apart when one is edited`, i + 1);
-    } else seen.set(norm, { line: i + 1, section });
-    const p = /^(?:always|you must|must|you should|should|do) (.{4,})$/.exec(norm);
-    const n = /^(?:never|do not|don't|must not|mustn't|should not|shouldn't) (.{4,})$/.exec(norm);
-    if (p) {
-      const other = neg.get(p[1]!);
-      if (other !== undefined) c.add("warning", "contradiction", `Looks contradictory with line ${other} (one says do, the other says do not)`, i + 1);
-      if (!pos.has(p[1]!)) pos.set(p[1]!, i + 1);
-    } else if (n) {
-      const other = pos.get(n[1]!);
-      if (other !== undefined) c.add("warning", "contradiction", `Looks contradictory with line ${other} (one says do, the other says do not)`, i + 1);
-      if (!neg.has(n[1]!)) neg.set(n[1]!, i + 1);
+  let section = 0;
+  let block: Block | null = null;
+
+  const flush = (): void => {
+    const b = block;
+    block = null;
+    if (!b) return;
+    if (b.lineAt.length === 1 && BOLD_LABEL.test(b.text)) return;
+    // Sentences come in order, so one forward pointer maps offsets to lines.
+    let k = 0;
+    const lineOf = (at: number): number => {
+      while (k + 1 < b.lineAt.length && b.lineAt[k + 1]! <= at) k++;
+      return b.firstLine + k + 1;
+    };
+    // A list item is one rule; a paragraph is a run of sentences.
+    const parts = b.listItem ? [{ at: 0, text: b.text }] : sentences(b.text);
+    for (const part of parts) {
+      const norm = normRule(part.text);
+      if (norm.length < 12 || norm.startsWith("#") || norm.startsWith("|") || norm.startsWith("<!--")) continue;
+      // A sentence taken out of a longer paragraph needs four words to be a rule:
+      // emphasis such as "No exceptions." or "Every single time." repeats by design.
+      if (parts.length > 1 && norm.split(" ").length < 4) continue;
+      // A short label that introduces a list or code ("Code comments:") is not a rule.
+      if (norm.length < 40 && part.text.replace(/[*_`\s]+$/, "").endsWith(":")) continue;
+      const line = lineOf(part.at);
+      const first = seen.get(norm);
+      if (first !== undefined) {
+        // Short list items ("- Quality checklist") repeat as structure under another heading or as sub-items of another bullet.
+        const structural = b.listItem && norm.length < 40 && (first.section !== b.section || b.nested);
+        if (!structural) c.add("warning", "duplicate-rule", `Same rule as line ${first.line}; duplicated rules cost context and drift apart when one is edited`, line);
+      } else seen.set(norm, { line, section: b.section });
+      const p = /^(?:always|you must|must|you should|should|do) (.{4,})$/.exec(norm);
+      const n = /^(?:never|do not|don't|must not|mustn't|should not|shouldn't) (.{4,})$/.exec(norm);
+      if (p) {
+        const other = neg.get(p[1]!);
+        if (other !== undefined) c.add("warning", "contradiction", `Looks contradictory with line ${other} (one says do, the other says do not)`, line);
+        if (!pos.has(p[1]!)) pos.set(p[1]!, line);
+      } else if (n) {
+        const other = pos.get(n[1]!);
+        if (other !== undefined) c.add("warning", "contradiction", `Looks contradictory with line ${other} (one says do, the other says do not)`, line);
+        if (!neg.has(n[1]!)) neg.set(n[1]!, line);
+      }
     }
+  };
+
+  for (let i = start; i < doc.lines.count; i++) {
+    if (doc.fence[i]) { flush(); continue; }
+    const len = doc.lines.end(i) - doc.lines.start(i);
+    if (len > 400) { flush(); continue; } // too long to compare; it ends the block it belongs to
+    const raw = doc.lines.line(i);
+    const trimmed = raw.trim();
+    if (HEADING.test(raw)) { flush(); section = i; continue; }
+    if (!trimmed || RULE_LINE.test(raw) || MARKUP_ONLY.test(raw) || trimmed.startsWith("|") || trimmed.startsWith("<!--")) { flush(); continue; }
+    const marker = LIST_MARKER.exec(raw);
+    if (marker || !block) {
+      flush();
+      const text = trimmed.replace(/\s+/g, " ");
+      block = { text, lineAt: [0], firstLine: i, listItem: !!marker, nested: !!marker && /^\s+/.test(raw), section };
+      continue;
+    }
+    // A wrapped continuation line of the current list item or paragraph.
+    const b: Block = block;
+    if (b.text.length + 1 + trimmed.length > MAX_BLOCK_CHARS) {
+      // A very long paragraph is compared in pieces, which keeps the work per block bounded.
+      flush();
+      block = { text: trimmed.replace(/\s+/g, " "), lineAt: [0], firstLine: i, listItem: false, nested: false, section };
+      continue;
+    }
+    b.lineAt.push(b.text.length + 1);
+    b.text += " " + trimmed.replace(/\s+/g, " ");
   }
+  flush();
 }
 
 /** A line that is only a bold label, such as "**Instructions to user:**" or "- __Note__". Bounded by the 400-character line cap. */

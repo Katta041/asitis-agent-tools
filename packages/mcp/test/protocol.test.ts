@@ -98,7 +98,7 @@ describe("runs inside Node's permission model with no write, network or child-pr
     }
   });
 
-  test("footer can be turned off through the plugin option", async () => {
+  test("footer can be turned off with --footer false", async () => {
     const s = await spawnClient([BUNDLE, "--root", FIXTURE_REPO, "--footer", "false"]);
     const r = await toResult(s.client, "outline", { path: "CLAUDE.md" });
     expect(r.text).not.toMatch(/asitis\.app/);

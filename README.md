@@ -108,7 +108,7 @@ args = ["/absolute/path/to/asitis-agent-tools/plugins/asitis/server/asitis-mcp.m
 }
 ```
 
-**Once `@asitis/mcp` is on npm**, replace `"command": "node"` and the file path with `"command": "npx"` and `"-y", "@asitis/mcp@0.2.0"`, for example `"args": ["-y", "@asitis/mcp@0.2.0", "--root", "/absolute/path/to/project"]`. Always pin the version; never use `@latest` in an agent config.
+**Once `@asitis/mcp` is on npm**, replace `"command": "node"` and the file path with `"command": "npx"` and `"-y", "@asitis/mcp@0.2.1"`, for example `"args": ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]`. Always pin the version; never use `@latest` in an agent config.
 
 **Hardened**: add Node's permission model so the runtime itself denies writes and child processes (and network access on Node 25 and later). This is what the Claude Code plugin does:
 
@@ -142,7 +142,7 @@ Vendor limits, with sources cited in [`packages/mcp/src/limits.ts`](packages/mcp
 | Cursor rules | under 500 lines |
 | Windsurf rules | 12,000 characters |
 
-Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. Every result ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`. Turn it off with `--no-footer` (or `--footer false`, or `ASITIS_MCP_FOOTER=0`, or the plugin option `footer`).
+Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. Every result ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`. Turn it off with `--no-footer` (or `--footer false`, or `ASITIS_MCP_FOOTER=0`).
 
 ## Privacy
 

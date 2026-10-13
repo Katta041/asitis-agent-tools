@@ -2,6 +2,17 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-10-13
+
+### Fixed
+- Installing the plugin no longer prints "2 userConfig options not yet set". Claude Code reports every plugin option the user has not saved, even one with a default, so the plugin now declares none and reads environment variables instead: `ASITIS_GUARD_MODE` (`ask`, `deny` or `off`) for the guard and `ASITIS_MCP_FOOTER=0` to hide the footer. Set them in the `env` block of your Claude Code settings. If you set `guard_mode` or `footer` with `/plugin configure`, set the variable instead.
+- The guard's trailing-whitespace check names the exact lines it would strip, and aligns the old and new text line by line first. Of two identical lines, only the one that loses its trailing spaces is reported, and deleting a line whose twin stays elsewhere is no longer reported as stripping. ([#4](https://github.com/Katta041/asitis-agent-tools/issues/4))
+- `lint_steering` no longer reports a hidden instruction for a comment that only names a product, such as Claude Code, or has "claude" in a URL. ([#2](https://github.com/Katta041/asitis-agent-tools/issues/2))
+- `lint_steering` compares whole list items and sentences for duplicate rules and skips markup-only lines such as `</details>`, so wrapped lines and closing tags are no longer reported as duplicates. ([#3](https://github.com/Katta041/asitis-agent-tools/issues/3))
+
+### Changed
+- The bundled server is `@asitis/mcp` 0.2.1.
+
 ## [0.2.0] - 2026-10-03
 
 ### Fixed

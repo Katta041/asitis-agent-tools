@@ -52,7 +52,7 @@ Known limits: token counts are local approximations (about 4 characters per toke
 
 Requires Node 22.13 or later.
 
-> **Not on npm yet (coming soon).** Until `@asitis/mcp` is published, run the pinned build from a clone of the repository, which needs no install or build step: `git clone https://github.com/Katta041/asitis-agent-tools.git`, then use `node` with the absolute path to `plugins/asitis/server/asitis-mcp.mjs` wherever the configs below say `npx -y @asitis/mcp@0.2.0`. The [repository README](https://github.com/Katta041/asitis-agent-tools#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli) has those configs written out.
+> **Not on npm yet (coming soon).** Until `@asitis/mcp` is published, run the pinned build from a clone of the repository, which needs no install or build step: `git clone https://github.com/Katta041/asitis-agent-tools.git`, then use `node` with the absolute path to `plugins/asitis/server/asitis-mcp.mjs` wherever the configs below say `npx -y @asitis/mcp@0.2.1`. The [repository README](https://github.com/Katta041/asitis-agent-tools#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli) has those configs written out.
 
 Always pin the version; never use `@latest` in an agent config.
 
@@ -65,7 +65,7 @@ claude plugin marketplace add Katta041/asitis-agent-tools
 claude plugin install asitis@asitis
 ```
 
-Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.2.0 --root "$PWD"`.
+Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.2.1 --root "$PWD"`.
 
 ### Claude Desktop
 
@@ -76,7 +76,7 @@ Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.2.0 --roo
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.0", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -91,7 +91,7 @@ Or add only the server: `claude mcp add asitis -- npx -y @asitis/mcp@0.2.0 --roo
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.0", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.2.1", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -106,7 +106,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 ```toml
 [mcp_servers.asitis]
 command = "npx"
-args = ["-y", "@asitis/mcp@0.2.0", "--root", "/absolute/path/to/project"]
+args = ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]
 ```
 
 ### Gemini CLI
@@ -118,7 +118,7 @@ args = ["-y", "@asitis/mcp@0.2.0", "--root", "/absolute/path/to/project"]
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.0", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -129,7 +129,7 @@ args = ["-y", "@asitis/mcp@0.2.0", "--root", "/absolute/path/to/project"]
 Run the file directly under Node's permission model so Node itself denies writes and child processes (and network access on Node 25 and later):
 
 ```bash
-npm install -g @asitis/mcp@0.2.0
+npm install -g @asitis/mcp@0.2.1
 node --permission \
   --allow-fs-read="$(npm root -g)/@asitis/mcp" \
   --allow-fs-read=/absolute/path/to/project \

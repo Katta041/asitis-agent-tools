@@ -1,6 +1,6 @@
 {
   "name": "@asitis/mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Read-only MCP server for markdown and AI agent steering files (CLAUDE.md, AGENTS.md, SKILL.md, rules, memory): byte-faithful read, outline, lint, context budget. No network, no writes.",
   "type": "module",
   "bin": {

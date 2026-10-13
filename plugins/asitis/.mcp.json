@@ -9,9 +9,7 @@
         "--allow-fs-read=${CLAUDE_PLUGIN_ROOT}",
         "${CLAUDE_PLUGIN_ROOT}/server/asitis-mcp.mjs",
         "--root",
-        "${CLAUDE_PROJECT_DIR}",
-        "--footer",
-        "${user_config.footer}"
+        "${CLAUDE_PROJECT_DIR}"
       ]
     }
   }

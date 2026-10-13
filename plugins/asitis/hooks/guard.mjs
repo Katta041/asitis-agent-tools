@@ -8,7 +8,8 @@
 // see Bash (sed -i, redirects), other tools, or other programs, and anything that
 // runs as you can bypass it.
 //
-// Modes (plugin option guard_mode, or env ASITIS_GUARD_MODE):
+// Modes (env ASITIS_GUARD_MODE, for example in the "env" block of Claude Code's
+// settings.json; CLAUDE_PLUGIN_OPTION_GUARD_MODE is also read):
 //   ask  (default) show the warning and ask you to allow or reject the change
 //   deny           block the change and tell the agent to retry with a minimal edit
 //   off            do nothing
@@ -185,6 +186,133 @@ function simulateEdits(before, edits) {
   return style === "CRLF" ? text.replace(/\n/g, "\r\n") : text;
 }
 
+// ---------------------------------------------------------------------------
+// Line alignment, so a finding names the exact line even when identical lines repeat.
+
+/** Most edit steps the line diff tries before it falls back to one hunk (bounded time and memory). */
+const MAX_DIFF_STEPS = 1000;
+
+/**
+ * Myers' shortest edit script between two line arrays. Returns the operations in
+ * order ("=" keep, "-" delete a[i], "+" insert b[j]), or null when more than
+ * MAX_DIFF_STEPS edits are needed.
+ */
+function diffLines(a, b) {
+  const n = a.length;
+  const m = b.length;
+  const limit = Math.min(n + m, MAX_DIFF_STEPS);
+  const off = limit + 1;
+  const v = new Int32Array(2 * limit + 3);
+  const trace = [];
+  let found = false;
+  for (let d = 0; d <= limit && !found; d++) {
+    checkTime();
+    trace.push(v.slice());
+    for (let k = -d; k <= d; k += 2) {
+      let x = k === -d || (k !== d && v[off + k - 1] < v[off + k + 1]) ? v[off + k + 1] : v[off + k - 1] + 1;
+      let y = x - k;
+      while (x < n && y < m && a[x] === b[y]) { x++; y++; }
+      v[off + k] = x;
+      if (x >= n && y >= m) { found = true; break; }
+    }
+  }
+  if (!found) return null;
+  const ops = [];
+  let x = n;
+  let y = m;
+  for (let d = trace.length - 1; d >= 0; d--) {
+    const t = trace[d];
+    const k = x - y;
+    const prevK = k === -d || (k !== d && t[off + k - 1] < t[off + k + 1]) ? k + 1 : k - 1;
+    const prevX = t[off + prevK];
+    const prevY = prevX - prevK;
+    while (x > prevX && y > prevY) { x--; y--; ops.push(["=", x, y]); }
+    if (d > 0) {
+      if (x === prevX) ops.push(["+", prevX, prevY]);
+      else ops.push(["-", prevX, prevY]);
+    }
+    x = prevX;
+    y = prevY;
+  }
+  return ops.reverse();
+}
+
+/**
+ * 1-based line numbers (in `lb`) of lines that keep their text but lose trailing
+ * whitespace in `la`. Lines are aligned first (common prefix and suffix, then a line
+ * diff), so of two identical lines only the one that changed is named, and a deleted
+ * line whose twin stays elsewhere is not "stripped".
+ */
+function strippedLines(lb, la) {
+  let p = 0;
+  while (p < lb.length && p < la.length && lb[p] === la[p]) p++;
+  let s = 0;
+  while (s < lb.length - p && s < la.length - p && lb[lb.length - 1 - s] === la[la.length - 1 - s]) s++;
+  const a = lb.slice(p, lb.length - s);
+  const b = la.slice(p, la.length - s);
+  if (!a.some(hasTrailingWs)) return [];
+  const hunks = [];
+  const ops = diffLines(a, b);
+  if (ops) {
+    let cur = null;
+    for (const [op, i, j] of ops) {
+      if (op === "=") { cur = null; continue; }
+      if (!cur) { cur = { del: [], ins: [] }; hunks.push(cur); }
+      if (op === "-") cur.del.push(i);
+      else cur.ins.push(j);
+    }
+  } else {
+    // Too many changes to align line by line: one hunk, minus lines kept exactly.
+    const kept = new Map();
+    for (const l of b) kept.set(l, (kept.get(l) ?? 0) + 1);
+    const del = [];
+    for (let i = 0; i < a.length; i++) {
+      const k = kept.get(a[i]);
+      if (k) kept.set(a[i], k - 1);
+      else del.push(i);
+    }
+    hunks.push({ del, ins: b.map((_, j) => j) });
+  }
+  const out = [];
+  for (const h of hunks) {
+    checkTime();
+    // A line that reappears exactly inside the hunk was moved, not stripped.
+    const exact = new Map();
+    for (const j of h.ins) exact.set(b[j], (exact.get(b[j]) ?? 0) + 1);
+    const consumed = new Map();
+    const rest = [];
+    for (const i of h.del) {
+      const k = exact.get(a[i]);
+      if (k) {
+        exact.set(a[i], k - 1);
+        consumed.set(a[i], (consumed.get(a[i]) ?? 0) + 1);
+      } else rest.push(i);
+    }
+    // The other inserted lines by trimmed text, each usable once, in order.
+    const byTrim = new Map();
+    for (const j of h.ins) {
+      const l = b[j];
+      const c = consumed.get(l);
+      if (c) { consumed.set(l, c - 1); continue; }
+      const key = trimWs(l);
+      const q = byTrim.get(key);
+      if (q) q.list.push(j);
+      else byTrim.set(key, { list: [j], head: 0 });
+    }
+    for (const i of rest) {
+      const l = a[i];
+      if (!hasTrailingWs(l)) continue;
+      const q = byTrim.get(trimWs(l));
+      if (!q || q.head >= q.list.length) continue;
+      // Same text with less trailing whitespace: stripped. More is not stripping.
+      if (b[q.list[q.head]].length >= l.length) continue;
+      q.head++;
+      out.push(p + i + 1);
+    }
+  }
+  return out.sort((x, y) => x - y);
+}
+
 function analyse(before, after, tool, beforeBuf) {
   const problems = [];
   const fb = facts(before);
@@ -204,20 +332,16 @@ function analyse(before, after, tool, beforeBuf) {
   if (!fb.finalNewline && fa.finalNewline && before.length > 0) problems.push("adds a final newline the file did not have");
 
   checkTime();
-  // Trailing whitespace: lines whose content survives but loses its trailing spaces.
+  // Trailing whitespace: lines whose content survives but loses its trailing spaces,
+  // reported by their line number in the current file.
   const lb = splitLines(before);
   const la = splitLines(after);
-  const afterSet = new Map();
-  for (const l of la) afterSet.set(l, (afterSet.get(l) ?? 0) + 1);
-  const afterTrimmed = new Set(la.map(trimWs));
-  let stripped = 0;
-  for (const l of lb) {
-    if (!hasTrailingWs(l)) continue;
-    const k = afterSet.get(l);
-    if (k) { afterSet.set(l, k - 1); continue; }
-    if (afterTrimmed.has(trimWs(l))) stripped++;
+  const stripped = strippedLines(lb, la);
+  if (stripped.length > 0) {
+    const shown = stripped.slice(0, 8).join(", ");
+    const more = stripped.length > 8 ? ` and ${stripped.length - 8} more` : "";
+    problems.push(`strips trailing whitespace on ${stripped.length} line(s) (line${stripped.length > 1 ? "s" : ""} ${shown}${more}) (two trailing spaces are a hard line break in markdown)`);
   }
-  if (stripped > 0) problems.push(`strips trailing whitespace on ${stripped} line(s) (two trailing spaces are a hard line break in markdown)`);
 
   checkTime();
   const fmB = frontmatterState(before);
@@ -253,7 +377,7 @@ function main() {
   const mode = MODES.has(asked) ? asked : "deny";
   const modeNote = MODES.has(asked)
     ? ""
-    : ` Unknown guard_mode "${asked.slice(0, 40).replace(/[^\x20-\x7e]/g, "?")}", so the guard uses deny, the safest mode; set guard_mode to ask, deny or off.`;
+    : ` Unknown guard_mode "${asked.slice(0, 40).replace(/[^\x20-\x7e]/g, "?")}", so the guard uses deny, the safest mode; set ASITIS_GUARD_MODE to ask, deny or off.`;
   if (mode === "off") process.exit(0);
   // Nothing to report: exit silently, or only with the unknown-mode warning.
   const pass = () => (modeNote ? emit({ systemMessage: `AsItIs guard:${modeNote}` }) : process.exit(0));
@@ -262,13 +386,13 @@ function main() {
   try {
     raw = readFileSync(0, "utf8");
   } catch (e) {
-    block(`could not read the hook input (${e.message}). The change was blocked to be safe; set the plugin option guard_mode to off to disable this guard.`);
+    block(`could not read the hook input (${e.message}). The change was blocked to be safe; set ASITIS_GUARD_MODE=off in the "env" block of your Claude Code settings to disable this guard.`);
   }
   let input;
   try {
     input = JSON.parse(raw);
   } catch {
-    block("the hook input is not valid JSON. The change was blocked to be safe; set the plugin option guard_mode to off to disable this guard.");
+    block(`the hook input is not valid JSON. The change was blocked to be safe; set ASITIS_GUARD_MODE=off in the "env" block of your Claude Code settings to disable this guard.`);
   }
   if (!input || typeof input !== "object" || Array.isArray(input)) block("the hook input is not a JSON object. The change was blocked to be safe.");
   const tool = input.tool_name;
@@ -311,7 +435,7 @@ function main() {
 
   if (st.size > MAX_BYTES) {
     // Too large to check: ask (or block in deny mode) rather than wave it through.
-    decide(`${tool} on ${name} was not checked: the file is larger than 16 MB.${modeNote}`, "Split the change into smaller Edits, or set the plugin option guard_mode to off for this change.");
+    decide(`${tool} on ${name} was not checked: the file is larger than 16 MB.${modeNote}`, "Split the change into smaller Edits, or set ASITIS_GUARD_MODE=off for this change.");
   }
   const beforeBuf = readFileSync(file);
   const before = new TextDecoder("utf-8", { fatal: false, ignoreBOM: true }).decode(beforeBuf);
@@ -339,7 +463,7 @@ function main() {
       // Fail closed: never let the 10 s hook timeout wave the change through unchecked.
       decide(
         `${tool} on ${name} could not be checked within ${BUDGET_MS >= 1000 ? `${Math.round(BUDGET_MS / 1000)} s` : `${BUDGET_MS} ms`} (the file or the edit is very large), so the guard could not confirm it keeps line endings, trailing spaces, BOM and frontmatter.${modeNote}`,
-        "Split the change into smaller Edits, or set the plugin option guard_mode to off for this change.",
+        "Split the change into smaller Edits, or set ASITIS_GUARD_MODE=off for this change.",
       );
     }
     block(`${e.message}. The change was blocked to be safe.`);
@@ -355,5 +479,5 @@ function main() {
 try {
   main();
 } catch (e) {
-  block(`unexpected error (${e && e.message ? e.message : String(e)}). The change was blocked to be safe; set the plugin option guard_mode to off to disable this guard.`);
+  block(`unexpected error (${e && e.message ? e.message : String(e)}). The change was blocked to be safe; set ASITIS_GUARD_MODE=off in the "env" block of your Claude Code settings to disable this guard.`);
 }

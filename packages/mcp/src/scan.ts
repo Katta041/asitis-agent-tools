@@ -152,19 +152,31 @@ export interface CommentFinding {
 
 // Bounded patterns, applied to at most COMMENT_SLICE characters of each comment.
 const COMMENT_SLICE = 4096;
+// Assistant names. A name on its own is not an instruction: maintainers write
+// that a file was made with Claude Code, or link to code.claude.com (issue #2).
+// A name counts only when the comment speaks to it: "Claude, ...", "Copilot: ...",
+// or the name as the subject of a directive ("Claude Code must ...").
+const AI_NAME = String.raw`(?:claude(?:\s{1,8}code)?|chatgpt|gpt-?\d[\w.-]{0,8}|codex|copilot|cursor|gemini(?:\s{1,8}cli)?|llm)`;
+const DIRECTIVE = String.raw`(?:must|should|shall|will|needs?\s{1,8}to|has\s{1,8}to|have\s{1,8}to|always|never|do\s{1,8}not|don't|please|may\s{1,8}not|cannot|can't)`;
 const INSTRUCTION_PATTERNS: Array<[RegExp, string]> = [
   [/\b(ignore|disregard|forget|override)\b[^\n]{0,40}\b(previous|prior|above|earlier|all|any|other|system)\b/i, "asks to ignore other instructions"],
   [/\b(you are|you must|you should|you will|as an ai|ai assistant|language model|system prompt|the assistant|the agent|the model)\b/i, "addresses the AI directly"],
-  [/\b(claude|chatgpt|gpt-?\d|codex|copilot|cursor|gemini|llm)\b/i, "names an AI assistant"],
+  // Vocative: the name opens the comment, a line or a sentence and is followed by "," or ":".
+  [new RegExp(String.raw`(?:^|[\n.!?;]|[([])\s{0,8}(?:(?:hey|hi|dear|attention|attn)\s{1,8})?@?${AI_NAME}\s{0,3}[,:](?!\/)`, "i"), "addresses an AI assistant by name"],
+  // The name as the subject of a directive: "Claude must ...", "Copilot should never ...".
+  [new RegExp(String.raw`\b${AI_NAME}\s{1,8}${DIRECTIVE}\b`, "i"), "addresses an AI assistant by name"],
   [/\b(do not|don't|never)\s+(tell|mention|reveal|show|inform)\b/i, "asks to hide something from the user"],
   [/\b(secretly|silently|quietly|without (telling|asking|mentioning))\b/i, "asks for covert action"],
   [/\b(exfiltrat\w*|curl\s|wget\s|base64|api[_ -]?key|token|password|credential|ssh)\b/i, "mentions commands or secrets"],
   [/\b(run|execute|call|invoke)\s+(the\s+)?(command|script|tool|shell|bash)\b/i, "asks to run a command"],
-  [/\b(instructions?|rule|important|note to (the )?(ai|agent|assistant))\s*:/i, "reads like an instruction"],
+  [new RegExp(String.raw`\b(instructions?|rule|important|note\s{1,8}(?:to|for)\s{1,8}(?:the\s{1,8})?(?:ai|agents?|assistants?|models?|llms?|${AI_NAME}))\s*:`, "i"), "reads like an instruction"],
 ];
 
+/** URLs say where something lives, not what to do: "claude" in code.claude.com is not an address to Claude. */
+const URL_LIKE = /\b(?:[a-z][a-z0-9+.-]{1,31}:\/\/|www\.)[^\s<>()"']{1,2048}/gi;
+
 export function classifyInstruction(text: string): string | null {
-  const t = text.length > COMMENT_SLICE ? text.slice(0, COMMENT_SLICE) : text;
+  const t = (text.length > COMMENT_SLICE ? text.slice(0, COMMENT_SLICE) : text).replace(URL_LIKE, " ");
   for (const [re, label] of INSTRUCTION_PATTERNS) if (re.test(t)) return label;
   return null;
 }

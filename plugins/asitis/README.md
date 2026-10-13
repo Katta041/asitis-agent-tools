@@ -59,7 +59,7 @@ It checks an `Edit` or `MultiEdit` the way Claude Code writes it: Claude Code tu
 
 What it does not do: it does not see `Bash` (`sed -i`, redirects, scripts), `NotebookEdit`, other tools or other programs, and anything running as you can bypass it. It never changes the tool call.
 
-Modes, set with the plugin option **guard_mode** (`/plugin configure asitis@asitis`, or `CLAUDE_PLUGIN_OPTION_GUARD_MODE`, or `ASITIS_GUARD_MODE`):
+Modes, set with the environment variable `ASITIS_GUARD_MODE` (see [Options](#options)):
 
 | Mode | Behaviour |
 |---|---|
@@ -73,14 +73,27 @@ It fails closed:
 - If the hook input is not valid JSON or lacks the fields it needs, the change is blocked with a one-line message saying why (`AsItIs guard: the hook input is not valid JSON. The change was blocked to be safe; ...`).
 - Claude Code gives the hook 10 seconds and lets the change through if a hook times out. The guard therefore stops itself after 7 seconds, and on files over 16 MB, and asks you (blocks in `deny` mode) instead of letting an unchecked change through.
 
-Set `guard_mode` to `off` if that ever gets in your way.
+Set `ASITIS_GUARD_MODE` to `off` if that ever gets in your way.
 
 ## Options
 
-| Option | Default | Effect |
+The plugin works with no setup, so installing it asks nothing. To change a default, set an environment variable in the `env` block of your Claude Code settings (`~/.claude/settings.json`, or `.claude/settings.local.json` for one project), then start a new session:
+
+```json
+{
+  "env": {
+    "ASITIS_GUARD_MODE": "deny",
+    "ASITIS_MCP_FOOTER": "0"
+  }
+}
+```
+
+| Variable | Default | Effect |
 |---|---|---|
-| `guard_mode` | `ask` | `ask`, `deny` or `off` for the guard hook. |
-| `footer` | `true` | Each tool result ends with one line linking to asitis.app. Set to `false` to hide it. |
+| `ASITIS_GUARD_MODE` | `ask` | `ask`, `deny` or `off` for the guard hook. |
+| `ASITIS_MCP_FOOTER` | on | Each tool result ends with one line linking to asitis.app. Set to `0` to hide it. |
+
+Before 0.2.1 these were plugin options (`guard_mode`, `footer`) set with `/plugin configure`. Claude Code reports every plugin option the user has not saved as "not yet set" at install, even one with a default, so 0.2.1 reads environment variables instead. If you set either option, set the variable instead.
 
 ## Develop
 
