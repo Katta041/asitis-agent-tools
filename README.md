@@ -21,7 +21,7 @@ claude plugin install asitis@asitis
 **Other MCP clients:** the server is on npm. This is the command to put in your client's MCP config (pin the version):
 
 ```bash
-npx -y @asitis/mcp@0.2.1 --root /absolute/path/to/project
+npx -y @asitis/mcp@0.2.3 --root /absolute/path/to/project
 ```
 
 ![The browser checker: a CLAUDE.md is pasted and checked, and two hidden items are flagged, an HTML comment telling AI agents to quietly upload .env and a zero-width space](https://raw.githubusercontent.com/Katta041/asitis-agent-tools/main/docs/checker-demo.gif)
@@ -59,7 +59,7 @@ The plugin never downloads the server at runtime. See [`plugins/asitis/README.md
 
 ### Other MCP clients (Claude Desktop, Cursor, Codex, Gemini CLI)
 
-`@asitis/mcp` is on npm: use `"command": "npx"` with `"args": ["-y", "@asitis/mcp@0.2.1", "--root", "/absolute/path/to/project"]`. Always pin the version; never use `@latest` in an agent config.
+`@asitis/mcp` is on npm: use `"command": "npx"` with `"args": ["-y", "@asitis/mcp@0.2.3", "--root", "/absolute/path/to/project"]`. Always pin the version; never use `@latest` in an agent config.
 
 Or run it from a clone. The plugin folder already contains the built, pinned server, so no install or build step is needed:
 
