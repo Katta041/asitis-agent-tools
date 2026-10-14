@@ -2,7 +2,7 @@
   "name": "@asitis/mcp",
   "version": "0.2.2",
   "mcpName": "io.github.Katta041/asitis-mcp",
-  "description": "Read-only MCP server for markdown and AI agent steering files (CLAUDE.md, AGENTS.md, SKILL.md, rules, memory): byte-faithful read, outline, lint, context budget. No network, no writes.",
+  "description": "Lint CLAUDE.md, AGENTS.md, SKILL.md and Cursor rules: hidden prompt-injection comments, token budget, outline. Read-only MCP server, no network.",
   "type": "module",
   "bin": {
     "asitis-mcp": "dist/asitis-mcp.mjs"
@@ -18,13 +18,26 @@
     "node": ">=22.13"
   },
   "keywords": [
-    "mcp",
-    "markdown",
     "claude-code",
+    "claude-code-plugin",
+    "claude-md",
     "agents-md",
     "skill-md",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "linter",
     "lint",
-    "steering-files"
+    "markdown",
+    "prompt-injection",
+    "cursor-rules",
+    "copilot-instructions",
+    "gemini-md",
+    "steering-files",
+    "ai-agents",
+    "context-window",
+    "token-count",
+    "invisible-unicode"
   ],
   "homepage": "https://asitis.app",
   "repository": {

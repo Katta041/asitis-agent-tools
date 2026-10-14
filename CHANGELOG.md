@@ -2,6 +2,17 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [Unreleased]
+
+### Changed
+- `@asitis/mcp` npm metadata: a shorter description that names the files it checks, and keywords for the tools people search by (claude-code, claude-md, agents-md, skill-md, mcp-server, prompt-injection, cursor-rules and others). Ships in 0.2.3; the published 0.2.2 is unchanged.
+
+### Added
+- README: a "Try it in 30 seconds" section and a demo of the browser checker (`docs/checker-demo.gif`).
+
+### Fixed
+- Tests: the copy-rules scan skips binary media such as the demo GIF, which is not authored text.
+
 ## [0.2.2] - 2026-10-14
 
 ### Added

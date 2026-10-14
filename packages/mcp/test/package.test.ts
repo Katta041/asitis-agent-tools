@@ -168,7 +168,9 @@ describe("copy rules: no em-dashes, no emoji, no AI attribution in anything we a
   // third-party notices, the lockfile, and the byte-level fixtures (which contain emoji
   // and odd bytes on purpose). Untracked build artifacts (a local .tgz, dist) are never scanned.
   const SKIP = new Set(["node_modules", ".git", "dist", "test-fixtures", "package-lock.json", "asitis-mcp.mjs", "THIRD_PARTY_NOTICES.md"]);
-  const authored = authoredFiles(REPO, (p) => path.relative(REPO, p).split(path.sep).some((s) => SKIP.has(s)));
+  // Binary media (the README demo GIF) is not text, so it is not scanned either.
+  const BINARY = /\.(gif|png|jpe?g|webp|webm|mp4)$/i;
+  const authored = authoredFiles(REPO, (p) => BINARY.test(p) || path.relative(REPO, p).split(path.sep).some((s) => SKIP.has(s)));
   test("build artifacts are not scanned: only git-tracked files, never a local .tgz or dist output", () => {
     expect(authored.length).toBeGreaterThan(10);
     expect(authored.some((p) => p.endsWith(".tgz"))).toBe(false);

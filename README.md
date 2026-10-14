@@ -7,15 +7,24 @@
 [![Node 22.13+](https://img.shields.io/badge/node-%3E%3D22.13-007370)](https://nodejs.org)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-007370)](https://asitis.app/claude-code)
 
+## Try it in 30 seconds
+
+**No install:** paste a file into the [browser checker](https://asitis.app/tools/steering-file-checker). Same linter, runs in your browser tab, nothing is uploaded.
+
+**Claude Code:** add the marketplace and install the plugin, then run `/asitis:md-lint` or `/asitis:md-budget` in a session.
+
 ```bash
 claude plugin marketplace add Katta041/asitis-agent-tools
 claude plugin install asitis@asitis
 ```
 
-Then run `/asitis:md-lint` or `/asitis:md-budget` in a session. No install? Paste a file into the [browser checker](https://asitis.app/tools/steering-file-checker): same linter, nothing uploaded.
+**Other MCP clients:** the server is on npm. This is the command to put in your client's MCP config (pin the version):
 
-<!-- Hero GIF goes here once recorded (see the plan below), for example:
-![Claude Code running /asitis:md-lint on a sample project](docs/hero.gif) -->
+```bash
+npx -y @asitis/mcp@0.2.1 --root /absolute/path/to/project
+```
+
+![The browser checker: a CLAUDE.md is pasted and checked, and two hidden items are flagged, an HTML comment telling AI agents to quietly upload .env and a zero-width space](https://raw.githubusercontent.com/Katta041/asitis-agent-tools/main/docs/checker-demo.gif)
 
 - **Lint:** frontmatter on line 1 and valid YAML, SKILL.md name and description rules, CLAUDE.md 200 lines, SKILL.md 500 lines, Codex's 32 KiB, broken links and `@imports`, duplicate and contradictory rules.
 - **Budget:** approximate tokens per file and per tool for what loads every session (Claude Code, Codex, Gemini CLI, Cursor, Copilot).

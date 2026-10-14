@@ -2,6 +2,11 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- npm `description` and `keywords` rewritten for search: the description names the files checked (CLAUDE.md, AGENTS.md, SKILL.md, Cursor rules) and stays under 160 characters; 20 keywords. Ships in 0.2.3. No code change.
+
 ## [0.2.2] - 2026-10-14
 
 ### Added
