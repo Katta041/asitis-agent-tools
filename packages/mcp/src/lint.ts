@@ -10,6 +10,7 @@ import { esc, hasUnsafe, q } from "./escape.js";
 import { extractImports, extractLinks, importIsSurelyFile, isExternalTarget, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
 import { lineOfByte } from "./text.js";
 import { approxTokens } from "./tokens.js";
+import type { FindingFix, Suppression } from "./findings.js";
 
 export type Severity = "error" | "warning" | "info";
 
@@ -18,6 +19,14 @@ export interface Issue {
   rule: string;
   message: string;
   line: number;
+  /** Optional span, 1-based, UTF-16 columns, endColumn exclusive. Without it a finding covers its whole line. */
+  column?: number;
+  endLine?: number;
+  endColumn?: number;
+  /** Set by config.ts (rule off in .asitisrc.json, baseline) or suppress.ts (asitis-disable comments). */
+  suppressed?: Suppression;
+  /** Set by fix.ts when --fix-preview or suggest_fixes asks for fixes. */
+  fix?: FindingFix;
 }
 
 export interface LintResult {

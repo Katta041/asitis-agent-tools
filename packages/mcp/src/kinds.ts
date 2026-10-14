@@ -18,7 +18,17 @@ export type Kind =
   | "custom-agent"
   | "memory-index"
   | "memory-topic"
-  | "markdown";
+  | "markdown"
+  // Reserved for later tracks; classify() does not return these yet. New classification goes
+  // through the WP0 owner (kinds.ts is a shared file).
+  | "claude-output-style"
+  | "agents-override"
+  | "cursor-command"
+  | "windsurf-workflow"
+  | "cline-workflow"
+  // Files the opt-in scans report on: scripts in skill folders, and agent config JSON.
+  | "skill-script"
+  | "agent-config";
 
 export type LoadGroup = "every-session" | "on-match" | "on-invocation" | "on-demand" | "memory" | "other";
 
@@ -61,6 +71,24 @@ export const KIND_LABEL: Record<Kind, string> = {
   "memory-index": "memory index",
   "memory-topic": "memory topic",
   markdown: "markdown",
+  "claude-output-style": "Claude Code output style",
+  "agents-override": "AGENTS.override.md instructions",
+  "cursor-command": "Cursor command",
+  "windsurf-workflow": "Windsurf workflow",
+  "cline-workflow": "Cline workflow",
+  "skill-script": "skill script",
+  "agent-config": "agent config",
+};
+
+/** Display names for the tool ids used in results. */
+export const TOOL_NAME: Record<string, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  "gemini-cli": "Gemini CLI",
+  cursor: "Cursor",
+  copilot: "Copilot",
+  windsurf: "Windsurf",
+  cline: "Cline",
 };
 
 export interface Classified {

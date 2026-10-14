@@ -90,7 +90,13 @@ describe("no write, exec or network code", () => {
     /\b(writeFile|appendFile|mkdir|mkdtemp|rm|rmdir|unlink|rename|copyFile|cp|symlink|link|chmod|chown|lchown|utimes|lutimes|truncate|ftruncate)(Sync)?\s*\((?!s\))/,
     /createWriteStream/, /O_WRONLY|O_RDWR|O_CREAT|O_APPEND/, /\beval\s*\(/, /\bFunction\s*\(/,
   ];
-  test.each(readdirSync(path.join(PKG, "src")))("src/%s", (f) => {
+  // Every source file, subfolders included (rules/, checks/, policy/, format/, fixes/, cli/).
+  const sources = files(path.join(PKG, "src")).map((p) => path.relative(path.join(PKG, "src"), p).split(path.sep).join("/"));
+  test("the scan sees the subfolders", () => {
+    expect(sources).toContain("rules/registry.ts");
+    expect(sources).toContain("checks/index.ts");
+  });
+  test.each(sources)("src/%s", (f) => {
     const src = read(path.join(PKG, "src", f));
     for (const re of FORBIDDEN_SRC) expect(src, `${f} matches ${re}`).not.toMatch(re);
   });

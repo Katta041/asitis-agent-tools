@@ -24,7 +24,7 @@ Usage: asitis-mcp --root <folder> [--root <folder>...] [options]
 
 Environment: ASITIS_MCP_ROOT (folders separated by "${path.delimiter}"), ASITIS_MCP_FOOTER=1 to add that line,
 ASITIS_MCP_STRUCTURED=1 for --structured.
-Tools: read_markdown, outline, lint_steering, context_budget, find_steering_files. No writes, no network.
+Tools: read_markdown, outline, lint_steering, context_budget, find_steering_files, suggest_fixes. No writes, no network.
 Docs: https://github.com/Katta041/asitis-agent-tools/tree/main/packages/mcp`;
 
 function fail(message: string): never {

@@ -6,6 +6,9 @@ import { constants, promises as fsp, realpathSync, statSync, type Stats } from "
 import os from "node:os";
 import path from "node:path";
 import { CAPS } from "./limits.js";
+import { AGENT_CONFIG_POLICY } from "./policy/agent-config.js";
+import { ASITISRC_POLICY } from "./policy/asitisrc.js";
+import { SKILL_SCRIPT_POLICY } from "./policy/skill-script.js";
 
 export class UserError extends Error {
   override readonly name = "UserError";
@@ -14,6 +17,40 @@ export class UserError extends Error {
 export const MARKDOWN_EXTENSIONS = [".md", ".mdc", ".markdown", ".mdx"] as const;
 /** Steering files without a markdown extension that are still read. */
 export const EXTENSIONLESS_STEERING = [".cursorrules", ".windsurfrules", ".clinerules"] as const;
+
+/**
+ * What kind of file a read is for. markdown is the default and the only class the MCP tools use
+ * unless a call opts in with include. The other classes are decided by their policy in policy/*.ts,
+ * after the refusals every class shares (.env, .git, node_modules, Windows streams and devices).
+ */
+export type ReadClass = "markdown" | "asitisrc" | "skill-script" | "agent-config";
+
+export interface PolicyContext {
+  sandbox: Sandbox;
+  /** Opt-ins of the current call (include values such as "config-local"), for policies with sub-grants. */
+  grants: ReadonlySet<string>;
+}
+
+export interface ReadPolicy {
+  readonly readClass: Exclude<ReadClass, "markdown">;
+  /** Words for messages: "skill scripts", "agent config files". */
+  readonly label: string;
+  /** Largest file read in full. A head read (headBytes) ignores it. */
+  readonly maxBytes: number;
+  /** Optional per-path limit (a baseline file may be larger than a config file). Defaults to maxBytes. */
+  maxBytesFor?(relPosix: string): number;
+  /**
+   * null to allow, or a reason in the same style as policyRefusal ("x is ...; this server ...").
+   * Called for the path as asked and again for the real path after symlinks resolve.
+   */
+  refusal(relPosix: string, ctx: PolicyContext): string | null | Promise<string | null>;
+}
+
+export const READ_POLICIES: Readonly<Record<Exclude<ReadClass, "markdown">, ReadPolicy>> = {
+  asitisrc: ASITISRC_POLICY,
+  "skill-script": SKILL_SCRIPT_POLICY,
+  "agent-config": AGENT_CONFIG_POLICY,
+};
 
 export interface Root {
   /** The path as given at startup (for messages). */
@@ -107,6 +144,25 @@ export function policyRefusal(relPosix: string, platform: NodeJS.Platform = proc
   if (!(MARKDOWN_EXTENSIONS as readonly string[]).includes(ext)) {
     return `${relPosix} is not a markdown file; this server only reads markdown (${MARKDOWN_EXTENSIONS.join(", ")}) and ${EXTENSIONLESS_STEERING.join(", ")}`;
   }
+  return null;
+}
+
+/**
+ * The refusals every read class shares: Windows streams and devices, .env files, git internals and
+ * dependencies. Used for the non-markdown classes; policyRefusal keeps its own order for markdown.
+ */
+export function commonRefusal(relPosix: string, platform: NodeJS.Platform = process.platform): string | null {
+  const parts = relPosix.split("/");
+  const lowerParts = parts.map((p) => p.toLowerCase());
+  const lower = (parts[parts.length - 1] ?? "").toLowerCase();
+  if (platform === "win32") {
+    if (relPosix.includes(":")) return `${relPosix} names an alternate data stream; this server only reads a file's main contents`;
+    const device = parts.find((p) => WINDOWS_DEVICE.test(p.replace(/[. ]+$/, "")));
+    if (device !== undefined) return `${relPosix} uses the reserved Windows device name ${device}; this server only reads files`;
+  }
+  if (lower.startsWith(".env")) return `${relPosix} is an environment file that may hold secrets; this server never reads .env files`;
+  if (lowerParts.includes(".git")) return `${relPosix} is inside .git; this server does not read git internals`;
+  if (lowerParts.includes("node_modules")) return `${relPosix} is inside node_modules; this server does not read dependencies`;
   return null;
 }
 
@@ -273,14 +329,39 @@ export class Sandbox {
 
   /** Opens a markdown or steering file read-only, with every check applied. */
   async open(p: string, baseDir?: string): Promise<OpenedFile> {
+    return this.openChecked(p, baseDir, (rel) => policyRefusal(rel), () => this.maxFileBytes, " (raise it with --max-file-mb)");
+  }
+
+  /**
+   * Opens a file of another read class (see ReadClass) read-only. The shared refusals apply first,
+   * then the class policy, to the path as asked and to the real path. headBytes reads only the start
+   * of the file (magic-byte checks) and then the size limit does not apply.
+   */
+  async openAs(readClass: ReadClass, p: string, opts: { baseDir?: string; headBytes?: number; grants?: ReadonlySet<string> } = {}): Promise<OpenedFile> {
+    if (readClass === "markdown") return this.open(p, opts.baseDir);
+    const policy = READ_POLICIES[readClass];
+    const ctx: PolicyContext = { sandbox: this, grants: opts.grants ?? new Set() };
+    const refuse = async (rel: string): Promise<string | null> => commonRefusal(rel) ?? (await policy.refusal(rel, ctx));
+    const limit = (rel: string): number => Math.min(policy.maxBytesFor?.(rel) ?? policy.maxBytes, this.maxFileBytes);
+    return this.openChecked(p, opts.baseDir, refuse, limit, ` for ${policy.label}`, opts.headBytes);
+  }
+
+  private async openChecked(
+    p: string,
+    baseDir: string | undefined,
+    refuse: (relPosix: string) => string | null | Promise<string | null>,
+    maxBytesFor: (relPosix: string) => number,
+    limitHint: string,
+    headBytes?: number,
+  ): Promise<OpenedFile> {
     const input = this.validateInput(p);
     const lex = this.lexical(input, baseDir);
     if (lex) {
-      const early = policyRefusal(lex.rel || path.basename(lex.abs));
+      const early = await refuse(lex.rel || path.basename(lex.abs));
       if (early) throw new UserError(`Refused: ${early}.`);
     }
     const r = await this.resolveReal(input, baseDir);
-    const refusal = policyRefusal(r.rel);
+    const refusal = await refuse(r.rel);
     if (refusal) throw new UserError(`Refused: ${refusal}${r.rel !== lex?.rel ? ` (resolved from ${input})` : ""}.`);
     let before: Awaited<ReturnType<typeof fsp.stat>>;
     try {
@@ -289,8 +370,10 @@ export class Sandbox {
       throw fsError(e, input) ?? new UserError(`File not found: ${input}. It may have been moved or deleted just now.`);
     }
     if (!before.isFile()) throw new UserError(`Not a regular file: ${input}.`);
-    if (before.size > this.maxFileBytes) {
-      throw new UserError(`File too large: ${input} is ${mb(before.size)}; the limit is ${mb(this.maxFileBytes)} (raise it with --max-file-mb).`);
+    const head = headBytes !== undefined;
+    const maxBytes = maxBytesFor(r.rel);
+    if (!head && before.size > maxBytes) {
+      throw new UserError(`File too large: ${input} is ${mb(before.size)}; the limit is ${mb(maxBytes)}${limitHint}.`);
     }
     // O_NOFOLLOW refuses a final-component symlink swapped in after realpath;
     // the dev/ino comparison catches a swapped regular file.
@@ -304,15 +387,16 @@ export class Sandbox {
     try {
       const st = await fh.stat();
       if (st.ino !== before.ino || st.dev !== before.dev || !st.isFile()) throw new UserError(`Refused: ${input} changed while it was being opened.`);
-      if (st.size > this.maxFileBytes) throw new UserError(`File too large: ${input} is ${mb(st.size)}; the limit is ${mb(this.maxFileBytes)} (raise it with --max-file-mb).`);
-      const buf = Buffer.alloc(st.size);
+      if (!head && st.size > maxBytes) throw new UserError(`File too large: ${input} is ${mb(st.size)}; the limit is ${mb(maxBytes)}${limitHint}.`);
+      const want = head ? Math.min(st.size, Math.max(0, headBytes)) : st.size;
+      const buf = Buffer.alloc(want);
       let off = 0;
-      while (off < st.size) {
-        const { bytesRead } = await fh.read(buf, off, st.size - off, off);
+      while (off < want) {
+        const { bytesRead } = await fh.read(buf, off, want - off, off);
         if (bytesRead === 0) break;
         off += bytesRead;
       }
-      const out: OpenedFile = { ...r, buf: off === st.size ? buf : buf.subarray(0, off), stat: st };
+      const out: OpenedFile = { ...r, buf: off === want ? buf : buf.subarray(0, off), stat: st };
       // Reached through a symlink: classify by the linked path, keep the real one for messages.
       if (lex && lex.rel && lex.root === r.root && lex.rel.toLowerCase() !== r.rel.toLowerCase()) {
         out.linkTarget = r.rel;
@@ -323,6 +407,28 @@ export class Sandbox {
     } finally {
       await fh.close();
     }
+  }
+
+  /**
+   * Lists one folder inside a root without following symlinks and without reading any file.
+   * For checks that need files the steering walk skips (scripts in a skill folder). Refuses
+   * .git and node_modules; at most CAPS.walkMaxEntries entries are returned.
+   */
+  async listDir(p: string, baseDir?: string): Promise<{ rel: string; entries: Array<{ name: string; type: "file" | "dir" | "symlink" | "other" }>; truncated: boolean }> {
+    const r = await this.resolveReal(p, baseDir);
+    const parts = r.rel.toLowerCase().split("/");
+    if (parts.includes(".git") || parts.includes("node_modules")) throw new UserError(`Refused: ${r.rel} is inside .git or node_modules; this server does not list them.`);
+    let dirents;
+    try {
+      dirents = await fsp.readdir(r.real, { withFileTypes: true });
+    } catch (e) {
+      throw fsError(e, p) ?? new UserError(`Could not list ${p}.`);
+    }
+    const entries = dirents.slice(0, CAPS.walkMaxEntries).map((d) => ({
+      name: d.name,
+      type: d.isSymbolicLink() ? ("symlink" as const) : d.isDirectory() ? ("dir" as const) : d.isFile() ? ("file" as const) : ("other" as const),
+    }));
+    return { rel: r.rel, entries, truncated: dirents.length > entries.length };
   }
 
   /**

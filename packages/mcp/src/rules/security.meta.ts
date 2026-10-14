@@ -1,0 +1,20 @@
+// Security rules from the threat catalogue that F8 (skills.meta.ts) and F9 (agent-config.meta.ts)
+// do not cover, plus F13 secrets. No track owns these in 0.3.0; ids are reserved so later work
+// and .asitisrc.json files agree on them. Every rule here is category security, so it can never
+// be suppressed inline.
+
+import { planned, SRC, type RuleMeta } from "./types.js";
+
+export const SECURITY_RULES: RuleMeta[] = [
+  planned({ id: "sec-covert-instruction", category: "security", defaultSeverity: "warning", summary: "Visible text tells the agent to hide something from the user or act covertly", why: "Hide-from-user, secretly, ignore-previous-instructions and identity-conditional wording in a skill or rule is how poisoned skills steer an agent.", source: SRC.toolPoisoning }),
+  planned({ id: "sec-image-exfil", category: "security", defaultSeverity: "warning", summary: "External image URL built from data, or an instruction to render one", why: "An image the agent renders sends its URL to the host, which can carry secrets out of the session.", source: SRC.toolPoisoning }),
+  planned({ id: "sec-invisible-ext", category: "security", defaultSeverity: "warning", summary: "Variation selectors, interlinear annotations or Private Use runs", why: "These code points carry hidden payloads (the Glassworm variation-selector technique) that invisible-char does not cover.", source: SRC.githubHiddenUnicode }),
+  planned({ id: "sec-smuggled-text", category: "security", defaultSeverity: "warning", summary: "Hidden characters decode to readable text", why: "Tag characters and similar runs decode to ASCII. The finding shows the decoded text so a reviewer sees what the agent sees.", source: SRC.rulesFileBackdoor }),
+  planned({ id: "sec-mixed-script", category: "security", defaultSeverity: "warning", summary: "A word or host mixes Latin with look-alike letters", why: "Homoglyphs make a package name or URL look like a trusted one.", source: "https://www.unicode.org/reports/tr39/" }),
+  planned({ id: "sec-nested-override", category: "security", defaultSeverity: "warning", scope: "project", summary: "A nested instruction file overrides its parents", why: "AGENTS.override.md, override wording in a nested file, or steering files inside vendored folders can replace the root instructions without anyone noticing.", source: SRC.codexAgentsMd }),
+  planned({ id: "sec-config-drift", category: "security", defaultSeverity: "warning", scope: "project", summary: "An approved MCP server, hook, skill or steering file changed", why: "Compares local hashes with an approval file the user keeps. Catches a server or skill that changed after it was reviewed.", source: SRC.toolPoisoning }),
+  planned({ id: "sec-hidden-markup-ext", category: "security", defaultSeverity: "warning", summary: "Text hidden in picture, alt, title, off-screen or collapsed markup", why: "Extends hidden-styled-text to other ways of hiding text from people but not from agents.", source: SRC.toolPoisoning }),
+  planned({ id: "sec-skill-typosquat", category: "security", defaultSeverity: "warning", summary: "Skill name is one or two edits from a well-known skill or vendor", why: "Typosquatted skills ride on the trust of the real one.", source: SRC.toxicSkills }),
+  planned({ id: "sec-agent-workflow", category: "security", defaultSeverity: "warning", scope: "project", summary: "CI workflow runs an agent on untrusted input with shell or write access", why: "An agent triggered by issues or pull_request_target with Bash allowed can be steered by anyone who opens an issue.", source: "https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions" }),
+  planned({ id: "secret-in-steering", category: "security", defaultSeverity: "error", summary: "Steering file contains something shaped like an API key or private key", why: "Steering files are committed and sent to a model provider in every session. The message shows the key type and first 4 characters only.", source: "https://docs.github.com/en/code-security/secret-scanning/introduction/about-secret-scanning" }),
+];

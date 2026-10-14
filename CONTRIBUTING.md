@@ -24,6 +24,10 @@ npm test
 - **Copy style.** No em-dashes and no emoji in code, comments or docs. A test checks every authored file.
 - Errors a user can cause must be one clear line and a non-zero exit, not a stack trace.
 
+## 0.3.0 tracks
+
+0.3.0 is built in parallel tracks. Before touching code for one, read [docs/contributing-tracks.md](docs/contributing-tracks.md) (who owns which file) and [docs/cli-contract.md](docs/cli-contract.md) (the output contract).
+
 ## Releasing
 
 Releases are cut by a maintainer with the manual `release` workflow, which publishes `@asitis/mcp` to npm with trusted publishing and provenance.

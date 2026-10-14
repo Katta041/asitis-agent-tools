@@ -1,20 +1,21 @@
-// The MCP server: five read-only tools. There is no write, patch, exec or
+// The MCP server: six read-only tools. There is no write, patch, exec or
 // network code anywhere in this package; tests assert that.
 
-import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { fileBudget, missingImportWarnings, projectBudget, type BudgetEntry } from "./budget.js";
 import { analyse, type Doc } from "./doc.js";
 import { Deadline, walk } from "./discover.js";
-import { KIND_LABEL, LOAD_GROUP_LABEL, LOAD_SHORT, type Kind, type LoadGroup } from "./kinds.js";
+import { suggestFixes } from "./fix.js";
+import { KIND_LABEL, LOAD_GROUP_LABEL, LOAD_SHORT, TOOL_NAME, type Kind, type LoadGroup } from "./kinds.js";
 import { CAPS } from "./limits.js";
-import { lintDoc, type Issue, type LintResult } from "./lint.js";
+import type { Issue, LintResult } from "./lint.js";
 import { outline } from "./outline.js";
 import { dp, esc, q, UNTRUSTED_NOTE } from "./escape.js";
 import { UserError, type Sandbox } from "./paths.js";
-import { extractImports, scanComments, scanInvisible, scanRefComments } from "./scan.js";
+import { INCLUDE_VALUES, lintProject, walkCutNote, type Include } from "./project.js";
+import { scanComments, scanInvisible, scanRefComments } from "./scan.js";
 import { alignUtf8End, alignUtf8Start, type Profile } from "./text.js";
 import { approxTokens, fmtTokens } from "./tokens.js";
 import { VERSION } from "./version.js";
@@ -73,17 +74,6 @@ export function scrubPaths(msg: string): string {
 export function plural(count: number, word: string, many = `${word}s`): string {
   return `${n(count)} ${count === 1 ? word : many}`;
 }
-
-/** Display names for the tool ids used in structuredContent. */
-const TOOL_NAME: Record<string, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  "gemini-cli": "Gemini CLI",
-  cursor: "Cursor",
-  copilot: "Copilot",
-  windsurf: "Windsurf",
-  cline: "Cline",
-};
 
 const kindLabel = (k: string): string => KIND_LABEL[k as Kind] ?? k;
 const loadShort = (l: string): string => LOAD_SHORT[l as LoadGroup] ?? l;
@@ -286,46 +276,30 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
       inputSchema: {
         path: z.string().min(1).max(CAPS.maxPathChars).optional().describe("One file to lint"),
         paths: z.array(z.string().min(1).max(CAPS.maxPathChars)).max(CAPS.lintMaxPaths).optional().describe("Several files to lint"),
+        include: z
+          .array(z.enum(INCLUDE_VALUES as [Include, ...Include[]]))
+          .max(INCLUDE_VALUES.length)
+          .optional()
+          .describe("Opt-in scans beyond markdown: skills (scripts in skill folders), config (.claude/settings.json and MCP config files), config-local (also .claude/settings.local.json). Off by default"),
       },
       annotations: { title: "Lint steering files", ...READ_ONLY },
     },
-    guard(async ({ path: p, paths }, deadline) => {
-      let targets: string[] = [];
-      let discovered = false;
+    guard(async ({ path: p, paths, include }, deadline) => {
+      const targets: string[] = [];
       if (p) targets.push(p);
       if (paths) targets.push(...paths);
-      let truncated = false;
-      let foundCount = 0;
-      let walkNote = "";
-      if (!targets.length) {
-        const found = await walk(sandbox, { deadline });
-        discovered = true;
-        foundCount = found.files.length;
-        walkNote = walkCutNote(found);
-        truncated = found.truncated || found.files.length > CAPS.lintMaxFiles;
-        targets = found.files.slice(0, CAPS.lintMaxFiles).map((f) => f.abs);
-      }
-      let timedOut = false;
-      const results: LintResult[] = [];
-      const failures: Array<{ path: string; error: string }> = [];
-      const docs: Doc[] = [];
-      for (const t of targets) {
-        if (deadline.expired) { truncated = true; timedOut = true; break; }
-        try {
-          const doc = await open(t);
-          docs.push(doc);
-          results.push(await lintDoc(doc, sandbox));
-        } catch (e) {
-          if (!discovered && targets.length === 1) throw e;
-          failures.push({ path: sandbox.display(t), error: e instanceof UserError ? e.message : String(e) });
-        }
-      }
-      if (docs.length > 1) crossFileChecks(docs, results);
-      const count = (s: string): number => results.reduce((a, r) => a + r.issues.filter((i) => i.severity === s).length, 0);
+      const project = await lintProject(sandbox, { targets, deadline, ...(include ? { include } : {}) });
+      const { results, failures, discovered, foundCount, timedOut, walkNote, truncated } = project;
+      // Suppressed findings (config, baseline, asitis-disable comments) are counted, not listed.
+      const live = (r: LintResult): Issue[] => r.issues.filter((i) => !i.suppressed);
+      const count = (s: string): number => results.reduce((a, r) => a + r.issues.filter((i) => i.severity === s && !i.suppressed).length, 0);
+      const suppressed = results.reduce((a, r) => a + r.issues.filter((i) => i.suppressed).length, 0);
       const errors = count("error");
       const warnings = count("warning");
       const notes = count("info");
       const allClean = errors + warnings + notes === 0 && !failures.length;
+      const tail = [...(suppressed ? [`${plural(suppressed, "suppressed finding")} not listed.`] : []), ...project.notes.map((t) => esc(t, 400))];
+      const summaryOf = (base: Record<string, unknown>): Record<string, unknown> => (suppressed ? { ...base, suppressed } : base);
       // Say exactly what was not linted and how to get it, so nobody has to guess a total.
       const cutParts: string[] = [];
       if (discovered && foundCount > results.length + failures.length && !timedOut) {
@@ -342,13 +316,13 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
             : `Linted ${plural(results.length, "file")}: ${plural(errors, "error")}, ${plural(warnings, "warning")}, ${plural(notes, "note")}.${cut}`,
       ];
       if (allClean && results.length === 1) {
-        return { content: [{ type: "text", text: lines[0]! }], structuredContent: { summary: { files: 1, errors: 0, warnings: 0, info: 0, truncated }, files: results, failures } };
+        return { content: [{ type: "text", text: [lines[0]!, ...tail].join("\n") }], structuredContent: { summary: summaryOf({ files: 1, errors: 0, warnings: 0, info: 0, truncated }), files: results, failures } };
       }
       if (discovered && !results.length) lines.push("No steering files found under the allowed folder.");
       // Most important first: files with errors, then warnings, then notes only; clean files go on one line at the end.
-      const rank = (r: LintResult): number => (r.issues.some((i) => i.severity === "error") ? 0 : r.issues.some((i) => i.severity === "warning") ? 1 : 2);
-      const withIssues = results.filter((r) => r.issues.length).sort((a, b) => rank(a) - rank(b));
-      const clean = results.filter((r) => !r.issues.length);
+      const rank = (r: LintResult): number => (live(r).some((i) => i.severity === "error") ? 0 : live(r).some((i) => i.severity === "warning") ? 1 : 2);
+      const withIssues = results.filter((r) => live(r).length).sort((a, b) => rank(a) - rank(b));
+      const clean = results.filter((r) => !live(r).length);
       if (withIssues.length || failures.length || clean.length) lines.push(UNTRUSTED_NOTE);
       // Keep the result well under client limits (Claude Code warns at about 10k tokens): list at most
       // LINT_MAX_LINES findings, most important files first, and count the rest.
@@ -357,11 +331,11 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
       let hiddenFiles = 0;
       for (const r of withIssues) {
         if (shownLines >= LINT_MAX_LINES) {
-          hiddenFindings += r.issues.length;
+          hiddenFindings += live(r).length;
           hiddenFiles++;
           continue;
         }
-        const items = formatIssues(r.issues);
+        const items = formatIssues(live(r));
         const room = LINT_MAX_LINES - shownLines;
         lines.push("", `${dp(r.path)} (${kindLabel(r.kind)}, ${loadShort(r.load)})`);
         lines.push(...items.slice(0, room));
@@ -375,9 +349,10 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
         const shown = clean.slice(0, 20).map((r) => dp(r.path)).join(", ");
         lines.push("", `${withIssues.length ? `No issues in ${plural(clean.length, "file")}` : "Files"}: ${shown}${clean.length > 20 ? `, and ${n(clean.length - 20)} more` : ""}.`);
       }
+      if (tail.length) lines.push("", ...tail);
       return {
         content: [{ type: "text", text: lines.join("\n") }],
-        structuredContent: { summary: { files: results.length, errors: count("error"), warnings: count("warning"), info: count("info"), truncated }, files: results, failures },
+        structuredContent: { summary: summaryOf({ files: results.length, errors, warnings, info: notes, truncated }), files: results, failures },
       };
     }),
   );
@@ -518,24 +493,32 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
     }),
   );
 
+  server.registerTool(
+    "suggest_fixes",
+    {
+      title: "Suggest fixes",
+      description:
+        "Suggest fixes for mechanical lint findings (invisible and bidirectional characters, skill name fields, frontmatter not on line 1, hidden comments) as a unified diff plus byte-range edits. It never writes. Apply the edits with minimal Edit calls, never by rewriting the whole file.",
+      inputSchema: {
+        path: z.string().min(1).max(CAPS.maxPathChars).optional().describe("One file; omit for every steering file"),
+        paths: z.array(z.string().min(1).max(CAPS.maxPathChars)).max(CAPS.lintMaxPaths).optional().describe("Several files"),
+        rules: z.array(z.string().min(1).max(100)).max(100).optional().describe("Only fixes for these rule ids"),
+        safety: z.enum(["safe", "all"]).optional().describe("safe: only fixes that cannot change meaning. all (default): also fixes to review"),
+      },
+      annotations: { title: "Suggest fixes", ...READ_ONLY },
+    },
+    guard(async (args, deadline) => {
+      const { text, structured } = await suggestFixes(sandbox, args, deadline);
+      return { content: [{ type: "text", text }], structuredContent: structured };
+    }),
+  );
+
   strictProtocolErrors(server);
   return server;
 }
 
 /** Findings listed in one lint_steering result; the summary line still counts all of them. */
 const LINT_MAX_LINES = 300;
-
-/** Why a folder walk stopped early, in one sentence, or "" when it did not. */
-function walkCutNote(found: { truncated: boolean; cut: { depth: boolean; size: boolean; time: boolean } }): string {
-  if (!found.truncated) return "";
-  const parts: string[] = [];
-  if (found.cut.size) parts.push(`the search stopped after ${n(CAPS.walkMaxFiles)} steering files or ${n(CAPS.walkMaxEntries)} folder entries`);
-  if (found.cut.time) parts.push("the search stopped at the time limit");
-  if (found.cut.depth) parts.push(`folders more than ${CAPS.walkMaxDepth} levels deep were not searched`);
-  if (!parts.length) return "";
-  const t = parts.join("; ");
-  return `${t.charAt(0).toUpperCase()}${t.slice(1)}.`;
-}
 
 /** A zod-style validation error as one line: "params.name: Required; params.arguments: Expected object". */
 function oneLineIssues(e: unknown): string | null {
@@ -553,7 +536,7 @@ function oneLineIssues(e: unknown): string | null {
 function strictProtocolErrors(server: McpServer): void {
   const handlers = (server.server as unknown as { _requestHandlers?: unknown })._requestHandlers;
   if (!(handlers instanceof Map)) return;
-  const tools = ["read_markdown", "outline", "lint_steering", "context_budget", "find_steering_files"];
+  const tools = ["read_markdown", "outline", "lint_steering", "context_budget", "find_steering_files", "suggest_fixes"];
   for (const [method, fn] of [...handlers.entries()] as Array<[string, (req: any, extra: unknown) => Promise<unknown>]>) {
     handlers.set(method, async (req: any, extra: unknown) => {
       if (method === "tools/call") {
@@ -571,78 +554,4 @@ function strictProtocolErrors(server: McpServer): void {
       }
     });
   }
-}
-
-/** The tool that loads this file at the start of every session from the project root, or null. */
-function sessionTool(d: Doc): string | null {
-  if (d.kind.load !== "every-session") return null;
-  switch (d.kind.kind) {
-    case "claude-md":
-    case "claude-rule":
-      return "claude-code";
-    case "gemini-md":
-      return "gemini-cli";
-    case "cursor-rule":
-    case "cursor-legacy":
-      return "cursor";
-    case "windsurf-rule":
-      return "windsurf";
-    case "cline-rule":
-      return "cline";
-    case "copilot-instructions":
-      return "copilot";
-    default:
-      return null; // AGENTS.md is the only file Codex loads at the root
-  }
-}
-
-/** Cross-file heuristics when several files are linted together. */
-function crossFileChecks(docs: Doc[], results: LintResult[]): void {
-  // Same rule line in two files that the same tool loads in the same session. Files of different
-  // tools (AGENTS.md for Codex, .windsurfrules for Windsurf) are never paid for together.
-  const byRel = new Map(docs.map((d) => [d.file.rel, d]));
-  const groups = new Map<Doc, string>();
-  for (const d of docs) {
-    const t = sessionTool(d);
-    if (t) groups.set(d, t);
-  }
-  // A file a CLAUDE.md @-imports loads with it.
-  for (const d of docs) {
-    if (groups.get(d) !== "claude-code" || d.kind.kind !== "claude-md") continue;
-    const dir = path.posix.dirname(d.file.rel);
-    for (const im of extractImports(d.lines, d.fence, d.frontmatter.present ? d.frontmatter.endLine : -1)) {
-      const target = byRel.get(path.posix.normalize(path.posix.join(dir === "." ? "" : dir, im.path)));
-      if (target && !groups.has(target)) groups.set(target, "claude-code");
-    }
-  }
-  const seenByTool = new Map<string, Map<string, { path: string; line: number }>>();
-  docs.forEach((d, idx) => {
-    const tool = groups.get(d);
-    if (!tool) return;
-    const seen = seenByTool.get(tool) ?? new Map<string, { path: string; line: number }>();
-    seenByTool.set(tool, seen);
-    const start = d.frontmatter.present ? d.frontmatter.endLine + 1 : 0;
-    for (let i = start; i < d.lines.count; i++) {
-      if (d.fence[i]) continue;
-      const len = d.lines.end(i) - d.lines.start(i);
-      if (len < 20 || len > 400) continue;
-      const norm = d.lines.line(i).toLowerCase().replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").replace(/\s+/g, " ").trim();
-      if (norm.length < 20 || norm.startsWith("#") || norm.startsWith("|")) continue;
-      const prev = seen.get(norm);
-      if (prev && prev.path !== d.path) {
-        results[idx]!.issues.push({ severity: "warning", rule: "duplicate-across-files", message: `Same rule also in ${dp(prev.path)} line ${prev.line}; ${TOOL_NAME[tool] ?? tool} loads both files every session, so it is paid for twice. Keep it in one file`, line: i + 1 });
-      } else if (!prev) seen.set(norm, { path: d.path, line: i + 1 });
-    }
-  });
-  // Memory topic files that no MEMORY.md in the same folder links to never load.
-  const indexes = docs.filter((d) => d.kind.kind === "memory-index");
-  docs.forEach((d, idx) => {
-    if (d.kind.kind !== "memory-topic") return;
-    const dir = d.file.real.slice(0, d.file.real.length - d.file.rel.split("/").pop()!.length);
-    const base = d.file.rel.split("/").pop()!;
-    const idxDoc = indexes.find((m) => m.file.real.startsWith(dir) && m.file.real.slice(dir.length) === "MEMORY.md");
-    if (idxDoc && !idxDoc.text.includes(`(${base})`) && !idxDoc.text.includes(`(./${base})`)) {
-      results[idx]!.issues.push({ severity: "warning", rule: "orphan-memory", message: `Not linked from ${dp(idxDoc.path)}, so it never loads. Link it from the index or delete it`, line: 1 });
-    }
-  });
 }

@@ -30,9 +30,9 @@ describe("stdio server (bundled dist/asitis-mcp.mjs)", () => {
     expect(s.client.getInstructions()).toMatch(/cannot write, execute or reach the network/);
   });
 
-  test("lists the five read-only tools with input schemas", async () => {
+  test("lists the six read-only tools with input schemas", async () => {
     const { tools } = await s.client.listTools();
-    expect(tools).toHaveLength(5);
+    expect(tools).toHaveLength(6);
     for (const t of tools) {
       expect(t.inputSchema.type).toBe("object");
       expect(t.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: false });
@@ -46,6 +46,7 @@ describe("stdio server (bundled dist/asitis-mcp.mjs)", () => {
       ["lint_steering", { path: ".claude/skills/Bad_Skill/SKILL.md" }],
       ["context_budget", {}],
       ["find_steering_files", {}],
+      ["suggest_fixes", {}],
     ];
     let footers = 0;
     for (const [name, args] of calls) {
