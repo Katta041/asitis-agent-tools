@@ -11,14 +11,14 @@
 
 **No install:** paste a file into the [browser checker](https://asitis.app/tools/steering-file-checker). Same linter, runs in your browser tab, nothing is uploaded.
 
-**Claude Code:** add the marketplace and install the plugin, then run `/asitis:md-lint` or `/asitis:md-budget` in a session.
+**Claude Code:** add the marketplace and install the plugin, then run `/asitis:md-lint` or `/asitis:md-budget` in a new session.
 
 ```bash
 claude plugin marketplace add Katta041/asitis-agent-tools
 claude plugin install asitis@asitis
 ```
 
-**Other MCP clients:** the server is on npm. This is the command to put in your client's MCP config (pin the version):
+**Other MCP clients:** the server is on npm. This is the command your client's MCP config runs (always pin the version). Ready-made configs are under [Install](#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
 
 ```bash
 npx -y @asitis/mcp@0.2.3 --root /absolute/path/to/project
@@ -43,7 +43,9 @@ claude plugin marketplace add Katta041/asitis-agent-tools
 claude plugin install asitis@asitis
 ```
 
-Inside a session, `/plugin marketplace add Katta041/asitis-agent-tools` and `/plugin install asitis@asitis` do the same. Remove it with `claude plugin marketplace remove asitis`.
+Inside a session, `/plugin marketplace add Katta041/asitis-agent-tools` and `/plugin install asitis@asitis` do the same. Start a new session, then run `/asitis:md-lint` or `/asitis:md-budget`.
+
+To update, run `claude plugin marketplace update asitis`, then `claude plugin update asitis@asitis`, and restart Claude Code. To remove it, run `claude plugin uninstall asitis@asitis`.
 
 From a local clone instead:
 
@@ -57,18 +59,15 @@ Or try it for one session without installing: `claude --plugin-dir ./asitis-agen
 
 The plugin never downloads the server at runtime. See [`plugins/asitis/README.md`](plugins/asitis/README.md) for the skill, commands, guard hook and options.
 
-### Other MCP clients (Claude Desktop, Cursor, Codex, Gemini CLI)
-
-`@asitis/mcp` is on npm: use `"command": "npx"` with `"args": ["-y", "@asitis/mcp@0.2.3", "--root", "/absolute/path/to/project"]`. Always pin the version; never use `@latest` in an agent config.
-
-Or run it from a clone. The plugin folder already contains the built, pinned server, so no install or build step is needed:
+To add only the MCP server to Claude Code, without the skill, commands or hook:
 
 ```bash
-git clone https://github.com/Katta041/asitis-agent-tools.git
-node asitis-agent-tools/plugins/asitis/server/asitis-mcp.mjs --version
+claude mcp add asitis -- npx -y @asitis/mcp@0.2.3 --root "$PWD"
 ```
 
-Use `node` as the command and the absolute path to `plugins/asitis/server/asitis-mcp.mjs` as the first argument. Client configs are always started outside your project, so give `--root` as an absolute path.
+### Other MCP clients (Claude Desktop, Cursor, Codex, Gemini CLI)
+
+The server is published on npm as `@asitis/mcp`. Always pin the version; never use `@latest` in an agent config. Clients start servers outside your project, so give `--root` as an absolute path.
 
 **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows.
 
@@ -76,8 +75,8 @@ Use `node` as the command and the absolute path to `plugins/asitis/server/asitis
 {
   "mcpServers": {
     "asitis": {
-      "command": "node",
-      "args": ["/absolute/path/to/asitis-agent-tools/plugins/asitis/server/asitis-mcp.mjs", "--root", "/absolute/path/to/project"]
+      "command": "npx",
+      "args": ["-y", "@asitis/mcp@0.2.3", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -89,8 +88,8 @@ Use `node` as the command and the absolute path to `plugins/asitis/server/asitis
 {
   "mcpServers": {
     "asitis": {
-      "command": "node",
-      "args": ["/absolute/path/to/asitis-agent-tools/plugins/asitis/server/asitis-mcp.mjs", "--root", "${workspaceFolder}"]
+      "command": "npx",
+      "args": ["-y", "@asitis/mcp@0.2.3", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -102,8 +101,8 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 
 ```toml
 [mcp_servers.asitis]
-command = "node"
-args = ["/absolute/path/to/asitis-agent-tools/plugins/asitis/server/asitis-mcp.mjs", "--root", "/absolute/path/to/project"]
+command = "npx"
+args = ["-y", "@asitis/mcp@0.2.3", "--root", "/absolute/path/to/project"]
 ```
 
 **Gemini CLI**: `.gemini/settings.json` in the project (or `~/.gemini/settings.json`).
@@ -112,12 +111,23 @@ args = ["/absolute/path/to/asitis-agent-tools/plugins/asitis/server/asitis-mcp.m
 {
   "mcpServers": {
     "asitis": {
-      "command": "node",
-      "args": ["/absolute/path/to/asitis-agent-tools/plugins/asitis/server/asitis-mcp.mjs", "--root", "/absolute/path/to/project"]
+      "command": "npx",
+      "args": ["-y", "@asitis/mcp@0.2.3", "--root", "/absolute/path/to/project"]
     }
   }
 }
 ```
+
+If a desktop app cannot find `npx`, use its full path (run `which npx`, or `where npx` on Windows) as the `command`.
+
+**Without npm**: the plugin folder in this repository already contains the built, pinned server, so no install or build step is needed.
+
+```bash
+git clone https://github.com/Katta041/asitis-agent-tools.git
+node asitis-agent-tools/plugins/asitis/server/asitis-mcp.mjs --version
+```
+
+In any config above, set `command` to `node` and make the absolute path to `plugins/asitis/server/asitis-mcp.mjs` the first entry in `args`, followed by `--root` and your project folder.
 
 **Hardened**: add Node's permission model so the runtime itself denies writes and child processes (and network access on Node 25 and later). This is what the Claude Code plugin does:
 
@@ -128,7 +138,7 @@ node --permission \
   /absolute/path/to/asitis-agent-tools/plugins/asitis/server/asitis-mcp.mjs --root /absolute/path/to/project
 ```
 
-Put the same flags at the front of `args` in any config above.
+In a client config, `command` is `node` and every other word goes in `args`, in the same order. The [`@asitis/mcp` README](packages/mcp/README.md#hardened-nodes-permission-model) shows the same setup for an npm install.
 
 ## What it checks
 
@@ -151,7 +161,7 @@ Vendor limits, with sources cited in [`packages/mcp/src/limits.ts`](packages/mcp
 | Cursor rules | under 500 lines |
 | Windsurf rules | 12,000 characters |
 
-Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. Every result ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`. Turn it off with `--no-footer` (or `--footer false`, or `ASITIS_MCP_FOOTER=0`).
+Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. The first result of each session ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`; later results and errors do not repeat it. Turn it off with `--no-footer` (or `--footer false`, or `ASITIS_MCP_FOOTER=0`).
 
 ## Privacy
 
@@ -170,7 +180,7 @@ Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWor
 
 Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
 
-## Limits
+## Known limits
 
 - Token counts are local approximations (about 4 characters per token for English), not any vendor's tokenizer.
 - A hardlink inside the root to a file elsewhere is read like any other file (reads only).
@@ -181,30 +191,30 @@ Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
 
 ## Options
 
-```
+```text
 asitis-mcp --root <folder> [--root <folder>...] [options]
 
   --root <folder>      Folder the server may read (repeatable). Default: the current folder.
-  --no-footer          Do not end tool results with the asitis.app line.
+  --no-footer          Hide the asitis.app line (shown once per session, on the first result).
   --max-file-mb <n>    Largest file to analyse, in MB (default 16, max 64).
   --allow-broad-root   Allow your home folder or the filesystem root as the root.
   --version            Print the version.
   --help               Print this help.
 ```
 
-`ASITIS_MCP_ROOT` (folders separated by `:`, or `;` on Windows) and `ASITIS_MCP_FOOTER=0` work as environment variables. Add a second `--root` for a memory folder that lives outside the project.
+`ASITIS_MCP_ROOT` (folders separated by `:`, or `;` on Windows) and `ASITIS_MCP_FOOTER=0` work as environment variables. Add a second `--root` for a memory folder that lives outside the project, for example `~/.claude/projects/<project>/memory`.
 
 Mistakes print one line and exit with code 2, for example:
 
-```
+```text
 asitis-mcp: Root folder not found: /x. Pass an existing folder with --root.
 ```
 
 ## Develop
 
 ```bash
-npm ci            # installs the pinned dev dependencies; there are no install scripts
-npm test          # typecheck, bundle, then the full Vitest suite
+npm ci                # install the pinned dev dependencies (there are no install scripts)
+npm test              # typecheck, bundle, then the full Vitest suite
 npm run sync-plugin   # rebuild the server and copy it, with its SHA-256, into plugins/asitis/server
 ```
 
@@ -212,4 +222,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in [CHANGELOG.md](CHA
 
 ## License
 
-[MIT](LICENSE). The bundled server includes open-source dependencies under their own licences, listed in `plugins/asitis/server/THIRD_PARTY_NOTICES.md`.
+[MIT](LICENSE). The bundled server includes open-source dependencies under their own licences, listed in [`plugins/asitis/server/THIRD_PARTY_NOTICES.md`](plugins/asitis/server/THIRD_PARTY_NOTICES.md).

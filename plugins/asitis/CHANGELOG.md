@@ -2,6 +2,14 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- The bundled server's output is easier to read (see the `@asitis/mcp` changelog).
+- `/asitis:md-lint` asks for a short report: totals first, hidden-content findings next, then errors and warnings as `path:line rule: message`, notes in one line. `/asitis:md-budget` asks for one line per tool, largest first, and stops early when nothing loads every session.
+- Guard hook messages: correct plurals ("2 lines", not "2 line(s)"), no doubled parentheses, and for an Edit on a file with mixed line endings it says that Claude Code's Edit writes the whole file with one style, and advises asking the user instead of retrying.
+- README: update and uninstall steps (`claude plugin update asitis@asitis`, `claude plugin uninstall asitis@asitis`), a first-run step, and absolute links that work on marketplace pages.
+
 ## [0.2.3] - 2026-10-14
 
 ### Fixed
@@ -62,3 +70,10 @@ All notable changes to the AsItIs Claude Code plugin are documented here. The fo
 - `markdown-byte-clean` skill: minimal edits, no whole-file rewrites, frontmatter, line endings, BOM and trailing spaces kept.
 - `/asitis:md-lint` and `/asitis:md-budget` commands.
 - Optional PreToolUse accident guard for Write, Edit and MultiEdit, with `ask`, `deny` and `off` modes. It fails closed on malformed input and is documented as an accident guard, not a security boundary.
+
+[Unreleased]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/Katta041/asitis-agent-tools/compare/12b43a6...v0.2.0
+[0.1.0]: https://github.com/Katta041/asitis-agent-tools/commit/12b43a6

@@ -7,6 +7,9 @@ All notable changes to this repository are documented here. The format follows [
 ### Changed
 - npm and MCP Registry listings link to https://asitis.app/claude-code instead of the home page.
 - A test fails the release if a README pins `@asitis/mcp` at any version other than the package's own.
+- Tool output: findings sorted errors first with a clear `line N [severity]` prefix, readable outlines, correct plurals and number formatting, tools named and sorted in `context_budget`, and the asitis.app line once per session instead of on every result. Lint messages say how to fix each finding.
+- `/asitis:md-lint` and `/asitis:md-budget` ask for a short report with hidden-content findings first; the guard hook's messages use correct plurals and explain why an Edit on a mixed-line-ending file is flagged.
+- Docs: npx configs for every MCP client, update and uninstall steps for the plugin, absolute links in the npm and plugin READMEs, a 0.2.0 changelog entry and changelog compare links.
 
 ## [0.2.3] - 2026-10-14
 
@@ -39,7 +42,28 @@ All notable changes to this repository are documented here. The format follows [
 - Guard hook: the trailing-whitespace check names the exact lines, and of two identical lines reports only the one that loses its trailing spaces. Fixes [#4](https://github.com/Katta041/asitis-agent-tools/issues/4).
 - `claude plugin install asitis@asitis` no longer prints "2 userConfig options not yet set". The guard mode and the footer are now set with `ASITIS_GUARD_MODE` and `ASITIS_MCP_FOOTER` in the `env` block of Claude Code settings.
 
-## [0.1.0] - Unreleased
+## [0.2.0] - 2026-10-03
+
+### Fixed
+- The plugin's MCP server starts when the plugin folder is inside the project folder (the `--plugin-dir` layout) and when a session starts in the home folder. A root that Node's permission model will not let the server read gets a one-line explanation instead of "Root folder not found".
+- `outline` keeps the first heading of files that start with a BOM, and YAML errors are reported on their real line.
+- `context_budget` counts only the skills, commands and subagents Claude Code loads from `.claude/`.
+- Guard hook: `Edit` and `MultiEdit` are simulated the way Claude Code writes them, so an edit that rewrites the line endings of a mixed-EOL file is caught.
+
+### Security
+- Every tool quotes and escapes text taken from files and marks it as untrusted, so a repository cannot forge report lines. New `unsafe-path` warning.
+- `[//]: # (...)` comments and the HTML `hidden` attribute are reported as hidden content.
+- The guard hook fails closed on its own time budget and on files over 16 MB, and treats an unknown mode as `deny`.
+
+### Added
+- Lint rules `name-reserved-word`, `xml-tag` and `body-tokens`; `description-too-long` is now an error.
+- On Node older than 22.13 the plugin prints one clear line instead of Node's "bad option: --permission".
+
+### Changed
+- Fewer false positives: bold labels and short list items in other sections, comments in inline code, npm package names after `@`.
+- The plugin is shown as "AsItIs" in the Claude Code plugin list.
+
+## [0.1.0] - 2026-10-01
 
 ### Added
 - `@asitis/mcp` 0.1.0: stdio MCP server with five read-only tools (`read_markdown`, `outline`, `lint_steering`, `context_budget`, `find_steering_files`), root confinement, a markdown-only allowlist, size caps, a per-call time budget and linear-time scanners.
@@ -47,3 +71,10 @@ All notable changes to this repository are documented here. The format follows [
 - Repository-level Claude Code marketplace (`.claude-plugin/marketplace.json`).
 - CI on Ubuntu, macOS and Windows, and a manual release workflow for npm trusted publishing with provenance.
 - MIT licence.
+
+[Unreleased]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/Katta041/asitis-agent-tools/compare/12b43a6...v0.2.0
+[0.1.0]: https://github.com/Katta041/asitis-agent-tools/commit/12b43a6

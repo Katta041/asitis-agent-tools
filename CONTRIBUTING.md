@@ -19,7 +19,7 @@ npm test
 - **Keep scanners linear.** New checks must pass the 10 MB adversarial inputs in `packages/mcp/test/dos.test.ts`.
 - **Pin exact versions.** Dev dependencies use exact versions; there are no runtime dependencies and no install scripts.
 - **Keep the plugin pin in sync.** After any change to `packages/mcp/src` or to dependencies, run `npm run sync-plugin` and commit the updated `plugins/asitis/server/` files. A test fails if the vendored bundle differs from a fresh build.
-- **Bump versions together.** `packages/mcp/package.json`, `packages/mcp/src/version.ts`, `plugins/asitis/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` must agree; a test checks them.
+- **Bump versions together.** `packages/mcp/package.json`, `packages/mcp/server.json`, `packages/mcp/src/version.ts`, `plugins/asitis/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` and the `@asitis/mcp@x.y.z` pins in both READMEs must agree; tests check them.
 - **Fixtures are byte-exact.** Never open and save files under `test-fixtures/` in an editor. Add new fixtures with a script or `printf`, and use simulated content only.
 - **Copy style.** No em-dashes and no emoji in code, comments or docs. A test checks every authored file.
 - Errors a user can cause must be one clear line and a non-zero exit, not a stack trace.

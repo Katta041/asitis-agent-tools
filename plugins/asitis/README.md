@@ -4,7 +4,7 @@
 
 | Part | What it does |
 |---|---|
-| MCP server `asitis` | Five read-only tools: `read_markdown`, `outline`, `lint_steering`, `context_budget`, `find_steering_files`. See [`@asitis/mcp`](../../packages/mcp/README.md). |
+| MCP server `asitis` | Five read-only tools: `read_markdown`, `outline`, `lint_steering`, `context_budget`, `find_steering_files`. See [`@asitis/mcp`](https://github.com/Katta041/asitis-agent-tools/blob/main/packages/mcp/README.md). |
 | Skill `markdown-byte-clean` | Teaches Claude to edit minimal ranges, never rewrite whole markdown files, and keep frontmatter, line endings, BOM and trailing spaces exactly as they are. |
 | `/asitis:md-lint [path]` | Lints steering files: frontmatter on line 1, YAML, required fields, limits, broken links and `@imports`, invisible characters, hidden instructions. |
 | `/asitis:md-budget [path]` | Shows approximately how many tokens load every session, per tool, and what to cut. |
@@ -19,11 +19,13 @@ claude plugin marketplace add Katta041/asitis-agent-tools
 claude plugin install asitis@asitis
 ```
 
+Inside a session, `/plugin marketplace add Katta041/asitis-agent-tools` and `/plugin install asitis@asitis` do the same. Then start a new session and run `/asitis:md-lint` to lint the project's steering files, or `/asitis:md-budget` to see what they cost in tokens.
+
+To update, run `claude plugin marketplace update asitis`, then `claude plugin update asitis@asitis`, and restart Claude Code. To remove it, run `claude plugin uninstall asitis@asitis`.
+
 From a local clone of [the repository](https://github.com/Katta041/asitis-agent-tools), pass the clone's folder instead: `claude plugin marketplace add ./asitis-agent-tools`. To try it for one session without installing, run `claude --plugin-dir ./asitis-agent-tools/plugins/asitis`.
 
-Inside a session, `/plugin marketplace add Katta041/asitis-agent-tools` and `/plugin install asitis@asitis` do the same. Remove it with `claude plugin marketplace remove asitis`.
-
-For other assistants (Claude Desktop, Cursor, Codex, Gemini CLI), use the MCP server on its own; config snippets are in the [repository README](../../README.md#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
+For other assistants (Claude Desktop, Cursor, Codex, Gemini CLI), use the MCP server on its own; config snippets are in the [repository README](https://github.com/Katta041/asitis-agent-tools#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
 
 ### Troubleshooting
 
@@ -37,16 +39,16 @@ For other assistants (Claude Desktop, Cursor, Codex, Gemini CLI), use the MCP se
 
 - No network. The server and the hook make no connections, collect nothing and send nothing.
 - No writes. The server has no write tool and no write code; the hook only reads the file it is asked about.
-- The server runs under Node's permission model: `node --permission` with read access to this plugin and your project folder only, and no write or child-process rights. Node enforces that, not just our code. Node blocks network access too from version 25; on Node 22.13 to 24 the no-network guarantee rests on the code, which contains no network calls. A small launcher (`server/launch.mjs`, about 100 lines, no dependencies) checks the Node version and starts the server with those flags; it reads no files and makes no connections.
+- The server runs under Node's permission model: `node --permission` with read access to this plugin and your project folder only, and no write or child-process rights. Node enforces that, not just our code. Node blocks network access too from version 25; on Node 22.13 to 24 the no-network guarantee rests on the code, which contains no network calls. A small launcher (`server/launch.mjs`, about 110 lines, no dependencies) checks the Node version and starts the server with those flags; it reads no files and makes no connections.
 - Tool results go into Claude's context and so reach Anthropic like the rest of your session. That is Claude Code's traffic, not ours.
 
 ## Pinned server
 
-The server is not fetched from npm at runtime. `server/asitis-mcp.mjs` is the exact `@asitis/mcp` build for this plugin version (one file, zero dependencies), and `server/VERSION` records its version and SHA-256. A test fails if the file differs from a fresh build or if the versions disagree. `server/THIRD_PARTY_NOTICES.md` lists the bundled open-source licences.
+The server is not fetched from npm at runtime. `server/asitis-mcp.mjs` is the exact `@asitis/mcp` build for this plugin version (one file, zero dependencies), and `server/VERSION` records its version and SHA-256. A test fails if the file differs from a fresh build or if the versions disagree. [`server/THIRD_PARTY_NOTICES.md`](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/server/THIRD_PARTY_NOTICES.md) lists the bundled open-source licences.
 
-## The guard hook is an accident guard, not a security boundary
+## Guard hook
 
-It exists to catch the common accident: an agent rewrites a whole file with `Write`, or an `Edit` whose `new_string` quietly drops trailing spaces or CRLF line endings. It checks `Write`, `Edit` and `MultiEdit` on existing `.md`, `.mdc`, `.markdown`, `.mdx`, `.cursorrules`, `.windsurfrules` and `.clinerules` files and warns when the change would:
+**The guard is an accident guard, not a security boundary.** It exists to catch the common accident: an agent rewrites a whole file with `Write`, or an `Edit` whose `new_string` quietly drops trailing spaces or CRLF line endings. It checks `Write`, `Edit` and `MultiEdit` on existing `.md`, `.mdc`, `.markdown`, `.mdx`, `.cursorrules`, `.windsurfrules` and `.clinerules` files and warns when the change would:
 
 - convert CRLF to LF (or the reverse), flatten mixed line endings or remove lone CRs;
 - strip trailing whitespace (two trailing spaces are a hard line break);
@@ -59,7 +61,7 @@ It checks an `Edit` or `MultiEdit` the way Claude Code writes it: Claude Code tu
 
 What it does not do: it does not see `Bash` (`sed -i`, redirects, scripts), `NotebookEdit`, other tools or other programs, and anything running as you can bypass it. It never changes the tool call.
 
-Modes, set with the environment variable `ASITIS_GUARD_MODE` (see [Options](#options)):
+Modes, set with the environment variable `ASITIS_GUARD_MODE` (see Options below):
 
 | Mode | Behaviour |
 |---|---|
@@ -70,6 +72,7 @@ Modes, set with the environment variable `ASITIS_GUARD_MODE` (see [Options](#opt
 Any other value is treated as `deny`, the safest mode, and the guard says so in its message.
 
 It fails closed:
+
 - If the hook input is not valid JSON or lacks the fields it needs, the change is blocked with a one-line message saying why (`AsItIs guard: the hook input is not valid JSON. The change was blocked to be safe; ...`).
 - Claude Code gives the hook 10 seconds and lets the change through if a hook times out. The guard therefore stops itself after 6 seconds (counted from when the hook process starts), and on files over 16 MB, and asks you (blocks in `deny` mode) instead of letting an unchecked change through.
 
@@ -91,7 +94,7 @@ The plugin works with no setup, so installing it asks nothing. To change a defau
 | Variable | Default | Effect |
 |---|---|---|
 | `ASITIS_GUARD_MODE` | `ask` | `ask`, `deny` or `off` for the guard hook. |
-| `ASITIS_MCP_FOOTER` | on | Each tool result ends with one line linking to asitis.app. Set to `0` to hide it. |
+| `ASITIS_MCP_FOOTER` | on | The first tool result of each session ends with one line linking to asitis.app. Set to `0` to hide it. |
 
 Before 0.2.1 these were plugin options (`guard_mode`, `footer`) set with `/plugin configure`. Claude Code reports every plugin option the user has not saved as "not yet set" at install, even one with a default, so 0.2.1 reads environment variables instead. If you set either option, set the variable instead.
 
@@ -109,4 +112,4 @@ claude plugin validate ./plugins/asitis --strict
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/LICENSE). Changes are listed in the [changelog](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/CHANGELOG.md).

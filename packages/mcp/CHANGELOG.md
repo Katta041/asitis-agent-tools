@@ -7,6 +7,12 @@ All notable changes to `@asitis/mcp` are documented here. The format follows [Ke
 ### Changed
 - npm and MCP Registry listings link to https://asitis.app/claude-code instead of the home page.
 - A test fails the release if a README pins `@asitis/mcp` at any version other than the package's own.
+- Tool output is easier to read for people and models. Findings read `- line 12 [warning] rule: message`, sorted errors first; files with errors come first and clean files share one closing line. `outline` prints `line 7: # "Title"`, indented by level, instead of `L7  # "Title"`, which lost its spacing when copied. Plurals are correct ("1 file", not "1 file(s)"), numbers have thousands separators, and "about 10.0k tokens" is now "about 10k tokens".
+- `context_budget` lists tools by name (Claude Code, Codex, Gemini CLI) and largest first, opens with a one-line total per tool, and says why an import was not counted instead of "about 0 tokens".
+- `find_steering_files` says a note shared by every skill once instead of on each line, and ends with what to run next.
+- `read_markdown` describes the file in one sentence ("File: 32 bytes, 3 lines, UTF-8, LF line endings, final newline, no trailing whitespace.") instead of a row of `|` fields.
+- Lint messages say what to do: fix or remove a broken link or import, keep one of two duplicate or contradictory rules (now quoted), delete an invisible character, and a valid skill name to use for `name-format`. `field-type` no longer double-quotes a string value (`not "yes"`, was `not "\"yes\""`).
+- The asitis.app line is shown once per session, on the first successful result, and never on an error. The untrusted-data notice is shorter. Errors for a missing file point to `find_steering_files`; size errors read "4,096 bytes" or "17.2 MB".
 
 ## [0.2.3] - 2026-10-14
 
@@ -65,3 +71,10 @@ All notable changes to `@asitis/mcp` are documented here. The format follows [Ke
 ### Security
 - Regression tests for path traversal, symlink file and folder escape, settings and `.env` access, and 10 MB denial-of-service inputs.
 - There is no write, patch or delete tool.
+
+[Unreleased]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/Katta041/asitis-agent-tools/compare/12b43a6...v0.2.0
+[0.1.0]: https://github.com/Katta041/asitis-agent-tools/commit/12b43a6
