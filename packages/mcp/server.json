@@ -3,7 +3,7 @@
   "name": "io.github.Katta041/asitis-mcp",
   "title": "AsItIs",
   "description": "Read-only MCP server for markdown and agent steering files: read, outline, lint, context budget.",
-  "websiteUrl": "https://asitis.app/?ref=mcp-registry",
+  "websiteUrl": "https://asitis.app/claude-code",
   "repository": {
     "url": "https://github.com/Katta041/asitis-agent-tools",
     "source": "github",

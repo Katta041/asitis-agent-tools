@@ -39,7 +39,7 @@
     "token-count",
     "invisible-unicode"
   ],
-  "homepage": "https://asitis.app",
+  "homepage": "https://asitis.app/claude-code",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Katta041/asitis-agent-tools.git",

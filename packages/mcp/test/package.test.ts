@@ -184,3 +184,16 @@ describe("copy rules: no em-dashes, no emoji, no AI attribution in anything we a
     expect(text, "attribution").not.toMatch(ATTRIBUTION);
   });
 });
+
+describe("docs never pin a stale version", () => {
+  // Install snippets pin an exact version on purpose (never @latest in an agent config), so every
+  // pin must move with the release. This fails the release, not a reader, when one is missed.
+  const docs = [path.join(REPO, "README.md"), path.join(PKG, "README.md")].filter((p) => existsSync(p));
+  for (const doc of docs) {
+    test(`${path.relative(REPO, doc)} pins @asitis/mcp at ${pkg.version}`, () => {
+      const pins = [...read(doc).matchAll(/@asitis\/mcp@(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+      expect(pins.length).toBeGreaterThan(0);
+      expect(pins.filter((v) => v !== pkg.version)).toEqual([]);
+    });
+  }
+});

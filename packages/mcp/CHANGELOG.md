@@ -2,6 +2,12 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- npm and MCP Registry listings link to https://asitis.app/claude-code instead of the home page.
+- A test fails the release if a README pins `@asitis/mcp` at any version other than the package's own.
+
 ## [0.2.3] - 2026-10-14
 
 ### Fixed
