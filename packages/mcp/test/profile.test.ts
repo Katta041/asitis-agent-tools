@@ -131,7 +131,8 @@ describe("classification", () => {
     [".github/prompts/p.prompt.md", "prompt-file", "on-invocation"],
     [".claude/projects/demo/memory/MEMORY.md", "memory-index", "memory"],
     [".claude/projects/demo/memory/topic.md", "memory-topic", "memory"],
-    ["memory/MEMORY.md", "markdown", "other"],
+    ["memory/MEMORY.md", "memory-index", "memory"],
+    ["memory/topic.md", "memory-topic", "memory"],
     ["src/memory/README.md", "markdown", "other"],
     ["docs/readme.md", "markdown", "other"],
   ])("%s", (p, kind, load) => {

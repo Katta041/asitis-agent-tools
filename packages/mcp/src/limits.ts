@@ -6,6 +6,8 @@ export const VENDOR = {
   claudeMdTargetLines: 200,
   /** Claude Code memory docs: imports recurse "with a maximum depth of four hops". */
   importMaxHops: 4,
+  /** Gemini CLI memport docs (docs/reference/memport.md): default maximum import depth 5. */
+  geminiImportMaxDepth: 5,
   /** Claude Code skills docs: "Keep SKILL.md under 500 lines". */
   skillMaxLines: 500,
   /** Claude Code skills docs: description plus when_to_use "truncated at 1,536 characters in the skill listing". */
@@ -21,7 +23,11 @@ export const VENDOR = {
   /** Claude Code memory docs: auto memory loads "first 200 lines or 25KB" of MEMORY.md. */
   memoryIndexLines: 200,
   memoryIndexBytes: 25 * 1024,
-  /** Codex AGENTS.md docs: project_doc_max_bytes default 32 KiB. */
+  /**
+   * Codex AGENTS.md guide and codex-rs/core/src/agents_md.rs: project_doc_max_bytes, 32 KiB by
+   * default, is one budget shared by every AGENTS.md from the project root down to the working
+   * folder, filled root first; the file that crosses it is cut and deeper files are dropped.
+   */
   codexAgentsMdBytes: 32 * 1024,
   /** Cursor rules docs: keep rules under 500 lines. */
   cursorRuleLines: 500,

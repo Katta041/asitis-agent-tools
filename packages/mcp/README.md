@@ -65,6 +65,22 @@ claude plugin install asitis@asitis
 
 If your Cursor version does not expand `${workspaceFolder}`, use an absolute path. The server refuses a root that still contains `${...}` rather than guessing.
 
+### VS Code
+
+`.vscode/mcp.json` in the project (Copilot agent mode). VS Code uses the `servers` key, not `mcpServers`:
+
+```json
+{
+  "servers": {
+    "asitis": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@asitis/mcp@0.2.5", "--root", "${workspaceFolder}"]
+    }
+  }
+}
+```
+
 ### Codex (CLI, IDE and desktop)
 
 `~/.codex/config.toml`:
@@ -113,21 +129,21 @@ If a desktop app cannot find `npx` or `node`, use its full path (run `which npx`
 | `read_markdown` | The file text exactly as stored, plus a byte profile: encoding, BOM, CRLF/LF/CR counts, final newline, trailing whitespace, invalid UTF-8 byte ranges, sha256. Pages large files (`offset_bytes`, `max_bytes`, 256 KB default, 1 MB max). `as: "base64"` returns the exact bytes. Marks the content as untrusted and summarises hidden characters and comments. |
 | `outline` | ATX and setext headings with line numbers, skipping frontmatter and fenced code. |
 | `lint_steering` | Frontmatter on line 1 and valid YAML; required `name` and `description` for SKILL.md and subagents; unknown keys; length against vendor limits; broken relative links and `@path` imports; zero-width, bidi and other invisible characters; hidden HTML comments that read like instructions; text hidden with inline styles; duplicate and contradictory-looking rules. With no path, lints every steering file in the folder. |
-| `context_budget` | Approximate tokens per file and per tool for what loads every session: Claude Code (CLAUDE.md plus `@imports` up to 4 hops, rules without `paths`, MEMORY.md first 200 lines, the skill and subagent listing), Codex (AGENTS.md, 32 KiB cap), Gemini CLI (GEMINI.md plus imports), Cursor always-applied rules, Copilot repository instructions. |
+| `context_budget` | Approximate tokens per file and per tool for what loads every session: Claude Code (CLAUDE.md plus `@imports` up to 4 hops, or AGENTS.md when there is no CLAUDE.md; rules without `paths`; MEMORY.md first 200 lines when you add your memory folder as a second root; the skill and subagent listing), Codex (root AGENTS.md, first 32 KiB), Gemini CLI (GEMINI.md plus imports up to 5 levels), Cursor always-applied rules, Copilot repository instructions, Windsurf and Cline rules. Long lists are cut; totals still count every file. |
 | `find_steering_files` | Every steering file, grouped by when it loads: every session, on match (`paths`, `globs`, `applyTo`), on invocation (skills, commands, agents, prompts), on demand (nested instruction files), memory. |
 
-Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. Tool results carry no link to asitis.app unless you ask for one: with `--footer` (or `ASITIS_MCP_FOOTER=1`) the first result of each session ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`, and later results and errors do not repeat it. `--no-footer` is still accepted and changes nothing.
+Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. Tool results carry no link to asitis.app unless you ask for one: with `--footer` (or `ASITIS_MCP_FOOTER=1`) the first result of each session ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`, and later results and errors do not repeat it. `--no-footer` is still accepted and changes nothing. Results are text only. Pass `--structured` (or set `ASITIS_MCP_STRUCTURED=1`) to also get each result as JSON in `structuredContent`, for scripts. It is off by default because Claude Code 2.1 gives the model the JSON instead of the text when both are present, which drops the untrusted-content notice and, for `read_markdown`, the file text.
 
 Vendor limits checked, with sources in [`src/limits.ts`](https://github.com/Katta041/asitis-agent-tools/blob/main/packages/mcp/src/limits.ts):
 
 | File | Limit |
 |---|---|
 | CLAUDE.md | target under 200 lines (Claude Code memory docs) |
-| SKILL.md | under 500 lines; `description` plus `when_to_use` truncated at 1,536 characters in the listing (Claude Code skills docs); `name` up to 64 and `description` up to 1,024 characters (Agent Skills spec) |
+| SKILL.md | under 500 lines; `description` plus `when_to_use` truncated at 1,536 characters in the listing (Claude Code skills docs); `name` up to 64 and `description` up to 1,024 characters (Agent Skills spec; the Claude API and claude.ai reject longer ones, while Claude Code loads them and truncates the listing) |
 | MEMORY.md | first 200 lines or 25 KB load (Claude Code memory docs) |
-| AGENTS.md | 32 KiB read by Codex by default (`project_doc_max_bytes`) |
+| AGENTS.md | 32 KiB combined across the AGENTS.md files Codex loads, root first (`project_doc_max_bytes`) |
 | Cursor rules | under 500 lines |
-| Windsurf rules | 12,000 characters |
+| Windsurf rules | 12,000 characters per workspace rule file (6,000 for `global_rules.md`) |
 
 ## Privacy
 
@@ -138,7 +154,7 @@ Vendor limits checked, with sources in [`src/limits.ts`](https://github.com/Katt
 
 ## Security model
 
-- **Root confinement.** Every path is resolved with `realpath` and must stay inside a root given at start-up. `../` traversal, absolute paths outside the root and symlinks (file or folder) that resolve outside are refused. The filesystem root and your home folder are refused as roots unless you pass `--allow-broad-root`.
+- **Root confinement.** Every path is resolved with `realpath` and must stay inside a root given at start-up. `../` traversal, absolute paths outside the root and symlinks (file or folder) that resolve outside are refused. Symlinks that resolve inside a root are followed, so a CLAUDE.md that links to AGENTS.md or a linked `.claude/skills` folder is checked where the agent sees it. The filesystem root and your home folder are refused as roots unless you pass `--allow-broad-root`.
 - **Markdown only.** Only `.md`, `.mdc`, `.markdown`, `.mdx`, `.cursorrules`, `.windsurfrules` and `.clinerules` are read. `.env*`, `.claude/settings*.json`, anything in `.git/` or `node_modules/`, and every other file type are refused, including through a markdown-named symlink that points at them. `@imports` of such files are counted from their size, never read.
 - **Bounded work.** Files over 16 MB are refused (`--max-file-mb`), results are capped, every tool call has a 20 s budget, and every scanner is linear time. The test suite runs 32 adversarial 10 MB inputs (unclosed comments, bracket and backtick storms, 2,000-character import tokens, invalid UTF-8 and more) through every tool under a 3 s per-call budget.
 - **Untrusted content.** `read_markdown` labels file content as data, not instructions, and reports hidden instructions and invisible characters up front. This does not stop a model from obeying text it reads; it makes the text visible.
@@ -158,13 +174,14 @@ asitis-mcp --root <folder> [--root <folder>...] [options]
 
   --root <folder>      Folder the server may read (repeatable). Default: the current folder.
   --footer             Add one line linking to asitis.app to the first result of the session. Off by default.
+  --structured         Also return each result as JSON (structuredContent), for scripts. Off by default.
   --max-file-mb <n>    Largest file to analyse, in MB (default 16, max 64).
   --allow-broad-root   Allow your home folder or the filesystem root as the root.
   --version            Print the version.
   --help               Print this help.
 ```
 
-`ASITIS_MCP_ROOT` (folders separated by `:`, or `;` on Windows) and `ASITIS_MCP_FOOTER=1` work as environment variables. Add a second `--root` for a memory folder that lives outside the project, for example `~/.claude/projects/<project>/memory`.
+`ASITIS_MCP_ROOT` (folders separated by `:`, or `;` on Windows) `ASITIS_MCP_FOOTER=1` and `ASITIS_MCP_STRUCTURED=1` work as environment variables. Add a second `--root` for a memory folder that lives outside the project, for example `~/.claude/projects/<project>/memory`.
 
 Mistakes print one line and exit with code 2, for example:
 
@@ -174,7 +191,7 @@ asitis-mcp: Root folder not found: /x. Pass an existing folder with --root.
 
 ## Package
 
-The package is one file, `dist/asitis-mcp.mjs` (built with esbuild, minified), with zero runtime dependencies and no install scripts. The MCP SDK (pinned to 1.31.0), zod and yaml are bundled in; their licences are in `dist/THIRD_PARTY_NOTICES.md`. Releases are published from GitHub Actions with npm trusted publishing and provenance; check them with `npm audit signatures`.
+The package is one file, `dist/asitis-mcp.mjs` (built with esbuild, minified), with zero runtime dependencies and no install scripts. The MCP SDK (pinned to 1.31.0), zod and yaml are bundled in; their licences are in `dist/THIRD_PARTY_NOTICES.md`. The release workflow in this repository (`.github/workflows/release.yml`) publishes with npm provenance, so a version it publishes shows a provenance attestation on npmjs.com and can be checked with `npm audit signatures`. Versions up to 0.2.4 were published by hand, without provenance.
 
 ## License
 

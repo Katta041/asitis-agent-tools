@@ -605,7 +605,7 @@ export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLin
     pos = q;
     if (!raw || raw.startsWith("@") || raw.startsWith('"') || raw.startsWith("'")) continue;
     let cut = raw.length;
-    while (cut > 0 && ".,;:!?)]".includes(raw[cut - 1]!)) cut--;
+    while (cut > 0 && ".,;:!?)]*".includes(raw[cut - 1]!)) cut--; // "*" closes **bold** around an import
     const trimmed = raw.slice(0, cut);
     if (!trimmed) continue;
     const looksLikePath = trimmed.includes("/") || /\.[A-Za-z0-9]{1,10}$/.test(trimmed);

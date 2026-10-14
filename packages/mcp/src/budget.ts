@@ -3,7 +3,7 @@
 import path from "node:path";
 import { analyse, type Doc } from "./doc.js";
 import { walk, type Deadline } from "./discover.js";
-import { KIND_LABEL, LOAD_SHORT } from "./kinds.js";
+import { inMemoryFolder, KIND_LABEL, LOAD_SHORT } from "./kinds.js";
 import { CAPS, VENDOR } from "./limits.js";
 import { policyRefusal, UserError, type Sandbox } from "./paths.js";
 import { extractImports, importIsSurelyFile } from "./scan.js";
@@ -64,8 +64,8 @@ async function openDoc(sandbox: Sandbox, p: string, baseDir?: string): Promise<D
 const MAX_IMPORTS_LISTED = 200;
 
 /** Expands @imports up to four hops, counting each file once. */
-export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string>, depth = 1, deadline?: Deadline): Promise<BudgetEntry[]> {
-  if (depth > VENDOR.importMaxHops) return [];
+export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string>, depth = 1, deadline?: Deadline, maxHops: number = VENDOR.importMaxHops): Promise<BudgetEntry[]> {
+  if (depth > maxHops) return [];
   const out: BudgetEntry[] = [];
   const dir = path.dirname(doc.file.real);
   const imports = extractImports(doc.lines, doc.fence, doc.frontmatter.present ? doc.frontmatter.endLine : -1);
@@ -85,6 +85,8 @@ export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string
       continue;
     }
     const probe = await sandbox.probe(im.path, dir);
+    // "@next/rspack-core" or "@user" that names no file is text to the reader, not a broken import: leave it out.
+    if (probe.state === "missing" && !importIsSurelyFile(im)) continue;
     if (probe.state !== "ok" || !probe.real || !probe.rel) {
       const missing = probe.state === "missing";
       out.push({
@@ -112,7 +114,7 @@ export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string
     try {
       const child = await openDoc(sandbox, probe.real);
       out.push({ path: child.path, tokens: bodyTokens(child, true), note: depth === 1 ? "imported" : `imported, ${depth} hops deep`, depth });
-      out.push(...(await expandImports(sandbox, child, seen, depth + 1, deadline)));
+      out.push(...(await expandImports(sandbox, child, seen, depth + 1, deadline, maxHops)));
     } catch (e) {
       out.push({ path: sandbox.display(probe.real), tokens: 0, note: e instanceof UserError ? e.message : "could not be read", depth });
     }
@@ -184,28 +186,33 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     const entries: BudgetEntry[] = [];
     const warnings: string[] = [];
     const seen = new Set<string>();
-    // Claude Code reads CLAUDE.md, not AGENTS.md: AGENTS.md loads only when a CLAUDE.md @-imports it
-    // (checked with a canary file on Claude Code 2.1.299), and then it is counted as an import.
+    // Claude Code memory docs ("AGENTS.md" section), checked with canary files on Claude Code 2.1.299:
+    // with a CLAUDE.md, AGENTS.md loads only when CLAUDE.md @-imports it (it is then counted as an
+    // import); with no CLAUDE.md or CLAUDE.local.md, Claude Code 2.1.277 and later reads AGENTS.md
+    // itself and expands its @imports.
     const claudeFiles = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"].map(byRel).filter((d): d is Doc => !!d);
-    if (!claudeFiles.length && byRel("AGENTS.md")) {
-      warnings.push("There is no CLAUDE.md, and Claude Code does not read AGENTS.md on its own. To give Claude Code the same instructions, add a CLAUDE.md that contains the line @AGENTS.md");
-    }
-    for (const d of claudeFiles) {
+    const agentsMd = byRel("AGENTS.md");
+    const instr = claudeFiles.length ? claudeFiles : agentsMd ? [agentsMd] : [];
+    for (const d of instr) {
       seen.add(d.file.real);
       const t = bodyTokens(d, true);
       const raw = approxTokens(d.text);
       const stripped = raw > t ? `; the file is about ${raw.toLocaleString("en-US")} tokens, but Claude Code strips block HTML comments before loading` : "";
-      entries.push({ path: d.path, tokens: t, note: `project instructions${stripped}` });
+      entries.push({ path: d.path, tokens: t, note: claudeFiles.length ? `project instructions${stripped}` : `read because there is no CLAUDE.md (Claude Code 2.1.277 and later)${stripped}` });
       if (d.profile.lines > VENDOR.claudeMdTargetLines) warnings.push(`${d.path} is ${d.profile.lines.toLocaleString("en-US")} lines; Claude Code recommends under ${VENDOR.claudeMdTargetLines}`);
       const imported = await expandImports(sandbox, d, seen, 1, deadline);
       entries.push(...imported);
       warnings.push(...missingImportWarnings(imported));
     }
+    if (claudeFiles.length && agentsMd && !seen.has(agentsMd.file.real)) {
+      warnings.push("Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions");
+    }
     for (const d of docs) {
       if (d.kind.kind === "claude-rule" && d.kind.load === "every-session" && !seen.has(d.file.real)) {
         entries.push({ path: d.path, tokens: bodyTokens(d, true), note: "rule without paths, so it loads every session" });
       }
-      if (d.kind.kind === "memory-index") {
+      // A MEMORY.md inside the project is linted, but Claude Code loads auto memory only from ~/.claude/projects/<project>/memory/.
+      if (d.kind.kind === "memory-index" && inMemoryFolder(d.file.rel, !!d.file.root.extra)) {
         const n = Math.min(d.lines.count, VENDOR.memoryIndexLines);
         const end = n < d.lines.count ? d.lines.start(n) : d.text.length;
         const slice = Buffer.from(d.text.slice(0, end)).subarray(0, VENDOR.memoryIndexBytes).toString("utf8");
@@ -224,17 +231,27 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     let listing = 0;
     let listed = 0;
     let nested = 0;
+    let nestedOther = 0;
     let notLoaded = 0;
+    // A skill reached both through a symlinked .claude/skills and at its real place counts once, as loaded.
+    const loadedReal = new Set(docs.filter((d) => claudeCodeLoads(d) === "yes").map((d) => d.file.real));
+    const counted = new Set<string>();
     for (const d of docs) {
       const k = d.kind.kind;
       if (k !== "skill" && k !== "claude-command" && k !== "claude-agent") continue;
       const where = claudeCodeLoads(d);
-      if (where === "nested") { nested++; continue; }
+      if (where === "yes" ? counted.has(d.file.real) : loadedReal.has(d.file.real)) continue;
+      counted.add(d.file.real);
+      // Claude Code skills docs: nested .claude/skills load once Claude works in that folder. Subagents
+      // are found by walking up from the working folder (sub-agents docs), and commands are not
+      // documented to load from a nested .claude folder at all.
+      if (where === "nested") { if (k === "skill") nested++; else nestedOther++; continue; }
       if (where === "no") { notLoaded++; continue; }
       const t = k === "skill" || k === "claude-command" ? skillListingTokens(d) : approxTokens(String(d.frontmatter.data?.["description"] ?? "")) + 4;
       if (t > 0) { listing += t; listed++; }
     }
-    if (nested) warnings.push(`${nested === 1 ? "1 skill, command or subagent sits" : `${nested} skills, commands or subagents sit`} in a nested .claude folder and loads only once Claude works in that folder; not counted`);
+    if (nested) warnings.push(`${nested === 1 ? "1 skill sits" : `${nested} skills sit`} in a nested .claude/skills folder and ${nested === 1 ? "loads" : "load"} only once Claude works in that folder; not counted`);
+    if (nestedOther) warnings.push(`${nestedOther === 1 ? "1 command or subagent sits" : `${nestedOther} commands or subagents sit`} in a nested .claude folder; Claude Code does not load ${nestedOther === 1 ? "it" : "them"} in a session started at the project root; not counted`);
     if (notLoaded) warnings.push(`${notLoaded === 1 ? "1 SKILL.md is" : `${notLoaded} SKILL.md files are`} outside .claude/skills/, so Claude Code does not load ${notLoaded === 1 ? "it" : "them"} from here (for example a plugin or an Agent Skills repository); not counted`);
     if (listed) entries.push({ path: `Skill listing (${listed} ${listed === 1 ? "entry" : "entries"})`, tokens: listing, note: "names and descriptions of skills, commands and subagents; bodies load on use" });
     if (entries.length || warnings.length) tools.push({ tool: "claude-code", tokens: entries.reduce((a, e) => a + e.tokens, 0), entries, warnings });
@@ -245,7 +262,7 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     const d = byRel("AGENTS.md");
     if (d) {
       const capped = d.file.buf.subarray(0, VENDOR.codexAgentsMdBytes).toString("utf8");
-      const warnings = d.profile.bytes > VENDOR.codexAgentsMdBytes ? [`AGENTS.md is ${d.profile.bytes.toLocaleString("en-US")} bytes; Codex reads only the first ${VENDOR.codexAgentsMdBytes.toLocaleString("en-US")} (32 KiB)`] : [];
+      const warnings = d.profile.bytes > VENDOR.codexAgentsMdBytes ? [`AGENTS.md is ${d.profile.bytes.toLocaleString("en-US")} bytes; Codex reads only the first ${VENDOR.codexAgentsMdBytes.toLocaleString("en-US")} bytes (32 KiB), a budget shared with any nested AGENTS.md it loads`] : [];
       tools.push({ tool: "codex", tokens: approxTokens(capped), entries: [{ path: d.path, tokens: approxTokens(capped), note: d.profile.bytes > VENDOR.codexAgentsMdBytes ? "root AGENTS.md, first 32 KiB" : "root AGENTS.md" }], warnings });
     }
   }
@@ -255,7 +272,7 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     const d = byRel("GEMINI.md");
     if (d) {
       const entries: BudgetEntry[] = [{ path: d.path, tokens: bodyTokens(d, false), note: "root GEMINI.md" }];
-      const imported = await expandImports(sandbox, d, new Set([d.file.real]), 1, deadline);
+      const imported = await expandImports(sandbox, d, new Set([d.file.real]), 1, deadline, VENDOR.geminiImportMaxDepth);
       entries.push(...imported);
       tools.push({ tool: "gemini-cli", tokens: entries.reduce((a, e) => a + e.tokens, 0), entries, warnings: missingImportWarnings(imported) });
     }
@@ -266,7 +283,7 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     ["cursor", (d) => (d.kind.kind === "cursor-rule" && d.kind.load === "every-session") || d.kind.kind === "cursor-legacy", "always-applied rule"],
     ["copilot", (d) => d.kind.kind === "copilot-instructions", "repository instructions"],
     ["windsurf", (d) => d.kind.kind === "windsurf-rule" && d.kind.load === "every-session", "always-on rule"],
-    ["cline", (d) => d.kind.kind === "cline-rule", "rule"],
+    ["cline", (d) => d.kind.kind === "cline-rule" && d.kind.load === "every-session", "rule"],
   ];
   for (const [tool, pick, note] of simple) {
     const ds = docs.filter(pick);
@@ -282,6 +299,7 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
 export async function fileBudget(sandbox: Sandbox, p: string, deadline?: Deadline): Promise<{ doc: Doc; tokens: number; imports: BudgetEntry[] }> {
   const doc = await openDoc(sandbox, p);
   const strip = doc.kind.kind === "claude-md" || doc.kind.kind === "agents-md";
-  const imports = ["claude-md", "agents-md", "gemini-md", "claude-rule"].includes(doc.kind.kind) ? await expandImports(sandbox, doc, new Set([doc.file.real]), 1, deadline) : [];
+  const hops = doc.kind.kind === "gemini-md" ? VENDOR.geminiImportMaxDepth : VENDOR.importMaxHops;
+  const imports = ["claude-md", "agents-md", "gemini-md", "claude-rule"].includes(doc.kind.kind) ? await expandImports(sandbox, doc, new Set([doc.file.real]), 1, deadline, hops) : [];
   return { doc, tokens: bodyTokens(doc, strip), imports };
 }

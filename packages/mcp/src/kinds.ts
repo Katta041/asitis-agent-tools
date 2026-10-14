@@ -72,8 +72,8 @@ export interface Classified {
 
 /**
  * Whether a file sits where Claude Code keeps auto memory: under a second --root, or under
- * .claude/projects/<project>/memory/. A memory/ folder inside a project is ordinary markdown,
- * because Claude Code reads auto memory only from ~/.claude/projects/<project>/memory/.
+ * .claude/projects/<project>/memory/. Claude Code reads auto memory only from
+ * ~/.claude/projects/<project>/memory/, so only files there count toward its session budget.
  */
 export function inMemoryFolder(rel: string, extraRoot: boolean): boolean {
   return extraRoot || /(?:^|\/)\.claude\/projects\/[^/]+\/memory\//.test(rel);
@@ -92,6 +92,10 @@ export function classify(rel: string, memory = false): Classified {
     return false;
   };
 
+  // Claude Code memory docs list ./CLAUDE.md, ./.claude/CLAUDE.md and ./CLAUDE.local.md; .claude/CLAUDE.local.md is not a location it reads.
+  if (base === "CLAUDE.local.md" && inDotClaudeRoot) {
+    return { kind: "claude-md", tools: [], load: "other", note: "Claude Code does not read CLAUDE.local.md inside .claude/; move it to the project root" };
+  }
   if (base === "CLAUDE.md" || base === "CLAUDE.local.md") {
     return atRoot || inDotClaudeRoot
       ? { kind: "claude-md", tools: ["claude-code"], load: "every-session" }
@@ -110,7 +114,7 @@ export function classify(rel: string, memory = false): Classified {
   if (base === "SKILL.md") {
     return { kind: "skill", tools: ["claude-code", "codex", "cursor", "copilot", "gemini-cli"], load: "on-invocation", note: "name and description load every session in the skill listing; the body loads when the skill runs" };
   }
-  if (base === "MEMORY.md" && memory) {
+  if (base === "MEMORY.md") {
     return { kind: "memory-index", tools: ["claude-code"], load: "memory", note: "First 200 lines or 25 KB load every session" };
   }
   if (lower.endsWith(".md") && has([".claude", "agents"])) return { kind: "claude-agent", tools: ["claude-code"], load: "on-invocation" };
@@ -125,6 +129,8 @@ export function classify(rel: string, memory = false): Classified {
     const rootLevel = atRoot || (dirs[0] === ".windsurf" && dirs[1] === "rules");
     return rootLevel ? { kind: "windsurf-rule", tools: ["windsurf"], load: "every-session" } : { kind: "windsurf-rule", tools: ["windsurf"], load: "on-demand", note: nestedNote };
   }
+  // Cline docs (getting-started/config): .clinerules/workflows/*.md are workflows run on demand, not rules.
+  if (lower.endsWith(".md") && has([".clinerules", "workflows"])) return { kind: "cline-rule", tools: ["cline"], load: "on-invocation", note: "Cline workflow: runs when you invoke it" };
   if (lower === ".clinerules" || (lower.endsWith(".md") && dirs.includes(".clinerules"))) return { kind: "cline-rule", tools: ["cline"], load: "every-session" };
   if (rel === ".github/copilot-instructions.md") return { kind: "copilot-instructions", tools: ["copilot"], load: "every-session" };
   if (lower.endsWith(".instructions.md")) return { kind: "copilot-scoped", tools: ["copilot"], load: "on-match" };
@@ -132,7 +138,9 @@ export function classify(rel: string, memory = false): Classified {
   if (lower.endsWith(".agent.md") || lower.endsWith(".chatmode.md") || (lower.endsWith(".md") && has([".github", "agents"]))) {
     return { kind: "custom-agent", tools: ["copilot"], load: "on-invocation" };
   }
-  if (lower.endsWith(".md") && memory) return { kind: "memory-topic", tools: ["claude-code"], load: "memory", note: "Loads when the agent reads it from the memory index" };
+  // Topic files: anything in a memory location, or in a memory/ folder at the top of the root. A deeper
+  // folder that happens to be called memory (src/lib/memory/README.md) is ordinary markdown.
+  if (lower.endsWith(".md") && (memory || (dirs.length === 1 && dirs[0] === "memory"))) return { kind: "memory-topic", tools: ["claude-code"], load: "memory", note: "Loads when the agent reads it from the memory index" };
   return { kind: "markdown", tools: [], load: "other" };
 }
 
@@ -153,10 +161,15 @@ export function refineLoad(c: Classified, data: Data, rel = ""): Classified {
   }
   if (c.kind === "cursor-rule") {
     if (nested) return { ...c, load: "on-demand", note: "Nested rule: applies when Cursor works with files in this folder" };
-    if (data && truthy(data["alwaysApply"])) return { ...c, load: "every-session", note: "Rule type: Always" };
-    if (data && nonEmpty(data["globs"])) return { ...c, load: "on-match", note: "Rule type: Auto Attached" };
-    if (data && nonEmpty(data["description"])) return { ...c, load: "on-invocation", note: "Rule type: Agent Requested" };
-    return { ...c, load: "on-invocation", note: "Rule type: Manual, only when @-mentioned" };
+    if (data && truthy(data["alwaysApply"])) return { ...c, load: "every-session", note: "Rule type: Always Apply" };
+    if (data && nonEmpty(data["globs"])) return { ...c, load: "on-match", note: "Rule type: Apply to Specific Files (globs)" };
+    if (data && nonEmpty(data["description"])) return { ...c, load: "on-invocation", note: "Rule type: Apply Intelligently (description)" };
+    return { ...c, load: "on-invocation", note: "Rule type: Apply Manually, only when @-mentioned" };
+  }
+  // Cline rules docs: paths frontmatter ("an array of glob patterns") scopes a rule; paths: [] never activates.
+  if (c.kind === "cline-rule" && c.load === "every-session" && data && data["paths"] !== undefined) {
+    if (Array.isArray(data["paths"]) && data["paths"].length === 0) return { ...c, load: "other", note: "paths is empty, so Cline never applies this rule" };
+    if (nonEmpty(data["paths"])) return { ...c, load: "on-match", note: "Applies when Cline works with files matching paths" };
   }
   if (c.kind === "windsurf-rule" && data && c.load === "every-session") {
     const t = String(data["trigger"] ?? "");

@@ -340,7 +340,7 @@ describe("one project for the lint, budget and outline fixes", () => {
     const listing = cc.entries.find((e) => e.path.startsWith("Skill listing"))!;
     const loaded = 7; // the skills under .claude/skills/ above whose frontmatter parses (the 3 YAML-error skills list nothing)
     expect(listing.path).toBe(`Skill listing (${loaded} entries)`);
-    expect(cc.warnings.join("\n")).toMatch(/1 skill, command or subagent sits in a nested \.claude folder and loads only once Claude works in that folder/);
+    expect(cc.warnings.join("\n")).toMatch(/1 skill sits in a nested \.claude\/skills folder and loads only once Claude works in that folder/);
     expect(cc.warnings.join("\n")).toMatch(/1 SKILL\.md is outside \.claude\/skills\/, so Claude Code does not load it from here/);
   });
 });

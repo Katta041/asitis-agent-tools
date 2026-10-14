@@ -329,7 +329,7 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
       // Say exactly what was not linted and how to get it, so nobody has to guess a total.
       const cutParts: string[] = [];
       if (discovered && foundCount > results.length + failures.length && !timedOut) {
-        cutParts.push(`Linted ${n(results.length)} of ${n(foundCount)} steering files found (at most ${n(CAPS.lintMaxFiles)} per call). Pass paths (up to ${CAPS.lintMaxPaths} per call) to lint the others; find_steering_files lists them.`);
+        cutParts.push(`That is ${n(results.length)} of the ${n(foundCount)} steering files found (at most ${n(CAPS.lintMaxFiles)} per call). Pass paths (up to ${CAPS.lintMaxPaths} per call) to lint the others; find_steering_files lists them.`);
       }
       if (timedOut) cutParts.push(`Stopped at the time limit after ${plural(results.length, "file")}; pass paths to lint the rest.`);
       if (walkNote) cutParts.push(walkNote);
@@ -399,20 +399,23 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
         const { doc, tokens, imports } = await fileBudget(sandbox, p, deadline);
         const total = tokens + imports.reduce((a, e) => a + e.tokens, 0);
         const overflow = imports.some((e) => e.overflow);
+        // The "N more imports" lines always show; the rest is capped.
+        const regular = imports.filter((e) => !e.overflow);
+        const shownImports = [...regular.slice(0, CAPS.listMaxFiles), ...imports.filter((e) => e.overflow)];
         const missing = missingImportWarnings(imports);
         const whole = approxTokens(doc.text);
         const stripped = whole > tokens ? ` The whole file is ${fmtTokens(whole)}; block HTML comments are not counted because Claude Code strips them before loading.` : "";
         const text = [
           `${dp(doc.path)}: ${fmtTokens(tokens)} on its own, without its @imports (${kindLabel(doc.kind.kind)}, ${loadShort(doc.kind.load)}; ${plural(doc.profile.lines, "line")}, ${plural(doc.profile.bytes, "byte")}).${stripped}`,
-          ...(imports.length ? [`With its @imports: ${fmtTokens(total)}${overflow ? ", counting only the imports listed" : ""}.`, ...imports.slice(0, CAPS.listMaxFiles).map(fmt)] : []),
-          ...(imports.length > CAPS.listMaxFiles ? [`  - and ${plural(imports.length - CAPS.listMaxFiles, "more entry", "more entries")}, counted in the total but not listed`] : []),
+          ...(imports.length ? [`With its @imports: ${fmtTokens(total)}${overflow ? ", counting only the imports listed" : ""}.`, ...shownImports.map(fmt)] : []),
+          ...(regular.length > CAPS.listMaxFiles ? [`  - and ${plural(regular.length - CAPS.listMaxFiles, "more entry", "more entries")}, counted in the total but not listed`] : []),
           ...missing.slice(0, 20).map((w) => `Warning: ${esc(w, 400)}`),
           ...(missing.length > 20 ? [`Warning: and ${plural(missing.length - 20, "more missing import")}`] : []),
           "Token counts are local estimates (about 4 characters per token for English).",
         ].join("\n");
         return {
           content: [{ type: "text", text }],
-          structuredContent: { path: doc.path, kind: doc.kind.kind, load: doc.kind.load, tokens, totalWithImports: total, imports: imports.slice(0, CAPS.listMaxFiles), importCount: imports.length, importsTruncated: overflow, approximate: true },
+          structuredContent: { path: doc.path, kind: doc.kind.kind, load: doc.kind.load, tokens, totalWithImports: total, imports: shownImports, importCount: imports.length, importsTruncated: overflow, approximate: true },
         };
       }
       const b = await projectBudget(sandbox, deadline);

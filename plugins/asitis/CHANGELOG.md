@@ -5,8 +5,17 @@ All notable changes to the AsItIs Claude Code plugin are documented here. The fo
 ## [0.2.5] - 2026-10-14
 
 ### Changed
-- The bundled server is `@asitis/mcp` 0.2.5. `/asitis:md-lint` now reports short repeated rules and "Use X" next to "Never use X", and `/asitis:md-budget` warns about a missing `@import` (see the `@asitis/mcp` changelog).
+- The bundled server is `@asitis/mcp` 0.2.5. `/asitis:md-lint` now reports short repeated rules and "Use X" next to "Never use X", and the model now sees the formatted, labelled results (see the `@asitis/mcp` changelog). `/asitis:md-budget` follows what each tool really loads and warns about a missing `@import`.
 - The asitis.app line in tool results is now off by default. Set `ASITIS_MCP_FOOTER=1` in the `env` block of your Claude Code settings to show it.
+
+### Fixed
+- Guard hook: on a file with mixed line endings, or a CRLF file whose first 4,096 characters have no line break, any Edit rewrites every line ending. The guard now says so and tells Claude to ask you, instead of advising a retry with an Edit that cannot avoid it.
+- Guard hook: a whole-file reformat is caught when it comes through Edit or MultiEdit (more than half the lines, at least 5), and through Write on small files too (more than 30%, at least 3 lines; the old check skipped files of 20 lines or fewer). Lines count as kept only in their original order, so a reordered file counts as rewritten. For these, Claude is told to ask you rather than retry with a large Edit.
+- Guard hook: a lost hard line break is reported even when the words on that line also change ("Violets are blue  " to "Violets are purple").
+- Guard hook: no more false "removes the byte order mark" on Write. Claude Code's Write keeps an existing BOM.
+- Guard hook: ASITIS_GUARD_MODE now wins over the old CLAUDE_PLUGIN_OPTION_GUARD_MODE, an empty plugin option is ignored, and an invalid value names the variable you set.
+- Guard hook: runs on Node 12 and later instead of failing with a syntax error on Node 12. The README now says that without `node` on your PATH the guard cannot run.
+- Guard hook: in headless runs Claude Code labels a guard denial "hook error"; the message now starts "AsItIs guard flagged this change on purpose (a guard decision, not a failure)", or "blocked" in deny mode.
 
 ## [0.2.4] - 2026-10-14
 

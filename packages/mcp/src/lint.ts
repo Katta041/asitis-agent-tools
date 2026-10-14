@@ -33,26 +33,43 @@ export interface LintResult {
 const SKILL_KEYS = [
   "name", "description", "when_to_use", "argument-hint", "arguments", "disable-model-invocation", "user-invocable",
   "allowed-tools", "disallowed-tools", "model", "effort", "context", "agent", "background", "hooks", "paths", "shell",
-  "metadata", "license", "compatibility", "version",
+  "metadata", "license", "compatibility",
 ];
+// Claude Code skills docs: commands take "the same frontmatter except name and paths".
+const COMMAND_KEYS = SKILL_KEYS.filter((k) => k !== "name" && k !== "paths");
 const KNOWN_KEYS: Partial<Record<Kind, { keys: string[]; reader: string }>> = {
   skill: { keys: SKILL_KEYS, reader: "Claude Code or the Agent Skills spec" },
-  "claude-command": { keys: SKILL_KEYS, reader: "Claude Code commands" },
+  "claude-command": { keys: COMMAND_KEYS, reader: "Claude Code commands (they take skill fields except name and paths)" },
   "claude-agent": {
     keys: ["name", "description", "tools", "disallowedTools", "model", "permissionMode", "maxTurns", "skills", "mcpServers", "hooks", "memory", "background", "omitClaudeMd", "effort", "isolation", "color", "initialPrompt", "experimental"],
     reader: "Claude Code subagents",
   },
-  "claude-rule": { keys: ["paths", "description"], reader: "Claude Code rules" },
+  // Claude Code memory docs: "paths is the only field Claude Code reads from a rule".
+  "claude-rule": { keys: ["paths"], reader: "Claude Code rules (paths is the only field they read)" },
   "cursor-rule": { keys: ["description", "globs", "alwaysApply"], reader: "Cursor rules" },
   "copilot-scoped": { keys: ["applyTo", "description", "name", "excludeAgent"], reader: "VS Code Copilot instructions" },
   "prompt-file": { keys: ["description", "name", "mode", "agent", "model", "tools", "argument-hint"], reader: "VS Code prompt files" },
   "windsurf-rule": { keys: ["trigger", "globs", "description"], reader: "Windsurf rules" },
+  // Claude Code memory docs document type and modified; Claude Code's own memory files also carry name and description.
   "memory-topic": { keys: ["name", "description", "type", "modified", "created", "updated", "metadata"], reader: "Claude Code memory" },
 };
 
-// Only files that are read with @path imports. Codex has no imports, and Claude Code expands
-// @imports in CLAUDE.md and rules, so an @scope/package in AGENTS.md is just text.
+// Only files that are read with @path imports: CLAUDE.md, rules and GEMINI.md. AGENTS.md is read
+// with its imports by Claude Code 2.1.277 and later only when the folder has no CLAUDE.md (Claude
+// Code memory docs, "AGENTS.md"); with a CLAUDE.md beside it, Codex has no imports and an
+// @scope/package there is just text.
 const IMPORT_KINDS: Kind[] = ["claude-md", "gemini-md", "claude-rule"];
+
+/** Whether Claude Code reads this AGENTS.md itself: no CLAUDE.md or CLAUDE.local.md beside it, or a CLAUDE.md that is a link to it. */
+async function claudeReadsAgentsMd(doc: Doc, sandbox: Sandbox): Promise<boolean> {
+  const dir = path.dirname(doc.file.lexical ?? doc.file.real);
+  const names = path.dirname(doc.file.rel) === "." ? ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"] : ["CLAUDE.md", "CLAUDE.local.md"];
+  for (const n of names) {
+    const p = await sandbox.probe(n, dir);
+    if (p.state === "ok" && p.real !== doc.file.real) return false;
+  }
+  return true;
+}
 const SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 /** Claude API skill upload rules (platform.claude.com Agent Skills overview): no reserved words, no XML tags. */
 const RESERVED_WORDS = ["anthropic", "claude"];
@@ -116,6 +133,9 @@ function nearestKey(key: string, known: string[]): string | null {
   return best;
 }
 
+/** A boolean as Claude Code reads one: true/false, or yes, no, on, off, 1, 0 in any case. */
+const boolLike = (v: unknown): boolean => typeof v === "boolean" || v === 1 || v === 0 || (typeof v === "string" && /^(?:true|false|yes|no|on|off|1|0)$/i.test(v.trim()));
+
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const isStrOrList = (v: unknown): boolean => typeof v === "string" || (Array.isArray(v) && v.every((x) => typeof x === "string"));
 
@@ -138,7 +158,13 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
         if (n.length > VENDOR.skillNameMax) c.add("error", "name-too-long", `name is ${n.length} characters; the Agent Skills spec allows ${VENDOR.skillNameMax}`, line("name"));
         if (!SKILL_NAME.test(n)) {
           const fix = suggestSkillName(n);
-          c.add("error", "name-format", `name ${q(n, 80)} must be lowercase letters, digits and single hyphens (Agent Skills spec)${fix ? `, for example ${q(fix, 80)}` : ""}`, line("name"));
+          // Agent Skills spec: "unicode lowercase alphanumeric characters" and hyphens (skills-ref NFKC-normalises).
+          // The Claude API and claude.ai accept only a-z, 0-9 and hyphens.
+          if (/^[\p{Ll}\p{Lo}\p{Nd}]+(?:-[\p{Ll}\p{Lo}\p{Nd}]+)*$/u.test(n.normalize("NFKC"))) {
+            c.add("warning", "name-format", `name ${q(n, 80)} has non-ASCII letters: the Agent Skills spec allows them, but the Claude API and claude.ai accept only a-z, 0-9 and hyphens${fix ? `, for example ${q(fix, 80)}` : ""}`, line("name"));
+          } else {
+            c.add("error", "name-format", `name ${q(n, 80)} must be lowercase letters, digits and single hyphens (Agent Skills spec; the Claude API and claude.ai allow only a-z, 0-9 and hyphens)${fix ? `, for example ${q(fix, 80)}` : ""}`, line("name"));
+          }
         }
         if (dir && dir !== "." && dir !== n) c.add("warning", "name-dir-mismatch", `name ${q(n, 80)} does not match its folder ${q(dir, 80)}; the spec expects them to match, so rename one`, line("name"));
         const reserved = RESERVED_WORDS.find((w) => n.toLowerCase().includes(w));
@@ -150,7 +176,7 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
       }
       const desc = data["description"];
       if (desc === undefined || desc === null || (typeof desc === "string" && desc.trim() === "")) {
-        c.add("error", "missing-description", "description is required: it is what the agent reads to decide when to load the skill (Claude Code falls back to the first paragraph)", line("description"));
+        c.add("error", "missing-description", "description is required: it is what the agent reads to decide when to load the skill (Claude Code uses the first non-empty line of the body instead)", line("description"));
       } else if (typeof desc !== "string") {
         c.add("error", "field-type", "description must be a string", line("description"));
       } else {
@@ -166,8 +192,9 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
           c.add("warning", "description-truncated", `description plus when_to_use is ${combined} characters; Claude Code truncates the skill listing at ${VENDOR.skillListingChars}, so put the key use case first`, line("description"));
         }
       }
+      // Claude Code skills docs: "Boolean fields accept yes, no, on, off, 1, and 0 in any letter case."
       for (const b of ["disable-model-invocation", "user-invocable", "background"]) {
-        if (data[b] !== undefined && typeof data[b] !== "boolean") c.add("error", "field-type", `${b} must be true or false`, line(b));
+        if (data[b] !== undefined && !boolLike(data[b])) c.add("error", "field-type", `${b} must be true or false (yes, no, on, off, 1 and 0 also work)`, line(b));
       }
       for (const l of ["allowed-tools", "disallowed-tools", "paths"]) {
         if (data[l] !== undefined && !isStrOrList(data[l])) c.add("error", "field-type", `${l} must be a string or a list of strings`, line(l));
@@ -196,7 +223,9 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
   } else if (kind === "claude-rule") {
     if (data && data["paths"] !== undefined && !isStrOrList(data["paths"])) c.add("error", "field-type", "paths must be a glob string or a list of globs", line("paths"));
   } else if (kind === "copilot-scoped") {
-    if (!data || !data["applyTo"]) c.add("warning", "missing-applyTo", "*.instructions.md files need applyTo in frontmatter, or they are only used when attached manually");
+    // VS Code custom instructions docs: without applyTo the file is still found on demand through its
+    // description; only with neither is it used just when attached manually.
+    if (!data || (!data["applyTo"] && !data["description"])) c.add("warning", "missing-applyTo", "No applyTo and no description in frontmatter, so VS Code uses this file only when you attach it manually. Add applyTo (a glob) or a description");
   } else if (kind === "memory-topic") {
     if (!fm.present && !fm.problems.length) c.add("info", "missing-frontmatter", "Memory topic files usually carry name, description and type frontmatter");
     if (data) {
@@ -204,7 +233,8 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
       if (t !== undefined && !["user", "feedback", "project", "reference"].includes(String(t))) {
         c.add("warning", "memory-type", `Unknown memory type ${q(String(t), 40)} (expected user, feedback, project or reference)`, line("type"));
       }
-      if (!str(data["description"])) c.add("warning", "missing-description", "Memory files need a description so the index entry says when they matter");
+      // Not doc-backed (the memory docs document only type and modified), so a note, not a warning.
+      if (!str(data["description"])) c.add("info", "missing-description", "No description: Claude Code's own memory files carry one, so the index entry can say when the file matters");
     }
   }
 
@@ -232,7 +262,7 @@ function checkLength(doc: Doc, c: Collector, tokens: number): void {
   }
   if (kind === "cursor-rule" && lines > VENDOR.cursorRuleLines) c.add("warning", "length", `${lines} lines; Cursor recommends rules under ${VENDOR.cursorRuleLines} lines`);
   if (kind === "agents-md" && bytes > VENDOR.codexAgentsMdBytes) {
-    c.add("warning", "length", `${bytes.toLocaleString("en-US")} bytes; Codex reads at most ${VENDOR.codexAgentsMdBytes.toLocaleString("en-US")} bytes (32 KiB) of AGENTS.md by default (project_doc_max_bytes), so the rest is dropped. Move detail into nested AGENTS.md files or linked docs`);
+    c.add("warning", "length", `${bytes.toLocaleString("en-US")} bytes; Codex reads at most ${VENDOR.codexAgentsMdBytes.toLocaleString("en-US")} bytes (32 KiB) of AGENTS.md text by default (project_doc_max_bytes), shared by every AGENTS.md from the root down, so the rest is dropped. Nested AGENTS.md files do not help: they share the budget and are dropped first. Shorten it or move detail into docs it links to`);
   }
   if (kind === "windsurf-rule" && doc.text.length > VENDOR.windsurfRuleChars) c.add("warning", "length", `${doc.text.length.toLocaleString("en-US")} characters; Windsurf limits rule files to ${VENDOR.windsurfRuleChars.toLocaleString("en-US")}`);
   if (kind === "memory-index") {
@@ -660,9 +690,13 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
       }
     }
   }
-  if (!IMPORT_KINDS.includes(doc.kind.kind)) return;
+  if (!IMPORT_KINDS.includes(doc.kind.kind) && !(doc.kind.kind === "agents-md" && (await claudeReadsAgentsMd(doc, sandbox)))) return;
   const imports = extractImports(doc.lines, doc.fence, doc.frontmatter.present ? doc.frontmatter.endLine : -1);
+  // AGENTS.md is also read by Codex and others, where @ is plain text (@user, @next/rspack-core,
+  // @transaction()). There, only an @path naming a file with an extension is treated as an import.
+  const agents = doc.kind.kind === "agents-md";
   for (const im of imports) {
+    if (agents && !(importIsSurelyFile(im) && /\.[A-Za-z0-9]{1,10}$/.test(im.path))) continue;
     if (im.path.startsWith("~")) {
       c.add("warning", "import-outside-root", `${q("@" + im.path, 200)} imports from your home folder. Claude Code asks for approval of external imports; teammates will not have this file`, im.line);
       continue;
