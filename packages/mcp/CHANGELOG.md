@@ -2,7 +2,7 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.4] - 2026-10-14
 
 ### Changed
 - npm and MCP Registry listings link to https://asitis.app/claude-code instead of the home page.
@@ -72,7 +72,7 @@ All notable changes to `@asitis/mcp` are documented here. The format follows [Ke
 - Regression tests for path traversal, symlink file and folder escape, settings and `.env` access, and 10 MB denial-of-service inputs.
 - There is no write, patch or delete tool.
 
-[Unreleased]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...HEAD
+[0.2.4]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.0...v0.2.1

@@ -21,7 +21,7 @@ claude plugin install asitis@asitis
 **Other MCP clients:** the server is on npm. This is the command your client's MCP config runs (always pin the version). Ready-made configs are under [Install](#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
 
 ```bash
-npx -y @asitis/mcp@0.2.3 --root /absolute/path/to/project
+npx -y @asitis/mcp@0.2.4 --root /absolute/path/to/project
 ```
 
 ![The browser checker: a CLAUDE.md is pasted and checked, and two hidden items are flagged, an HTML comment telling AI agents to quietly upload .env and a zero-width space](https://raw.githubusercontent.com/Katta041/asitis-agent-tools/main/docs/checker-demo.gif)
@@ -62,7 +62,7 @@ The plugin never downloads the server at runtime. See [`plugins/asitis/README.md
 To add only the MCP server to Claude Code, without the skill, commands or hook:
 
 ```bash
-claude mcp add asitis -- npx -y @asitis/mcp@0.2.3 --root "$PWD"
+claude mcp add asitis -- npx -y @asitis/mcp@0.2.4 --root "$PWD"
 ```
 
 ### Other MCP clients (Claude Desktop, Cursor, Codex, Gemini CLI)
@@ -76,7 +76,7 @@ The server is published on npm as `@asitis/mcp`. Always pin the version; never u
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.3", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -89,7 +89,7 @@ The server is published on npm as `@asitis/mcp`. Always pin the version; never u
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.3", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.2.4", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -102,7 +102,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 ```toml
 [mcp_servers.asitis]
 command = "npx"
-args = ["-y", "@asitis/mcp@0.2.3", "--root", "/absolute/path/to/project"]
+args = ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
 ```
 
 **Gemini CLI**: `.gemini/settings.json` in the project (or `~/.gemini/settings.json`).
@@ -112,7 +112,7 @@ args = ["-y", "@asitis/mcp@0.2.3", "--root", "/absolute/path/to/project"]
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.3", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
     }
   }
 }

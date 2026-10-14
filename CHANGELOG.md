@@ -2,7 +2,7 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
-## [Unreleased]
+## [0.2.4] - 2026-10-14
 
 ### Changed
 - npm and MCP Registry listings link to https://asitis.app/claude-code instead of the home page.
@@ -72,7 +72,7 @@ All notable changes to this repository are documented here. The format follows [
 - CI on Ubuntu, macOS and Windows, and a manual release workflow for npm trusted publishing with provenance.
 - MIT licence.
 
-[Unreleased]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...HEAD
+[0.2.4]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.0...v0.2.1
