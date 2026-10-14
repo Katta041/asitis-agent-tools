@@ -47,11 +47,14 @@ describe("stdio server (bundled dist/asitis-mcp.mjs)", () => {
       ["context_budget", {}],
       ["find_steering_files", {}],
     ];
+    let footers = 0;
     for (const [name, args] of calls) {
       const r = await toResult(s.client, name, args);
       expect(r.isError, `${name}: ${r.text}`).toBe(false);
-      expect(r.blocks.at(-1)).toBe(FOOTER);
+      footers += r.blocks.filter((b) => b === FOOTER).length;
     }
+    // The footer shows once per session: on the first result only.
+    expect(footers).toBe(1);
   });
 
   test("a tool that does not exist is rejected", async () => {

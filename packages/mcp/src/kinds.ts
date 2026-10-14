@@ -31,6 +31,38 @@ export const LOAD_GROUP_LABEL: Record<LoadGroup, string> = {
   other: "Other markdown",
 };
 
+/** Short form of the load group for use inside a sentence or a file header. */
+export const LOAD_SHORT: Record<LoadGroup, string> = {
+  "every-session": "loads every session",
+  "on-match": "loads on match",
+  "on-invocation": "loads on invocation",
+  "on-demand": "loads on demand",
+  memory: "memory",
+  other: "not loaded by agents",
+};
+
+/** What each kind is, in words a person reads. */
+export const KIND_LABEL: Record<Kind, string> = {
+  "claude-md": "Claude Code instructions",
+  "agents-md": "AGENTS.md instructions",
+  "gemini-md": "Gemini CLI instructions",
+  skill: "skill",
+  "claude-agent": "Claude Code subagent",
+  "claude-command": "Claude Code command",
+  "claude-rule": "Claude Code rule",
+  "cursor-rule": "Cursor rule",
+  "cursor-legacy": "legacy .cursorrules",
+  "windsurf-rule": "Windsurf rule",
+  "cline-rule": "Cline rule",
+  "copilot-instructions": "Copilot instructions",
+  "copilot-scoped": "Copilot scoped instructions",
+  "prompt-file": "Copilot prompt file",
+  "custom-agent": "Copilot custom agent",
+  "memory-index": "memory index",
+  "memory-topic": "memory topic",
+  markdown: "markdown",
+};
+
 export interface Classified {
   kind: Kind;
   tools: string[];
@@ -107,7 +139,7 @@ export function refineLoad(c: Classified, data: Data): Classified {
     if (data && truthy(data["alwaysApply"])) return { ...c, load: "every-session", note: "Rule type: Always" };
     if (data && nonEmpty(data["globs"])) return { ...c, load: "on-match", note: "Rule type: Auto Attached" };
     if (data && nonEmpty(data["description"])) return { ...c, load: "on-invocation", note: "Rule type: Agent Requested" };
-    return { ...c, load: "on-invocation", note: "Rule type: Manual (only when @-mentioned)" };
+    return { ...c, load: "on-invocation", note: "Rule type: Manual, only when @-mentioned" };
   }
   if (c.kind === "windsurf-rule" && data) {
     const t = String(data["trigger"] ?? "");

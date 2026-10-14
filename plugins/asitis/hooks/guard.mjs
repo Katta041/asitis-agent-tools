@@ -321,6 +321,9 @@ function strippedLines(lb, la) {
   return out.sort((x, y) => x - y);
 }
 
+/** "1 line", "3 lines". */
+const count = (k, word, many = `${word}s`) => `${k} ${k === 1 ? word : many}`;
+
 function analyse(before, after, tool, beforeBuf) {
   const problems = [];
   const fb = facts(before);
@@ -329,13 +332,15 @@ function analyse(before, after, tool, beforeBuf) {
   if (!fb.bom && fa.bom) problems.push("adds a byte order mark (BOM)");
   const kinds = (f) => [f.lf > 0, f.crlf > 0, f.cr > 0].filter(Boolean).length;
   if (fb.crlf > 0 && fa.crlf < fb.crlf && fa.lf > fb.lf) {
-    problems.push(`converts ${fb.crlf - fa.crlf} CRLF line ending(s) to LF`);
+    problems.push(`converts ${count(fb.crlf - fa.crlf, "CRLF line ending")} to LF`);
   } else if (fb.crlf === 0 && fb.lf > 0 && fa.crlf > 0) {
-    problems.push(`adds ${fa.crlf} CRLF line ending(s) to an LF file`);
+    problems.push(`adds ${count(fa.crlf, "CRLF line ending")} to an LF file`);
   } else if (kinds(fb) > 1 && kinds(fa) === 1 && fa.lf + fa.crlf + fa.cr > 1) {
-    problems.push(`flattens mixed line endings (${fb.crlf} CRLF, ${fb.lf} LF, ${fb.cr} CR) into one style`);
+    const mixed = [fb.crlf ? `${fb.crlf} CRLF` : "", fb.lf ? `${fb.lf} LF` : "", fb.cr ? `${fb.cr} CR` : ""].filter(Boolean).join(", ");
+    const into = fa.crlf ? "CRLF" : fa.lf ? "LF" : "CR";
+    problems.push(`flattens mixed line endings (${mixed}) into all ${into}${tool === "Write" ? "" : ", because Claude Code's Edit writes the whole file with one line-ending style"}`);
   }
-  if (fb.cr > 0 && fa.cr < fb.cr) problems.push(`removes ${fb.cr - fa.cr} lone CR line break(s)`);
+  if (fb.cr > 0 && fa.cr < fb.cr) problems.push(`removes ${count(fb.cr - fa.cr, "lone CR line break")}`);
   if (fb.finalNewline && !fa.finalNewline) problems.push("drops the final newline");
   if (!fb.finalNewline && fa.finalNewline && before.length > 0) problems.push("adds a final newline the file did not have");
 
@@ -348,7 +353,7 @@ function analyse(before, after, tool, beforeBuf) {
   if (stripped.length > 0) {
     const shown = stripped.slice(0, 8).join(", ");
     const more = stripped.length > 8 ? ` and ${stripped.length - 8} more` : "";
-    problems.push(`strips trailing whitespace on ${stripped.length} line(s) (line${stripped.length > 1 ? "s" : ""} ${shown}${more}) (two trailing spaces are a hard line break in markdown)`);
+    problems.push(`strips trailing whitespace on ${count(stripped.length, "line")} (${stripped.length > 1 ? "lines" : "line"} ${shown}${more}), which can remove markdown hard line breaks`);
   }
 
   checkTime();
@@ -357,7 +362,7 @@ function analyse(before, after, tool, beforeBuf) {
   if (fmB.present && fmB.closed) {
     if (!fmA.present) problems.push("removes or moves the frontmatter off line 1 (tools only read frontmatter that starts on line 1)");
     else if (!fmA.closed) problems.push("leaves the frontmatter without its closing ---");
-    else if (fmA.keys < fmB.keys) problems.push(`drops ${fmB.keys - fmA.keys} frontmatter key(s)`);
+    else if (fmA.keys < fmB.keys) problems.push(`drops ${count(fmB.keys - fmA.keys, "frontmatter key")}`);
     else if (fmA.tabIndent && !fmB.tabIndent) problems.push("indents frontmatter with tabs, which YAML does not allow");
   }
 
@@ -374,7 +379,7 @@ function analyse(before, after, tool, beforeBuf) {
   }
   checkTime();
   const bad = invalidUtf8(beforeBuf);
-  if (bad > 0) problems.push(`the file has ${bad} invalid UTF-8 byte sequence(s) that a text tool will replace with U+FFFD`);
+  if (bad > 0) problems.push(`the file has ${count(bad, "invalid UTF-8 byte sequence")} that a text tool will replace with U+FFFD`);
   return problems;
 }
 
@@ -480,7 +485,10 @@ function main() {
   if (!problems.length) pass();
 
   const summary = `${tool} on ${name} ${problems.join("; ")}.${modeNote}`;
-  const advice = "Retry with an Edit whose old_string and new_string differ only in the text you mean to change, keeping the file's line endings, trailing spaces, BOM and frontmatter exactly as they are.";
+  const flattensOnAnyEdit = tool !== "Write" && problems.some((p) => p.startsWith("flattens mixed line endings"));
+  const advice = flattensOnAnyEdit
+    ? "This file mixes line endings, so any Edit flattens them. Ask the user before changing it, and say so if they want the line endings kept."
+    : "Retry with an Edit whose old_string and new_string differ only in the text you mean to change, keeping the file's line endings, trailing spaces, BOM and frontmatter exactly as they are.";
   decide(summary, advice);
 }
 

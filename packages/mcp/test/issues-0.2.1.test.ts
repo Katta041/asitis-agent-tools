@@ -137,7 +137,7 @@ describe("#2 hidden-instruction needs an instruction, not a product name", () =>
   test("a comment that only names a product, or has it in a URL, is a plain hidden comment", async () => {
     const issues = await lint("mentions/CLAUDE.md");
     expect(linesOf(issues, "hidden-instruction")).toEqual([]);
-    expect(issues.find((i) => i.rule === "hidden-comment")?.message).toMatch(/^5 comment\(s\)/);
+    expect(issues.find((i) => i.rule === "hidden-comment")?.message).toMatch(/^5 comments \(HTML or \[\/\/\]: # style\) are hidden/);
   });
 
   test("comments addressed to the assistant still warn, including the existing cases", async () => {
@@ -214,7 +214,7 @@ describe("#4 trailing whitespace is reported on the exact line when identical li
   test("stripping the second copy names line 4 only", () => {
     const r = runHook(h.dir, "Write", { file_path: FILE, content: BEFORE.replace("same text  \n", "same text\n") });
     expect(r.status, r.stderr).toBe(0);
-    expect(reason(r)).toMatch(/strips trailing whitespace on 1 line\(s\) \(line 4\)/);
+    expect(reason(r)).toMatch(/strips trailing whitespace on 1 line \(line 4\), which can remove markdown hard line breaks/);
   });
 
   test("deleting the line with trailing spaces while its twin stays is not stripping", () => {

@@ -5,7 +5,7 @@ import type { Doc } from "./doc.js";
 import type { Kind } from "./kinds.js";
 import { CAPS, VENDOR } from "./limits.js";
 import type { Sandbox } from "./paths.js";
-import { hasUnsafe, q } from "./escape.js";
+import { esc, hasUnsafe, q } from "./escape.js";
 import { extractImports, extractLinks, isExternalTarget, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
 import { approxTokens } from "./tokens.js";
 
@@ -56,6 +56,18 @@ const SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const RESERVED_WORDS = ["anthropic", "claude"];
 const XML_TAG = /<\/?[A-Za-z][\w.:-]{0,60}(?:\s[^<>\n]{0,200})?\/?>/;
 
+/** A valid Agent Skills name close to the given one ("Claude_Deploy" -> "claude-deploy"), or null. */
+export function suggestSkillName(name: string): string | null {
+  const s = name
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, VENDOR.skillNameMax)
+    .replace(/-+$/, "");
+  return s && SKILL_NAME.test(s) && s !== name ? s : null;
+}
+
 class Collector {
   readonly issues: Issue[] = [];
   private readonly perRule = new Map<string, number>();
@@ -87,8 +99,11 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
       } else {
         const n = String(name);
         if (n.length > VENDOR.skillNameMax) c.add("error", "name-too-long", `name is ${n.length} characters; the Agent Skills spec allows ${VENDOR.skillNameMax}`, line("name"));
-        if (!SKILL_NAME.test(n)) c.add("error", "name-format", `name ${q(n, 80)} must be lowercase letters, digits and single hyphens (Agent Skills spec)`, line("name"));
-        if (dir && dir !== "." && dir !== n) c.add("warning", "name-dir-mismatch", `name ${q(n, 80)} does not match its folder ${q(dir, 80)}; the spec expects them to match`, line("name"));
+        if (!SKILL_NAME.test(n)) {
+          const fix = suggestSkillName(n);
+          c.add("error", "name-format", `name ${q(n, 80)} must be lowercase letters, digits and single hyphens (Agent Skills spec)${fix ? `, for example ${q(fix, 80)}` : ""}`, line("name"));
+        }
+        if (dir && dir !== "." && dir !== n) c.add("warning", "name-dir-mismatch", `name ${q(n, 80)} does not match its folder ${q(dir, 80)}; the spec expects them to match, so rename one`, line("name"));
         const reserved = RESERVED_WORDS.find((w) => n.toLowerCase().includes(w));
         if (reserved) {
           c.add("warning", "name-reserved-word", `name contains the reserved word "${reserved}". The Claude API and claude.ai reject skills whose name contains "anthropic" or "claude" (Claude Code itself accepts it)`, line("name"));
@@ -103,7 +118,7 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
         c.add("error", "field-type", "description must be a string", line("description"));
       } else {
         if (desc.length > VENDOR.skillDescriptionMax) {
-          c.add("error", "description-too-long", `description is ${desc.length} characters; the Agent Skills spec says it must be at most ${VENDOR.skillDescriptionMax}`, line("description"));
+          c.add("error", "description-too-long", `description is ${desc.length.toLocaleString("en-US")} characters; the Agent Skills spec allows at most ${VENDOR.skillDescriptionMax.toLocaleString("en-US")}, so shorten it`, line("description"));
         }
         const tag = XML_TAG.exec(desc);
         if (tag) {
@@ -134,7 +149,7 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
     if (!fm.present && !fm.problems.length) c.add("warning", "missing-frontmatter", ".mdc rules need frontmatter (description, globs, alwaysApply); without it the rule only applies when @-mentioned");
     if (data) {
       if (data["alwaysApply"] !== undefined && typeof data["alwaysApply"] !== "boolean") {
-        c.add("error", "field-type", `alwaysApply must be true or false, not ${q(JSON.stringify(data["alwaysApply"]) ?? "undefined", 60)}`, line("alwaysApply"));
+        c.add("error", "field-type", `alwaysApply must be true or false, not ${typeof data["alwaysApply"] === "string" ? q(data["alwaysApply"], 60) : esc(JSON.stringify(data["alwaysApply"]) ?? "undefined", 60)}`, line("alwaysApply"));
       }
       if (data["globs"] !== undefined && data["globs"] !== null && !isStrOrList(data["globs"])) c.add("error", "field-type", "globs must be a string or a list of strings", line("globs"));
       if (data["alwaysApply"] !== true && !data["globs"] && !data["description"]) {
@@ -169,22 +184,22 @@ function checkLength(doc: Doc, c: Collector, tokens: number): void {
   const lines = doc.profile.lines;
   const bytes = doc.profile.bytes;
   if (kind === "claude-md" && lines > VENDOR.claudeMdTargetLines) {
-    c.add("warning", "length", `${lines} lines; Claude Code recommends under ${VENDOR.claudeMdTargetLines} per CLAUDE.md. Move path-specific parts into .claude/rules with paths frontmatter`);
+    c.add("warning", "length", `${lines} lines; Claude Code recommends under ${VENDOR.claudeMdTargetLines} per CLAUDE.md. Move path-specific parts into .claude/rules/ files with paths frontmatter`);
   }
   if (kind === "skill" && lines > VENDOR.skillMaxLines) c.add("warning", "length", `${lines} lines; keep SKILL.md under ${VENDOR.skillMaxLines} and move detail to referenced files`);
   if (kind === "skill" && tokens > VENDOR.skillBodyTokens) {
-    c.add("warning", "body-tokens", `The SKILL.md body is about ${tokens} tokens; the Agent Skills spec recommends under ${VENDOR.skillBodyTokens.toLocaleString("en-US")} tokens, with detail moved to referenced files`);
+    c.add("warning", "body-tokens", `The SKILL.md body is about ${tokens.toLocaleString("en-US")} tokens; the Agent Skills spec recommends under ${VENDOR.skillBodyTokens.toLocaleString("en-US")} tokens, with detail moved to referenced files`);
   }
   if (kind === "cursor-rule" && lines > VENDOR.cursorRuleLines) c.add("warning", "length", `${lines} lines; Cursor recommends rules under ${VENDOR.cursorRuleLines} lines`);
   if (kind === "agents-md" && bytes > VENDOR.codexAgentsMdBytes) {
-    c.add("warning", "length", `${bytes} bytes; Codex reads at most ${VENDOR.codexAgentsMdBytes} bytes of AGENTS.md by default (project_doc_max_bytes), so the rest is dropped`);
+    c.add("warning", "length", `${bytes.toLocaleString("en-US")} bytes; Codex reads at most ${VENDOR.codexAgentsMdBytes.toLocaleString("en-US")} bytes (32 KiB) of AGENTS.md by default (project_doc_max_bytes), so the rest is dropped. Move detail into nested AGENTS.md files or linked docs`);
   }
-  if (kind === "windsurf-rule" && doc.text.length > VENDOR.windsurfRuleChars) c.add("warning", "length", `${doc.text.length} characters; Windsurf limits rule files to ${VENDOR.windsurfRuleChars}`);
+  if (kind === "windsurf-rule" && doc.text.length > VENDOR.windsurfRuleChars) c.add("warning", "length", `${doc.text.length.toLocaleString("en-US")} characters; Windsurf limits rule files to ${VENDOR.windsurfRuleChars.toLocaleString("en-US")}`);
   if (kind === "memory-index") {
     if (lines > VENDOR.memoryIndexLines) c.add("warning", "length", `${lines} lines; Claude Code loads only the first ${VENDOR.memoryIndexLines} lines of MEMORY.md, so later entries never load`, VENDOR.memoryIndexLines + 1);
-    if (bytes > VENDOR.memoryIndexBytes) c.add("warning", "length", `${bytes} bytes; Claude Code loads only the first 25 KB of MEMORY.md`);
+    if (bytes > VENDOR.memoryIndexBytes) c.add("warning", "length", `${bytes.toLocaleString("en-US")} bytes; Claude Code loads only the first 25 KB of MEMORY.md`);
   }
-  if (doc.kind.load === "every-session" && tokens > 5000) c.add("info", "context-cost", `About ${tokens} tokens load every session; long steering files are followed less reliably`);
+  if (doc.kind.load === "every-session" && tokens > 5000) c.add("info", "context-cost", `About ${tokens.toLocaleString("en-US")} tokens load every session; long steering files are followed less reliably`);
 }
 
 function checkProfile(doc: Doc, c: Collector): void {
@@ -192,9 +207,9 @@ function checkProfile(doc: Doc, c: Collector): void {
   if (p.encoding !== "utf-8") c.add("warning", "encoding", `File is ${p.encoding}; most agent tools expect UTF-8 steering files`);
   if (p.invalidUtf8.count > 0) {
     const r = p.invalidUtf8.ranges[0]!;
-    c.add("warning", "invalid-utf8", `${p.invalidUtf8.count} invalid UTF-8 byte sequence(s), first at byte ${r.start}; tools that decode and re-save will replace them`);
+    c.add("warning", "invalid-utf8", `${p.invalidUtf8.count === 1 ? "1 invalid UTF-8 byte sequence" : `${p.invalidUtf8.count} invalid UTF-8 byte sequences`}, first at byte ${r.start.toLocaleString("en-US")}; tools that decode and re-save will replace them`);
   }
-  if (p.nulBytes > 0) c.add("warning", "nul-bytes", `${p.nulBytes} NUL byte(s); this may be a binary file`);
+  if (p.nulBytes > 0) c.add("warning", "nul-bytes", `${p.nulBytes === 1 ? "1 NUL byte" : `${p.nulBytes.toLocaleString("en-US")} NUL bytes`}; this may be a binary file`);
   if (p.eol.style === "mixed") c.add("info", "mixed-eol", `Mixed line endings (${p.eol.crlf} CRLF, ${p.eol.lf} LF, ${p.eol.cr} CR). Edit minimal ranges so they stay as they are`);
 }
 
@@ -204,7 +219,7 @@ function checkHidden(doc: Doc, c: Collector): void {
     c.add(
       "warning",
       f.bidi ? "bidi-control" : "invisible-char",
-      `${f.count} invisible character(s): ${f.codepoints.join(", ")}.${f.bidi ? " Bidirectional controls can make text read differently than it displays." : ""} Agents read these; people do not see them`,
+      `${f.count === 1 ? "1 invisible character" : `${f.count} invisible characters`}: ${f.codepoints.join(", ")}.${f.bidi ? " Bidirectional controls can make text read differently than it displays." : ""} Agents read these; people do not see them. Delete ${f.count === 1 ? "it" : "them"} unless you put ${f.count === 1 ? "it" : "them"} there on purpose`,
       f.line,
     );
   }
@@ -213,18 +228,18 @@ function checkHidden(doc: Doc, c: Collector): void {
   for (const f of com.findings) {
     if (!f.closed) c.add("warning", "unclosed-comment", `An HTML comment opens here and never closes, so everything after it is hidden in rendered views`, f.line);
     if (f.instructionLike) {
-      c.add("warning", "hidden-instruction", `Hidden HTML comment ${f.matched}: ${q(f.preview, 80)}. It is invisible when rendered but agents reading the raw file see it`, f.line);
+      c.add("warning", "hidden-instruction", `Hidden HTML comment ${f.matched}: ${q(f.preview, 80)}. It is invisible when rendered but agents reading the raw file see it. Remove it unless you wrote it`, f.line);
     } else benign++;
   }
   for (const f of scanRefComments(doc.lines, doc.fence)) {
     if (f.instructionLike) {
-      c.add("warning", "hidden-instruction", `Hidden link-reference comment ([//]: # style) ${f.matched}: ${q(f.preview, 80)}. It renders as nothing but agents reading the raw file see it`, f.line);
+      c.add("warning", "hidden-instruction", `Hidden link-reference comment ([//]: # style) ${f.matched}: ${q(f.preview, 80)}. It renders as nothing but agents reading the raw file see it. Remove it unless you wrote it`, f.line);
     } else benign++;
   }
   const benignTotal = benign + Math.max(0, com.total - com.findings.length);
   if (benignTotal > 0) {
     const note = doc.kind.kind === "claude-md" ? " Claude Code strips block-level comments before loading CLAUDE.md, but its Read tool still sees them." : "";
-    c.add("info", "hidden-comment", `${benignTotal} comment(s) (HTML or [//]: # style) are hidden in rendered views.${note}`, com.findings.find((f) => !f.instructionLike)?.line ?? 1);
+    c.add("info", "hidden-comment", `${benignTotal === 1 ? "1 comment (HTML or [//]: # style) is" : `${benignTotal} comments (HTML or [//]: # style) are`} hidden in rendered views.${note}`, com.findings.find((f) => !f.instructionLike)?.line ?? 1);
   }
   for (const line of scanHiddenStyles(doc.lines, doc.fence)) c.add("warning", "hidden-styled-text", "Inline style or the hidden attribute hides text (display:none, zero size, zero opacity, white text or <div hidden>)", line);
 }
@@ -265,6 +280,11 @@ function sentences(text: string): Array<{ at: number; text: string }> {
   }
   out.push({ at: from, text: text.slice(from) });
   return out;
+}
+
+/** The rule as written, without its list marker or closing punctuation, for quoting in a message. */
+function rulePreview(s: string): string {
+  return trimEndChars(s.replace(LIST_MARKER, "").trim(), ".!;:, ");
 }
 
 function normRule(s: string): string {
@@ -322,17 +342,17 @@ function checkRules(doc: Doc, c: Collector): void {
       if (first !== undefined) {
         // Short list items ("- Quality checklist") repeat as structure under another heading or as sub-items of another bullet.
         const structural = b.listItem && norm.length < 40 && (first.section !== b.section || b.nested);
-        if (!structural) c.add("warning", "duplicate-rule", `Same rule as line ${first.line}; duplicated rules cost context and drift apart when one is edited`, line);
+        if (!structural) c.add("warning", "duplicate-rule", `Same rule as line ${first.line}: ${q(rulePreview(part.text), 60)}. Duplicates cost context and drift apart when one is edited; keep one`, line);
       } else seen.set(norm, { line, section: b.section });
       const p = /^(?:always|you must|must|you should|should|do) (.{4,})$/.exec(norm);
       const n = /^(?:never|do not|don't|must not|mustn't|should not|shouldn't) (.{4,})$/.exec(norm);
       if (p) {
         const other = neg.get(p[1]!);
-        if (other !== undefined) c.add("warning", "contradiction", `Looks contradictory with line ${other} (one says do, the other says do not)`, line);
+        if (other !== undefined) c.add("warning", "contradiction", `Looks contradictory with line ${other} (one says do, the other says do not): ${q(rulePreview(part.text), 60)}. Keep the one you mean`, line);
         if (!pos.has(p[1]!)) pos.set(p[1]!, line);
       } else if (n) {
         const other = pos.get(n[1]!);
-        if (other !== undefined) c.add("warning", "contradiction", `Looks contradictory with line ${other} (one says do, the other says do not)`, line);
+        if (other !== undefined) c.add("warning", "contradiction", `Looks contradictory with line ${other} (one says do, the other says do not): ${q(rulePreview(part.text), 60)}. Keep the one you mean`, line);
         if (!neg.has(n[1]!)) neg.set(n[1]!, line);
       }
     }
@@ -402,7 +422,7 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
       state = (await sandbox.probe(t, dir)).state;
       cache.set(t, state);
     }
-    if (state === "missing") c.add("warning", "broken-link", `Relative link target not found: ${q(l.target, 200)}`, l.line);
+    if (state === "missing") c.add("warning", "broken-link", `Relative link target not found: ${q(l.target, 200)}. Fix the path or remove the link`, l.line);
     else if (state === "outside") c.add("info", "link-outside-root", `Link points outside the allowed folder and was not checked: ${q(l.target, 200)}`, l.line);
   }
   if (!IMPORT_KINDS.includes(doc.kind.kind)) return;
@@ -420,7 +440,7 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
       c.add(
         sure ? "warning" : "info",
         "broken-import",
-        `${q("@" + im.path, 200)} is read as an import but the file does not exist${sure ? "" : npmName ? ". If this is an npm package name, not a file, wrap it in backticks" : ". If this is not a file, wrap it in backticks"}`,
+        `${q("@" + im.path, 200)} is read as an import but the file does not exist${sure ? ". Fix the path or remove the line" : npmName ? ". If this is an npm package name, not a file, wrap it in backticks" : ". If this is not a file, wrap it in backticks"}`,
         im.line,
       );
     } else if (probe.state === "outside") {

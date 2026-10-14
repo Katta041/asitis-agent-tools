@@ -168,7 +168,7 @@ describe("file-type scope: settings, secrets and non-markdown files", () => {
     expect(r.text).toMatch(/outside the allowed folder, not counted/);
   });
 
-  test("size cap refuses oversized files with an actionable message", async () => refused("big.md", /File too large: big\.md is 4096 bytes; the limit is 2048/));
+  test("size cap refuses oversized files with an actionable message", async () => refused("big.md", /File too large: big\.md is 4,096 bytes; the limit is 2,048 bytes \(raise it with --max-file-mb\)/));
 });
 
 describe("root confinement at startup", () => {

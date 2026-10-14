@@ -67,7 +67,7 @@ const failsClosed = (r: HookRun, re: RegExp): void => {
 describe("Write", () => {
   test("converting CRLF to LF asks first", () => {
     const before = readFileSync(CRLF_MDC, "utf8");
-    asks(runHook(pre("Write", { file_path: CRLF_MDC, content: before.replace(/\r\n/g, "\n") })), /converts 6 CRLF line ending\(s\) to LF/);
+    asks(runHook(pre("Write", { file_path: CRLF_MDC, content: before.replace(/\r\n/g, "\n") })), /converts 6 CRLF line endings to LF/);
   });
   test("dropping the BOM asks first", () => {
     const before = readFileSync(CRLF_BOM_SKILL, "utf8");
@@ -239,7 +239,7 @@ describe("Edit line endings, the way Claude Code writes them", () => {
   });
   test("a CRLF file whose first 4,096 characters have no line break is rewritten to LF, and the guard says so", () => {
     const f = file("long-first-line.md", "x".repeat(5000) + "\r\nsecond\r\nthird\r\n");
-    asks(runHook(pre("Edit", { file_path: f, old_string: "second", new_string: "2nd" })), /converts 3 CRLF line ending\(s\) to LF/);
+    asks(runHook(pre("Edit", { file_path: f, old_string: "second", new_string: "2nd" })), /converts 3 CRLF line endings to LF/);
   });
   test("an all-CRLF and an all-LF file keep their style, so a text Edit passes", () => {
     passes(runHook(pre("Edit", { file_path: file("crlf.md", "# T\r\na\r\nb\r\n"), old_string: "a", new_string: "A" })));

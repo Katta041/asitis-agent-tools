@@ -3,15 +3,15 @@ description: Show approximately how many tokens your steering files load every s
 argument-hint: [path]
 allowed-tools: mcp__plugin_asitis_asitis__context_budget
 ---
-Use the `context_budget` tool from the `asitis` MCP server.
+Call the `context_budget` tool from the `asitis` MCP server.
 
-- If a path was given (`$ARGUMENTS`), call `context_budget` with `path` set to it to see that file and its `@imports`.
-- Otherwise call `context_budget` with no arguments for the whole project.
+- With a path (`$ARGUMENTS`), call it with `path` set to that path to see that file and its `@imports`.
+- With no path, call it with no arguments for the whole project.
 
-Report to the user:
+Report the result to the user in this order, and keep it short:
 
-1. The every-session total per tool, largest first.
-2. The three biggest contributors and any warnings (for example CLAUDE.md over 200 lines, AGENTS.md over the 32 KiB Codex limit, a missing `@import`).
-3. At most three concrete suggestions to cut context, such as moving path-specific rules into `.claude/rules/` with `paths` frontmatter or moving detail out of SKILL.md into referenced files.
+1. One line per tool with its every-session total, largest first, for example `Claude Code: about 3.9k tokens`. The tool output already lists them in that order.
+2. The three biggest contributors, and any warnings the tool printed (for example CLAUDE.md over 200 lines, AGENTS.md over the 32 KiB Codex limit, a missing `@import`).
+3. At most three concrete ways to cut context, such as moving path-specific rules into `.claude/rules/` with `paths` frontmatter, or moving detail out of SKILL.md into referenced files.
 
-Say that the numbers are local approximations. Do not edit any file unless the user asks.
+Say once that the numbers are local estimates. If nothing loads every session, say that in one line and stop. Do not edit any file unless the user asks.

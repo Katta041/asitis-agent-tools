@@ -3,6 +3,7 @@
 import path from "node:path";
 import { analyse, type Doc } from "./doc.js";
 import { walk, type Deadline } from "./discover.js";
+import { KIND_LABEL, LOAD_SHORT } from "./kinds.js";
 import { VENDOR } from "./limits.js";
 import { policyRefusal, UserError, type Sandbox } from "./paths.js";
 import { extractImports } from "./scan.js";
@@ -68,7 +69,7 @@ export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string
   for (const im of imports) {
     if (deadline?.expired) break;
     if (++listed > MAX_IMPORTS_LISTED) {
-      out.push({ path: `(${imports.length - MAX_IMPORTS_LISTED} more imports in ${doc.path} not listed)`, tokens: 0, depth });
+      out.push({ path: `${imports.length - MAX_IMPORTS_LISTED} more imports in ${doc.path}`, note: "not listed", tokens: 0, depth });
       break;
     }
     if (im.path.startsWith("~")) {
@@ -95,7 +96,7 @@ export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string
     }
     try {
       const child = await openDoc(sandbox, probe.real);
-      out.push({ path: child.path, tokens: bodyTokens(child, true), note: `imported (hop ${depth})`, depth });
+      out.push({ path: child.path, tokens: bodyTokens(child, true), note: depth === 1 ? "imported" : `imported, ${depth} hops deep`, depth });
       out.push(...(await expandImports(sandbox, child, seen, depth + 1, deadline)));
     } catch (e) {
       out.push({ path: sandbox.display(probe.real), tokens: 0, note: e instanceof UserError ? e.message : "could not be read", depth });
@@ -155,19 +156,19 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     for (const d of instr) {
       seen.add(d.file.real);
       const t = bodyTokens(d, true);
-      entries.push({ path: d.path, tokens: t, note: claudeFiles.length ? "project instructions (block HTML comments not counted)" : "AGENTS.md (no CLAUDE.md found)" });
-      if (d.profile.lines > VENDOR.claudeMdTargetLines) warnings.push(`${d.path} is ${d.profile.lines} lines (target under ${VENDOR.claudeMdTargetLines})`);
+      entries.push({ path: d.path, tokens: t, note: claudeFiles.length ? "project instructions; block HTML comments not counted" : "used because there is no CLAUDE.md" });
+      if (d.profile.lines > VENDOR.claudeMdTargetLines) warnings.push(`${d.path} is ${d.profile.lines.toLocaleString("en-US")} lines; Claude Code recommends under ${VENDOR.claudeMdTargetLines}`);
       entries.push(...(await expandImports(sandbox, d, seen, 1, deadline)));
     }
     for (const d of docs) {
       if (d.kind.kind === "claude-rule" && d.kind.load === "every-session" && !seen.has(d.file.real)) {
-        entries.push({ path: d.path, tokens: bodyTokens(d, true), note: "rule without paths (loads every session)" });
+        entries.push({ path: d.path, tokens: bodyTokens(d, true), note: "rule without paths, so it loads every session" });
       }
       if (d.kind.kind === "memory-index") {
         const n = Math.min(d.lines.count, VENDOR.memoryIndexLines);
         const end = n < d.lines.count ? d.lines.start(n) : d.text.length;
         const slice = Buffer.from(d.text.slice(0, end)).subarray(0, VENDOR.memoryIndexBytes).toString("utf8");
-        entries.push({ path: d.path, tokens: approxTokens(slice), note: "auto memory index (first 200 lines or 25 KB)" });
+        entries.push({ path: d.path, tokens: approxTokens(slice), note: "auto memory index, first 200 lines or 25 KB" });
       }
     }
     // Only skills, commands and subagents that Claude Code itself loads go into the
@@ -192,9 +193,9 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
       const t = k === "skill" || k === "claude-command" ? skillListingTokens(d) : approxTokens(String(d.frontmatter.data?.["description"] ?? "")) + 4;
       if (t > 0) { listing += t; listed++; }
     }
-    if (nested) warnings.push(`${nested} skill(s), command(s) or subagent(s) in nested .claude folders load only once Claude works in that folder; not counted`);
-    if (notLoaded) warnings.push(`${notLoaded} SKILL.md file(s) outside .claude/skills/ are not loaded by Claude Code from that location (for example a plugin or an Agent Skills repository); not counted`);
-    if (listed) entries.push({ path: `(listing of ${listed} skills, commands and subagents)`, tokens: listing, note: "names and descriptions load every session; bodies load on use" });
+    if (nested) warnings.push(`${nested === 1 ? "1 skill, command or subagent sits" : `${nested} skills, commands or subagents sit`} in a nested .claude folder and loads only once Claude works in that folder; not counted`);
+    if (notLoaded) warnings.push(`${notLoaded === 1 ? "1 SKILL.md is" : `${notLoaded} SKILL.md files are`} outside .claude/skills/, so Claude Code does not load ${notLoaded === 1 ? "it" : "them"} from here (for example a plugin or an Agent Skills repository); not counted`);
+    if (listed) entries.push({ path: `Skill listing (${listed} ${listed === 1 ? "entry" : "entries"})`, tokens: listing, note: "names and descriptions of skills, commands and subagents; bodies load on use" });
     if (entries.length || warnings.length) tools.push({ tool: "claude-code", tokens: entries.reduce((a, e) => a + e.tokens, 0), entries, warnings });
   }
 
@@ -203,8 +204,8 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     const d = byRel("AGENTS.md");
     if (d) {
       const capped = d.file.buf.subarray(0, VENDOR.codexAgentsMdBytes).toString("utf8");
-      const warnings = d.profile.bytes > VENDOR.codexAgentsMdBytes ? [`AGENTS.md is ${d.profile.bytes} bytes; Codex reads only the first ${VENDOR.codexAgentsMdBytes}`] : [];
-      tools.push({ tool: "codex", tokens: approxTokens(capped), entries: [{ path: d.path, tokens: approxTokens(capped), note: "root AGENTS.md (nested AGENTS.md load for their folders)" }], warnings });
+      const warnings = d.profile.bytes > VENDOR.codexAgentsMdBytes ? [`AGENTS.md is ${d.profile.bytes.toLocaleString("en-US")} bytes; Codex reads only the first ${VENDOR.codexAgentsMdBytes.toLocaleString("en-US")} (32 KiB)`] : [];
+      tools.push({ tool: "codex", tokens: approxTokens(capped), entries: [{ path: d.path, tokens: approxTokens(capped), note: d.profile.bytes > VENDOR.codexAgentsMdBytes ? "root AGENTS.md, first 32 KiB" : "root AGENTS.md" }], warnings });
     }
   }
 
@@ -232,7 +233,7 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     tools.push({ tool, tokens: entries.reduce((a, e) => a + e.tokens, 0), entries, warnings: [] });
   }
 
-  const files = docs.map((d) => ({ path: d.path, tokens: approxTokens(d.text), note: `${d.kind.kind}, ${d.kind.load}` })).sort((a, b) => b.tokens - a.tokens);
+  const files = docs.map((d) => ({ path: d.path, tokens: approxTokens(d.text), note: `${KIND_LABEL[d.kind.kind]}, ${LOAD_SHORT[d.kind.load]}` })).sort((a, b) => b.tokens - a.tokens);
   return { tools, files, skippedFiles: skipped, truncated: found.truncated };
 }
 

@@ -179,7 +179,7 @@ describe("lint_steering", () => {
     const summary = r.structured["summary"] as Record<string, number>;
     expect(summary["files"]).toBe(20);
     expect(summary["errors"]).toBe(5);
-    expect(r.text).toMatch(/^Linted 20 file\(s\): 5 error\(s\)/);
+    expect(r.text).toMatch(/^Linted 20 files: 5 errors, /);
   });
 });
 
@@ -226,12 +226,19 @@ describe("find_steering_files", () => {
 });
 
 describe("footer", () => {
-  test("every result ends with one asitis.app line, including errors", async () => {
-    for (const [name, args] of [["outline", { path: "CLAUDE.md" }], ["read_markdown", { path: "nope.md" }], ["find_steering_files", {}]] as const) {
-      const r = await c.call(name, args as Record<string, unknown>);
-      expect(r.blocks.at(-1)).toBe(FOOTER);
-      expect(r.blocks.filter((b) => b.includes("asitis.app"))).toHaveLength(1);
+  test("shows once per session, on the first successful result, never on an error", async () => {
+    const f = await connect([FIXTURE_REPO]);
+    const err = await f.call("read_markdown", { path: "nope.md" });
+    expect(err.isError).toBe(true);
+    expect(err.text).not.toMatch(/asitis\.app/);
+    const first = await f.call("outline", { path: "CLAUDE.md" });
+    expect(first.blocks.at(-1)).toBe(FOOTER);
+    expect(first.blocks.filter((b) => b.includes("asitis.app"))).toHaveLength(1);
+    for (const [name, args] of [["outline", { path: "CLAUDE.md" }], ["find_steering_files", {}]] as const) {
+      const r = await f.call(name, args as Record<string, unknown>);
+      expect(r.text).not.toMatch(/asitis\.app/);
     }
+    await f.close();
   });
   test("can be turned off", async () => {
     const q = await connect([FIXTURE_REPO], { footer: false });

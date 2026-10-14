@@ -19,7 +19,8 @@ export function tokensFromBytes(bytes: number): number {
 }
 
 export function fmtTokens(n: number): string {
-  if (n >= 10000) return `about ${(n / 1000).toFixed(0)}k tokens`;
-  if (n >= 1000) return `about ${(n / 1000).toFixed(1)}k tokens`;
-  return `about ${n} tokens`;
+  if (n < 1000) return `about ${n} tokens`;
+  const k = n / 1000;
+  // 9,999 rounds to "10k", not "10.0k".
+  return k < 9.95 ? `about ${k.toFixed(1)}k tokens` : `about ${Math.round(k)}k tokens`;
 }

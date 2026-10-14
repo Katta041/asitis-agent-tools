@@ -70,6 +70,9 @@ function within(rootReal: string, target: string): string | null {
  * Applied to both the path the agent asked for and the real path it resolves to,
  * so a symlink named notes.md that points at .env is refused too.
  */
+/** A byte size for messages: "4,096 bytes" or "17.2 MB". */
+const mb = (bytes: number): string => (bytes < 1024 * 1024 ? `${bytes.toLocaleString("en-US")} bytes` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
+
 export function policyRefusal(relPosix: string, platform: NodeJS.Platform = process.platform): string | null {
   const parts = relPosix.split("/");
   const base = parts[parts.length - 1] ?? "";
@@ -92,7 +95,7 @@ export function policyRefusal(relPosix: string, platform: NodeJS.Platform = proc
   if ((EXTENSIONLESS_STEERING as readonly string[]).includes(lower)) return null;
   const ext = path.posix.extname(lower);
   if (!(MARKDOWN_EXTENSIONS as readonly string[]).includes(ext)) {
-    return `${relPosix} is not a markdown file; this server only reads ${MARKDOWN_EXTENSIONS.join(", ")} and ${EXTENSIONLESS_STEERING.join(", ")}`;
+    return `${relPosix} is not a markdown file; this server only reads markdown (${MARKDOWN_EXTENSIONS.join(", ")}) and ${EXTENSIONLESS_STEERING.join(", ")}`;
   }
   return null;
 }
@@ -235,7 +238,7 @@ export class Sandbox {
     try {
       real = await fsp.realpath(lex.abs);
     } catch {
-      throw new UserError(`File not found: ${input} (inside ${lex.root.real}).`);
+      throw new UserError(`File not found: ${input} (inside ${lex.root.real}). Paths are relative to that folder; find_steering_files lists the steering files.`);
     }
     const inside = this.contain(real);
     if (inside) return inside;
@@ -256,7 +259,7 @@ export class Sandbox {
     const before = await fsp.stat(r.real);
     if (!before.isFile()) throw new UserError(`Not a regular file: ${input}.`);
     if (before.size > this.maxFileBytes) {
-      throw new UserError(`File too large: ${input} is ${before.size} bytes; the limit is ${this.maxFileBytes} bytes (--max-file-mb).`);
+      throw new UserError(`File too large: ${input} is ${mb(before.size)}; the limit is ${mb(this.maxFileBytes)} (raise it with --max-file-mb).`);
     }
     // O_NOFOLLOW refuses a final-component symlink swapped in after realpath;
     // the dev/ino comparison catches a swapped regular file.
@@ -270,7 +273,7 @@ export class Sandbox {
     try {
       const st = await fh.stat();
       if (st.ino !== before.ino || st.dev !== before.dev || !st.isFile()) throw new UserError(`Refused: ${input} changed while it was being opened.`);
-      if (st.size > this.maxFileBytes) throw new UserError(`File too large: ${input} is ${st.size} bytes; the limit is ${this.maxFileBytes} bytes.`);
+      if (st.size > this.maxFileBytes) throw new UserError(`File too large: ${input} is ${mb(st.size)}; the limit is ${mb(this.maxFileBytes)} (raise it with --max-file-mb).`);
       const buf = Buffer.alloc(st.size);
       let off = 0;
       while (off < st.size) {

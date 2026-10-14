@@ -3,7 +3,7 @@
   "name": "asitis",
   "displayName": "AsItIs",
   "version": "0.2.3",
-  "description": "Keep markdown and agent steering files byte-clean. Read-only MCP tools to read, outline, lint and budget CLAUDE.md, AGENTS.md, SKILL.md, rules and memory files; a skill that teaches minimal edits; /md-lint and /md-budget; and an optional accident guard for Write and Edit. No network, no writes.",
+  "description": "Keep markdown and agent steering files byte-clean. Read-only MCP tools to read, outline, lint and budget CLAUDE.md, AGENTS.md, SKILL.md, rules and memory files; a skill that teaches minimal edits; /asitis:md-lint and /asitis:md-budget; and an optional accident guard for Write and Edit. No network, no writes.",
   "author": {
     "name": "AsItIs",
     "url": "https://asitis.app/?ref=claude-plugin"
