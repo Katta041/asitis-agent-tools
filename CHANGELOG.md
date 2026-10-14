@@ -2,16 +2,19 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
-## [Unreleased]
-
-### Changed
-- `@asitis/mcp` npm metadata: a shorter description that names the files it checks, and keywords for the tools people search by (claude-code, claude-md, agents-md, skill-md, mcp-server, prompt-injection, cursor-rules and others). Ships in 0.2.3; the published 0.2.2 is unchanged.
-
-### Added
-- README: a "Try it in 30 seconds" section and a demo of the browser checker (`docs/checker-demo.gif`).
+## [0.2.3] - 2026-10-14
 
 ### Fixed
+- Windows: every file read failed with "is a symlink that resolves outside the allowed folder" when the root folder was given as an 8.3 short path (such as `C:\Users\RUNNER~1\...`, which is what the temp folder looks like on GitHub's Windows runners) or in a different case. Since 0.2.0 the root was resolved with the JavaScript `realpath`, which keeps the path as given, while files were resolved with the native one, which returns long names in their on-disk case, so the two never matched. The root is now also resolved natively and containment is checked against that form, while every file is still opened under the root as given, which is what Node's permission model grants. CI on Windows is green again. The same mismatch affected a case-varied root on macOS.
 - Tests: the copy-rules scan skips binary media such as the demo GIF, which is not authored text.
+- Tests: the nested-grant message test accepts Windows path separators.
+
+### Added
+- Tests for a root given as an 8.3 short path and as a case-varied path, in process and under Node's permission model: paths inside work, links that stay inside work, links and absolute paths outside are refused, and `.env` and `.claude/settings.json` stay refused.
+- README: a "Try it in 30 seconds" section and a demo of the browser checker (`docs/checker-demo.gif`).
+
+### Changed
+- `@asitis/mcp` npm metadata: a shorter description that names the files it checks, and keywords for the tools people search by (claude-code, claude-md, agents-md, skill-md, mcp-server, prompt-injection, cursor-rules and others).
 
 ## [0.2.2] - 2026-10-14
 

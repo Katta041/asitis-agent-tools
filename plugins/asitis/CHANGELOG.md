@@ -2,6 +2,14 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.3] - 2026-10-14
+
+### Fixed
+- Windows: the server could read nothing when Claude Code passed the project folder as an 8.3 short path (`C:\Users\RUNNER~1\...`) or in a different case than the one on disk. Every read failed with "is a symlink that resolves outside the allowed folder". The root and the files it contains are now compared in the same form. Links that resolve outside the project, `.env` files and `.claude/settings*.json` are still refused, and the project folder can still contain the plugin folder.
+
+### Changed
+- The bundled server is `@asitis/mcp` 0.2.3.
+
 ## [0.2.2] - 2026-10-14
 
 ### Fixed

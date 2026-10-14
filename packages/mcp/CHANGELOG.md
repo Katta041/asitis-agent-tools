@@ -2,10 +2,17 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.3] - 2026-10-14
+
+### Fixed
+- Windows: reads no longer fail with "is a symlink that resolves outside the allowed folder" when the root is given as an 8.3 short path (`C:\Users\RUNNER~1\...`) or in a different case. Since 0.2.0 the root was resolved with the JavaScript `fs.realpathSync`, which keeps the spelling it is given, while files were resolved with the native `fs.promises.realpath`, which returns long names in their on-disk case, so a file inside the root looked outside it. The root is now also resolved with `fs.realpathSync.native`, and containment is checked against that form (case-insensitively on Windows). Paths are still opened under the root as given, because Node's permission model compares `--allow-fs-read` folders as plain, case-sensitive strings and does not expand short names. Confinement is unchanged: links that resolve outside the root, `.env` files and `.claude/settings*.json` are still refused. A case-varied root on macOS had the same problem.
+- An absolute path to a file inside the root is accepted in any of the root's spellings (as given, in another case, or the long form) and is opened under the root as given.
 
 ### Changed
-- npm `description` and `keywords` rewritten for search: the description names the files checked (CLAUDE.md, AGENTS.md, SKILL.md, Cursor rules) and stays under 160 characters; 20 keywords. Ships in 0.2.3. No code change.
+- npm `description` and `keywords` rewritten for search: the description names the files checked (CLAUDE.md, AGENTS.md, SKILL.md, Cursor rules) and stays under 160 characters; 20 keywords.
+
+### Tests
+- New `root-forms` tests run every confinement check with the root given as an 8.3 short path (from `cmd`'s `%~s`) and as a case-varied path, in process and under `--permission` with only that form granted.
 
 ## [0.2.2] - 2026-10-14
 
