@@ -272,7 +272,7 @@ function strippedLines(lb, la) {
   } else {
     // Too many changes to align line by line: one hunk, minus lines kept exactly.
     const kept = new Map();
-    for (const l of b) kept.set(l, (kept.get(l) ?? 0) + 1);
+    for (const l of b) kept.set(l, (kept.get(l) || 0) + 1);
     const del = [];
     for (let i = 0; i < a.length; i++) {
       const k = kept.get(a[i]);
@@ -286,14 +286,14 @@ function strippedLines(lb, la) {
     checkTime();
     // A line that reappears exactly inside the hunk was moved, not stripped.
     const exact = new Map();
-    for (const j of h.ins) exact.set(b[j], (exact.get(b[j]) ?? 0) + 1);
+    for (const j of h.ins) exact.set(b[j], (exact.get(b[j]) || 0) + 1);
     const consumed = new Map();
     const rest = [];
     for (const i of h.del) {
       const k = exact.get(a[i]);
       if (k) {
         exact.set(a[i], k - 1);
-        consumed.set(a[i], (consumed.get(a[i]) ?? 0) + 1);
+        consumed.set(a[i], (consumed.get(a[i]) || 0) + 1);
       } else rest.push(i);
     }
     // The other inserted lines by trimmed text, each usable once, in order.
@@ -307,6 +307,7 @@ function strippedLines(lb, la) {
       if (q) q.list.push(j);
       else byTrim.set(key, { list: [j], head: 0 });
     }
+    const reported = new Set();
     for (const i of rest) {
       const l = a[i];
       if (!hasTrailingWs(l)) continue;
@@ -315,14 +316,67 @@ function strippedLines(lb, la) {
       // Same text with less trailing whitespace: stripped. More is not stripping.
       if (b[q.list[q.head]].length >= l.length) continue;
       q.head++;
+      reported.add(i);
       out.push(p + i + 1);
+    }
+    // A hard break (two or more trailing spaces) on a line whose words also change:
+    // "Violets are blue  " rewritten as "Violets are purple". Only when the hunk replaces
+    // lines one for one, so each old line has a clear new counterpart at the same place.
+    if (h.del.length === h.ins.length) {
+      for (let k = 0; k < h.del.length; k++) {
+        const i = h.del[k];
+        if (reported.has(i)) continue;
+        const l = a[i];
+        const n = b[h.ins[k]];
+        if (!/\S {2,}$/.test(l) || trimWs(n) === "" || / {2,}$/.test(n) || /\\$/.test(n)) continue;
+        // A hard break only matters inside a paragraph: the next old line must be text too.
+        const next = i + 1 < a.length ? a[i + 1] : lb[p + i + 1];
+        if (next === undefined || trimWs(next) === "") continue;
+        out.push(p + i + 1);
+      }
     }
   }
   return out.sort((x, y) => x - y);
 }
 
+/**
+ * How many existing lines survive unchanged and in order (the longest common
+ * subsequence, from the line diff). When the diff is too large to align, falls
+ * back to counting surviving lines regardless of order, which can only overcount.
+ */
+function keptInOrder(lb, la) {
+  let p = 0;
+  while (p < lb.length && p < la.length && lb[p] === la[p]) p++;
+  let s = 0;
+  while (s < lb.length - p && s < la.length - p && lb[lb.length - 1 - s] === la[la.length - 1 - s]) s++;
+  const a = lb.slice(p, lb.length - s);
+  const b = la.slice(p, la.length - s);
+  const ops = diffLines(a, b);
+  if (ops) return p + s + ops.filter((o) => o[0] === "=").length;
+  const counts = new Map();
+  for (const l of b) counts.set(l, (counts.get(l) || 0) + 1);
+  let kept = 0;
+  for (const l of a) {
+    const k = counts.get(l);
+    if (k) { kept++; counts.set(l, k - 1); }
+  }
+  return p + s + kept;
+}
+
 /** "1 line", "3 lines". */
 const count = (k, word, many = `${word}s`) => `${k} ${k === 1 ? word : many}`;
+
+const FLATTENS = "flattens mixed line endings";
+const mixedSummary = (f) => [f.crlf ? `${f.crlf} CRLF` : "", f.lf ? `${f.lf} LF` : "", f.cr ? `${f.cr} CR` : ""].filter(Boolean).join(", ");
+
+/**
+ * True when Claude Code's Edit rewrites line endings whatever the edit is: the file mixes
+ * styles, or it is CRLF but its first 4,096 characters hold no line break, so Edit picks LF.
+ */
+function anyEditRewritesEndings(before) {
+  const lf = toLf(before);
+  return (editLineEnding(before) === "CRLF" ? lf.replace(/\n/g, "\r\n") : lf) !== before;
+}
 
 function analyse(before, after, tool, beforeBuf) {
   const problems = [];
@@ -331,14 +385,16 @@ function analyse(before, after, tool, beforeBuf) {
   if (fb.bom && !fa.bom) problems.push("removes the byte order mark (BOM)");
   if (!fb.bom && fa.bom) problems.push("adds a byte order mark (BOM)");
   const kinds = (f) => [f.lf > 0, f.crlf > 0, f.cr > 0].filter(Boolean).length;
-  if (fb.crlf > 0 && fa.crlf < fb.crlf && fa.lf > fb.lf) {
+  const flattened = kinds(fb) > 1 && kinds(fa) === 1 && fa.lf + fa.crlf + fa.cr > 1;
+  if (tool !== "Write" && flattened) {
+    // Checked first for Edit: on a mixed file every Edit flattens, so "converts CRLF" would mislead.
+    problems.push(`${FLATTENS} (${mixedSummary(fb)}) into all ${fa.crlf ? "CRLF" : fa.lf ? "LF" : "CR"}, because Claude Code's Edit writes the whole file with one line-ending style`);
+  } else if (fb.crlf > 0 && fa.crlf < fb.crlf && fa.lf > fb.lf) {
     problems.push(`converts ${count(fb.crlf - fa.crlf, "CRLF line ending")} to LF`);
   } else if (fb.crlf === 0 && fb.lf > 0 && fa.crlf > 0) {
     problems.push(`adds ${count(fa.crlf, "CRLF line ending")} to an LF file`);
-  } else if (kinds(fb) > 1 && kinds(fa) === 1 && fa.lf + fa.crlf + fa.cr > 1) {
-    const mixed = [fb.crlf ? `${fb.crlf} CRLF` : "", fb.lf ? `${fb.lf} LF` : "", fb.cr ? `${fb.cr} CR` : ""].filter(Boolean).join(", ");
-    const into = fa.crlf ? "CRLF" : fa.lf ? "LF" : "CR";
-    problems.push(`flattens mixed line endings (${mixed}) into all ${into}${tool === "Write" ? "" : ", because Claude Code's Edit writes the whole file with one line-ending style"}`);
+  } else if (flattened) {
+    problems.push(`${FLATTENS} (${mixedSummary(fb)}) into all ${fa.crlf ? "CRLF" : fa.lf ? "LF" : "CR"}`);
   }
   if (fb.cr > 0 && fa.cr < fb.cr) problems.push(`removes ${count(fb.cr - fa.cr, "lone CR line break")}`);
   if (fb.finalNewline && !fa.finalNewline) problems.push("drops the final newline");
@@ -366,16 +422,19 @@ function analyse(before, after, tool, beforeBuf) {
     else if (fmA.tabIndent && !fmB.tabIndent) problems.push("indents frontmatter with tabs, which YAML does not allow");
   }
 
-  if (tool === "Write" && lb.length > 20) {
-    const counts = new Map();
-    for (const l of la) counts.set(l, (counts.get(l) ?? 0) + 1);
-    let kept = 0;
-    for (const l of lb) {
-      const k = counts.get(l);
-      if (k) { kept++; counts.set(l, k - 1); }
+  // Churn: how much of the file is rewritten, in order (a reversed file is a rewrite).
+  // A Write is a whole-file rewrite by nature, so it is flagged above 30% when at least
+  // 3 lines change, small files included (most SKILL.md and rules files are short).
+  // An Edit is meant to be targeted, so it is flagged above 50% when at least 5 lines
+  // change, which still catches an Edit whose old_string is the whole file.
+  if (lb.length > 0) {
+    const kept = keptInOrder(lb, la);
+    const changed = lb.length - kept;
+    const churn = changed / lb.length;
+    const write = tool === "Write";
+    if ((write && churn > 0.3 && changed >= 3) || (!write && churn > 0.5 && changed >= 5)) {
+      problems.push(`rewrites ${Math.round(churn * 100)}% of the ${count(lb.length, "existing line")}`);
     }
-    const churn = 1 - kept / lb.length;
-    if (churn > 0.3) problems.push(`rewrites ${Math.round(churn * 100)}% of the ${lb.length} existing lines`);
   }
   checkTime();
   const bad = invalidUtf8(beforeBuf);
@@ -386,11 +445,15 @@ function analyse(before, after, tool, beforeBuf) {
 // ---------------------------------------------------------------------------
 
 function main() {
-  const asked = String(process.env.CLAUDE_PLUGIN_OPTION_GUARD_MODE ?? process.env.ASITIS_GUARD_MODE ?? "ask").trim().toLowerCase() || "ask";
+  // ASITIS_GUARD_MODE wins; the old plugin option is read only when the variable is unset or empty.
+  const fromEnv = String(process.env.ASITIS_GUARD_MODE || "").trim();
+  const fromOption = String(process.env.CLAUDE_PLUGIN_OPTION_GUARD_MODE || "").trim();
+  const source = fromEnv ? "ASITIS_GUARD_MODE" : fromOption ? "CLAUDE_PLUGIN_OPTION_GUARD_MODE" : "";
+  const asked = (fromEnv || fromOption || "ask").toLowerCase();
   const mode = MODES.has(asked) ? asked : "deny";
   const modeNote = MODES.has(asked)
     ? ""
-    : ` Unknown guard_mode "${asked.slice(0, 40).replace(/[^\x20-\x7e]/g, "?")}", so the guard uses deny, the safest mode; set ASITIS_GUARD_MODE to ask, deny or off.`;
+    : ` Unknown ${source} value "${asked.slice(0, 40).replace(/[^\x20-\x7e]/g, "?")}", so the guard uses deny, the safest mode; set ASITIS_GUARD_MODE to ask, deny or off.`;
   if (mode === "off") process.exit(0);
   // Nothing to report: exit silently, or only with the unknown-mode warning.
   const pass = () => (modeNote ? emit({ systemMessage: `AsItIs guard:${modeNote}` }) : process.exit(0));
@@ -432,7 +495,7 @@ function main() {
     if (mode === "deny") {
       emit({
         ...(modeNote ? { systemMessage: `AsItIs guard:${modeNote}` } : {}),
-        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `AsItIs guard: ${summary} ${advice}` },
+        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `AsItIs guard blocked this change on purpose (a guard decision, not a failure): ${summary} ${advice}` },
       });
     }
     emit({
@@ -440,7 +503,9 @@ function main() {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "ask",
-        permissionDecisionReason: `AsItIs guard: ${summary} Allow only if you meant this.`,
+        // In headless runs (claude -p) an ask becomes a denial that Claude Code labels "hook error",
+        // so the reason itself says this is a deliberate check.
+        permissionDecisionReason: `AsItIs guard flagged this change on purpose (a guard decision, not a failure): ${summary} Allow it only if you meant this.`,
         additionalContext: `AsItIs guard warned the user: ${summary} ${advice}`,
       },
     });
@@ -458,7 +523,9 @@ function main() {
   try {
     if (tool === "Write") {
       if (typeof ti.content !== "string") block("the Write input has no string content. The change was blocked to be safe.");
-      after = ti.content;
+      // Claude Code's Write keeps a file's BOM when the new content has none (checked with
+      // Claude Code 2.1.299), so the file it writes starts with the BOM either way.
+      after = before.charCodeAt(0) === 0xfeff && ti.content.charCodeAt(0) !== 0xfeff ? "\ufeff" + ti.content : ti.content;
     } else {
       let edits;
       if (tool === "Edit") edits = [ti];
@@ -485,10 +552,15 @@ function main() {
   if (!problems.length) pass();
 
   const summary = `${tool} on ${name} ${problems.join("; ")}.${modeNote}`;
-  const flattensOnAnyEdit = tool !== "Write" && problems.some((p) => p.startsWith("flattens mixed line endings"));
-  const advice = flattensOnAnyEdit
-    ? "This file mixes line endings, so any Edit flattens them. Ask the user before changing it, and say so if they want the line endings kept."
-    : "Retry with an Edit whose old_string and new_string differ only in the text you mean to change, keeping the file's line endings, trailing spaces, BOM and frontmatter exactly as they are.";
+  const eolOnAnyEdit = tool !== "Write" && anyEditRewritesEndings(before) && problems.some((p) => p.startsWith(FLATTENS) || p.startsWith("converts "));
+  const churn = problems.some((p) => p.startsWith("rewrites "));
+  const advice = eolOnAnyEdit
+    ? before.includes("\r\n") && !problems.some((p) => p.startsWith(FLATTENS))
+      ? "Claude Code's Edit picks the line-ending style from the first 4,096 characters, which have no line break in this file, so any Edit converts its CRLF line endings. Ask the user before changing it, and say so if they want the line endings kept."
+      : "This file mixes line endings, so any Edit flattens them. Ask the user before changing it, and say so if they want the line endings kept."
+    : churn
+      ? "This rewrites most of the file. Ask the user before reformatting or rewriting it; do not get around this check with a large Edit. For a targeted change, edit only the lines that need it."
+      : "Retry with an Edit whose old_string and new_string differ only in the text you mean to change, keeping the file's line endings, trailing spaces, BOM and frontmatter exactly as they are.";
   decide(summary, advice);
 }
 

@@ -51,13 +51,13 @@ The server is not fetched from npm at runtime. `server/asitis-mcp.mjs` is the ex
 **The guard is an accident guard, not a security boundary.** It exists to catch the common accident: an agent rewrites a whole file with `Write`, or an `Edit` whose `new_string` quietly drops trailing spaces or CRLF line endings. It checks `Write`, `Edit` and `MultiEdit` on existing `.md`, `.mdc`, `.markdown`, `.mdx`, `.cursorrules`, `.windsurfrules` and `.clinerules` files and warns when the change would:
 
 - convert CRLF to LF (or the reverse), flatten mixed line endings or remove lone CRs;
-- strip trailing whitespace (two trailing spaces are a hard line break);
-- remove or add the BOM, or drop the final newline;
+- strip trailing whitespace (two trailing spaces are a hard line break), including on a line whose words also change;
+- remove the BOM with an `Edit`, add a BOM, or drop the final newline (Claude Code's `Write` keeps an existing BOM, so a `Write` without one is fine);
 - move the frontmatter off line 1, remove its closing `---`, drop keys or indent it with tabs;
-- rewrite more than 30% of an existing file of more than 20 lines;
+- rewrite much of an existing file: with `Write`, more than 30% of its lines (at least 3 lines); with `Edit` or `MultiEdit`, more than half (at least 5 lines). Lines count as kept only if they stay in the same order, so a reordered file counts as rewritten;
 - touch a file with invalid UTF-8 bytes, which a text tool will replace.
 
-It checks an `Edit` or `MultiEdit` the way Claude Code writes it: Claude Code turns CRLF into LF, applies the edit, and writes every line break back in one style picked from the first 4,096 characters of the file. So a one-word `Edit` to a file with mixed line endings rewrites all of them, and the guard warns about that.
+It checks an `Edit` or `MultiEdit` the way Claude Code writes it: Claude Code turns CRLF into LF, applies the edit, and writes every line break back in one style picked from the first 4,096 characters of the file. So a one-word `Edit` to a file with mixed line endings rewrites all of them, and so does any `Edit` to a CRLF file whose first 4,096 characters have no line break. The guard warns about that and tells Claude to ask you, because no `Edit` can avoid it.
 
 What it does not do: it does not see `Bash` (`sed -i`, redirects, scripts), `NotebookEdit`, other tools or other programs, and anything running as you can bypass it. It never changes the tool call.
 
@@ -75,6 +75,10 @@ It fails closed:
 
 - If the hook input is not valid JSON or lacks the fields it needs, the change is blocked with a one-line message saying why (`AsItIs guard: the hook input is not valid JSON. The change was blocked to be safe; ...`).
 - Claude Code gives the hook 10 seconds and lets the change through if a hook times out. The guard therefore stops itself after 6 seconds (counted from when the hook process starts), and on files over 16 MB, and asks you (blocks in `deny` mode) instead of letting an unchecked change through.
+
+One case it cannot cover: Claude Code starts the guard with `node`. If `node` is not on your `PATH`, or is older than Node 12, the guard cannot run and Claude Code lets the change through. The plugin's server needs Node 22.13 or later anyway, so with a working plugin the guard runs too.
+
+In a headless run (`claude -p`) Claude Code treats an "ask" as a denial and may label it "hook error". The guard's message starts with "AsItIs guard flagged this change on purpose (a guard decision, not a failure)" so the reason is clear.
 
 Set `ASITIS_GUARD_MODE` to `off` if that ever gets in your way.
 

@@ -69,9 +69,9 @@ describe("Write", () => {
     const before = readFileSync(CRLF_MDC, "utf8");
     asks(runHook(pre("Write", { file_path: CRLF_MDC, content: before.replace(/\r\n/g, "\n") })), /converts 6 CRLF line endings to LF/);
   });
-  test("dropping the BOM asks first", () => {
+  test("a Write without the BOM passes, because Claude Code's Write keeps the file's BOM", () => {
     const before = readFileSync(CRLF_BOM_SKILL, "utf8");
-    asks(runHook(pre("Write", { file_path: CRLF_BOM_SKILL, content: before.slice(1) })), /removes the byte order mark/);
+    passes(runHook(pre("Write", { file_path: CRLF_BOM_SKILL, content: before.slice(1) })));
   });
   test("stripping trailing spaces asks first", () => {
     const before = readFileSync(CRLF_BOM_SKILL, "utf8");
@@ -254,13 +254,13 @@ describe("guard_mode", () => {
     const r = runHook(edit, { ASITIS_GUARD_MODE: m });
     expect(r.status, r.stderr).toBe(0);
     expect(r.json?.["hookSpecificOutput"]?.["permissionDecision"]).toBe("deny");
-    expect(r.json?.["systemMessage"]).toMatch(/Unknown guard_mode .* uses deny, the safest mode/);
+    expect(r.json?.["systemMessage"]).toMatch(/Unknown ASITIS_GUARD_MODE value .* uses deny, the safest mode/);
   });
   test("an unknown mode still warns when the edit is clean", () => {
     const r = runHook(pre("Edit", { file_path: LF_SKILL, old_string: "PDF export", new_string: "PDF export" }), { CLAUDE_PLUGIN_OPTION_GUARD_MODE: "strict" });
     expect(r.status).toBe(0);
     expect(r.json?.["hookSpecificOutput"]).toBeUndefined();
-    expect(r.json?.["systemMessage"]).toMatch(/Unknown guard_mode "strict"/);
+    expect(r.json?.["systemMessage"]).toMatch(/Unknown CLAUDE_PLUGIN_OPTION_GUARD_MODE value "strict"/);
   });
   test("the three documented modes are accepted as is", () => {
     expect(runHook(edit, { ASITIS_GUARD_MODE: "ask" }).json?.["hookSpecificOutput"]?.["permissionDecision"]).toBe("ask");
