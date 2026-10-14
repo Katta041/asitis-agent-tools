@@ -18,8 +18,19 @@ export const EXTENSIONLESS_STEERING = [".cursorrules", ".windsurfrules", ".cline
 export interface Root {
   /** The path as given at startup (for messages). */
   given: string;
-  /** realpath of the root. */
+  /**
+   * The root as the server opens it: the realpath of the given folder, or the folder
+   * itself where Node's permission model denies realpath. Every path the server opens
+   * starts with this prefix, so it stays inside the --allow-fs-read grant.
+   */
   real: string;
+  /**
+   * The root as the OS resolves it (realpath.native), used only to compare paths.
+   * On Windows the JS realpath keeps 8.3 short names (C:\Users\RUNNER~1) and the case
+   * as given, while the native realpath that resolves files returns long names, so
+   * containment must be checked against this form.
+   */
+  canon: string;
 }
 
 export interface Resolved {
@@ -37,6 +48,16 @@ export interface OpenedFile extends Resolved {
 
 const toPosix = (p: string): string => p.split(path.sep).join("/");
 
+/** OS-canonical path (long names, on-disk case), or the path unchanged when it cannot be resolved. */
+function canonical(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
+
+/** Root-relative path of target, or null when it is outside. Case-insensitive on Windows (path.win32.relative). */
 function within(rootReal: string, target: string): string | null {
   const rel = path.relative(rootReal, target);
   if (rel === "") return "";
@@ -145,19 +166,21 @@ export class Sandbox {
     const roots: Root[] = [];
     // Under Node's permission model the home folder may not be readable, so fall
     // back to the lexical path for the broad-root check.
-    const homes = new Set<string>([path.resolve(os.homedir())]);
+    const homes = [path.resolve(os.homedir()), canonical(os.homedir())];
     try {
-      homes.add(realpathSync(os.homedir()));
+      homes.push(realpathSync(os.homedir()));
     } catch {
       // not readable; the lexical path is enough
     }
+    const same = (a: string, b: string): boolean => within(a, b) === "";
     for (const g of given) {
       const real = resolveRoot(g);
+      const canon = canonical(real);
       if (!opts.allowBroadRoot) {
-        if (path.parse(real).root === real) throw new UserError(`Refusing the filesystem root (${real}) as the allowed folder. Pass your project folder with --root, or add --allow-broad-root.`);
-        if (homes.has(real)) throw new UserError(`Refusing your home folder (${real}) as the allowed folder. Pass your project folder with --root, or add --allow-broad-root.`);
+        if ([real, canon].some((r) => path.parse(r).root === r)) throw new UserError(`Refusing the filesystem root (${real}) as the allowed folder. Pass your project folder with --root, or add --allow-broad-root.`);
+        if (homes.some((h) => same(h, real) || same(h, canon))) throw new UserError(`Refusing your home folder (${real}) as the allowed folder. Pass your project folder with --root, or add --allow-broad-root.`);
       }
-      roots.push({ given: g, real });
+      roots.push({ given: g, real, canon });
     }
     return new Sandbox(roots, opts);
   }
@@ -176,15 +199,29 @@ export class Sandbox {
   /** Lexically resolves a path against the roots (no filesystem access). */
   lexical(p: string, baseDir?: string): { abs: string; root: Root; rel: string } | null {
     const abs = path.isAbsolute(p) ? path.normalize(p) : path.resolve(baseDir ?? this.primary.real, p);
+    // The agent may pass the root in another form: as given (for example through a
+    // symlinked path), in another case, or as the OS spells it (long names on Windows).
+    // Always rebase onto the form the server opens: Node's permission model compares
+    // paths as plain, case-sensitive strings and does not expand 8.3 names.
     for (const root of this.roots) {
-      const rel = within(root.real, abs);
-      if (rel !== null) return { abs, root, rel: toPosix(rel) };
+      for (const form of [root.real, root.canon, path.resolve(root.given)]) {
+        const rel = within(form, abs);
+        if (rel !== null) return { abs: path.join(root.real, rel), root, rel: toPosix(rel) };
+      }
     }
-    // The agent may pass the root as given (for example through a symlinked path).
+    return null;
+  }
+
+  /**
+   * Maps a realpath (from fs.realpath, which is native and returns long names on
+   * Windows) to the root that contains it, rebased onto the form the server opens.
+   */
+  private contain(real: string): Resolved | null {
     for (const root of this.roots) {
-      const givenAbs = path.resolve(root.given);
-      const rel = within(givenAbs, abs);
-      if (rel !== null) return { abs: path.join(root.real, rel), root, rel: toPosix(rel) };
+      for (const form of [root.canon, root.real]) {
+        const rel = within(form, real);
+        if (rel !== null) return { real: rel ? path.join(root.real, rel) : root.real, rel: toPosix(rel), root };
+      }
     }
     return null;
   }
@@ -200,10 +237,8 @@ export class Sandbox {
     } catch {
       throw new UserError(`File not found: ${input} (inside ${lex.root.real}).`);
     }
-    for (const root of this.roots) {
-      const rel = within(root.real, real);
-      if (rel !== null) return { real, rel: toPosix(rel), root };
-    }
+    const inside = this.contain(real);
+    if (inside) return inside;
     throw new UserError(`Refused: ${input} is a symlink that resolves outside the allowed folder.`);
   }
 
@@ -262,14 +297,10 @@ export class Sandbox {
     } catch {
       return { state: "missing" };
     }
-    for (const root of this.roots) {
-      const rel = within(root.real, real);
-      if (rel !== null) {
-        const st = await fsp.stat(real).catch(() => null);
-        return st ? { state: "ok", size: st.isFile() ? st.size : 0, real, rel: toPosix(rel) } : { state: "missing" };
-      }
-    }
-    return { state: "outside" };
+    const inside = this.contain(real);
+    if (!inside) return { state: "outside" };
+    const st = await fsp.stat(inside.real).catch(() => null);
+    return st ? { state: "ok", size: st.isFile() ? st.size : 0, real: inside.real, rel: inside.rel } : { state: "missing" };
   }
 
   /** Root-relative display path for a real path inside a root. */

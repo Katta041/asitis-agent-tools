@@ -105,7 +105,7 @@ describe("B1: the plugin folder inside the project folder", () => {
     expect(r.status).toBe(2);
     const lines = r.stderr.trim().split("\n");
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/^asitis-mcp: Node's permission model will not let the server read the root folder .*project itself, because --allow-fs-read also lists .*plugins\/asitis, which is inside it/);
+    expect(lines[0]).toMatch(/^asitis-mcp: Node's permission model will not let the server read the root folder .*project itself, because --allow-fs-read also lists .*plugins[\\/]asitis, which is inside it/);
     expect(r.stderr).not.toMatch(/Root folder not found/);
   });
 
