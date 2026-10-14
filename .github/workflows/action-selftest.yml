@@ -1,0 +1,226 @@
+name: action-selftest
+
+# Runs action.yml from this checkout against test-fixtures/ci/clean and test-fixtures/ci/dirty,
+# checks the Node message on a runner without setup-node, and runs the pre-commit hook.
+# The expected counts below are what test-fixtures/ci/dirty produces: 2 errors and 3 warnings
+# for the whole folder, 1 error and 3 warnings for dirty/CLAUDE.md alone. Update both places
+# together if the fixture or the rules change.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-selftest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  action:
+    name: action (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Run the action on the clean fixture
+        id: clean
+        uses: ./
+        with:
+          root: test-fixtures/ci/clean
+          sarif-file: clean.sarif
+
+      - name: Clean fixture passes with no findings
+        shell: bash
+        env:
+          CODE: ${{ steps.clean.outputs.exit-code }}
+          ERRORS: ${{ steps.clean.outputs.errors }}
+          WARNINGS: ${{ steps.clean.outputs.warnings }}
+          NOTES: ${{ steps.clean.outputs.notes }}
+        run: |
+          echo "exit-code=$CODE errors=$ERRORS warnings=$WARNINGS notes=$NOTES"
+          test "$CODE" = "0"
+          test "$ERRORS" = "0"
+          test "$WARNINGS" = "0"
+          test "$NOTES" = "0"
+          node action/asitis.mjs lint --root test-fixtures/ci/clean --format github > clean.log
+          test "$(grep -c '^::' clean.log)" = "0"
+          node -e 'const s=JSON.parse(require("fs").readFileSync("clean.sarif","utf8")); if (s.version!=="2.1.0"||s.runs[0].results.length!==0) process.exit(1)'
+
+      - name: Run the action on the dirty fixture
+        id: dirty
+        continue-on-error: true
+        uses: ./
+        with:
+          root: test-fixtures/ci/dirty
+          sarif-file: out/dirty.sarif
+
+      - name: Dirty fixture fails with the known findings and a valid SARIF file
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.dirty.outcome }}
+          CODE: ${{ steps.dirty.outputs.exit-code }}
+          ERRORS: ${{ steps.dirty.outputs.errors }}
+          WARNINGS: ${{ steps.dirty.outputs.warnings }}
+          SARIF: ${{ steps.dirty.outputs.sarif-file }}
+        run: |
+          echo "outcome=$OUTCOME exit-code=$CODE errors=$ERRORS warnings=$WARNINGS sarif=$SARIF"
+          test "$OUTCOME" = "failure"
+          test "$CODE" = "1"
+          test "$ERRORS" = "2"
+          test "$WARNINGS" = "3"
+          test "$SARIF" = "out/dirty.sarif"
+          # Annotation lines: exactly one per finding, and text from the file never starts a command.
+          node action/asitis.mjs lint --root test-fixtures/ci/dirty --format github > dirty.log || true
+          test "$(grep -c '^::' dirty.log)" = "5"
+          test "$(grep -c '^::error ' dirty.log)" = "2"
+          test "$(grep -c '^::warning ' dirty.log)" = "3"
+          if grep -E '^::(set-env|add-mask|stop-commands)' dirty.log; then exit 1; fi
+          node -e '
+            const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const fail = (m) => { console.error(m); process.exit(1); };
+            if (s.version !== "2.1.0") fail("SARIF version is " + s.version);
+            const run = s.runs[0];
+            if (run.tool.driver.name !== "AsItIs") fail("driver name");
+            if (run.results.length !== 5) fail("expected 5 results, got " + run.results.length);
+            for (const r of run.results) {
+              const loc = r.locations[0].physicalLocation;
+              if (!/^[0-9a-f]{64}$/.test(r.partialFingerprints["asitis/v1"])) fail("fingerprint missing");
+              if (loc.artifactLocation.uriBaseId !== "%SRCROOT%") fail("uriBaseId");
+              if (/^(\/|[A-Za-z]:|file:)/.test(loc.artifactLocation.uri)) fail("absolute uri " + loc.artifactLocation.uri);
+              if (!(loc.region.startLine >= 1)) fail("region");
+            }
+            console.log("SARIF ok: " + run.results.length + " results");
+          ' "$SARIF"
+
+      - name: Run the action on named paths with fail-on never
+        id: paths
+        uses: ./
+        with:
+          paths: |
+            test-fixtures/ci/dirty/CLAUDE.md
+            test-fixtures/ci/clean/CLAUDE.md
+          fail-on: never
+          format: text
+          sarif-file: ""
+
+      - name: Named paths are linted and fail-on never passes
+        shell: bash
+        env:
+          CODE: ${{ steps.paths.outputs.exit-code }}
+          ERRORS: ${{ steps.paths.outputs.errors }}
+          WARNINGS: ${{ steps.paths.outputs.warnings }}
+          SARIF: ${{ steps.paths.outputs.sarif-file }}
+        run: |
+          echo "exit-code=$CODE errors=$ERRORS warnings=$WARNINGS sarif=$SARIF"
+          test "$CODE" = "0"
+          test "$ERRORS" = "1"
+          test "$WARNINGS" = "3"
+          test -z "$SARIF"
+
+      - name: Run the action with a path that does not exist
+        id: missing
+        continue-on-error: true
+        uses: ./
+        with:
+          paths: test-fixtures/ci/no-such-file.md
+          sarif-file: ""
+
+      - name: A missing path is exit code 2
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.missing.outcome }}
+          CODE: ${{ steps.missing.outputs.exit-code }}
+        run: |
+          echo "outcome=$OUTCOME exit-code=$CODE"
+          test "$OUTCOME" = "failure"
+          test "$CODE" = "2"
+
+  old-node:
+    # No setup-node here. A stand-in `node` that reports v20.11.0 goes first on PATH, so the
+    # check is the same whatever Node the runner image ships this month.
+    name: action without setup-node
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Put an old node first on PATH
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/oldnode"
+          printf '#!/bin/sh\necho v20.11.0\n' > "$RUNNER_TEMP/oldnode/node"
+          chmod +x "$RUNNER_TEMP/oldnode/node"
+          echo "$RUNNER_TEMP/oldnode" >> "$GITHUB_PATH"
+
+      - name: Run the action
+        id: old
+        continue-on-error: true
+        uses: ./
+        with:
+          root: test-fixtures/ci/clean
+
+      - name: The action fails with exit code 2 and one line about setup-node
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.old.outcome }}
+          CODE: ${{ steps.old.outputs.exit-code }}
+        run: |
+          echo "outcome=$OUTCOME exit-code=$CODE"
+          test "$OUTCOME" = "failure"
+          test "$CODE" = "2"
+          set +e
+          GITHUB_OUTPUT=/dev/null bash action/run.sh > msg.txt 2>&1
+          code=$?
+          set -e
+          cat msg.txt
+          test "$code" = "2"
+          test "$(wc -l < msg.txt | tr -d ' ')" = "1"
+          grep -qx '::error title=asitis::asitis needs Node 22.13 or later and this runner has v20.11.0. Add actions/setup-node with node-version: 22 (or later) before this step.' msg.txt
+
+  pre-commit:
+    name: pre-commit try-repo (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - run: python -m pip install pre-commit==4.7.0
+      - name: The hook fails on the dirty fixture
+        shell: bash
+        run: |
+          set +e
+          pre-commit try-repo . asitis-lint --files test-fixtures/ci/dirty/CLAUDE.md > hook.log 2>&1
+          code=$?
+          set -e
+          cat hook.log
+          test "$code" != "0"
+          grep -q 'frontmatter-not-line-1' hook.log
+      - name: The hook passes on the clean fixture
+        shell: bash
+        run: pre-commit try-repo . asitis-lint --files test-fixtures/ci/clean/CLAUDE.md test-fixtures/ci/clean/AGENTS.md

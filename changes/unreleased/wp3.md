@@ -1,0 +1,5 @@
+### Added
+- GitHub Action (`action.yml`), used as `Katta041/asitis-agent-tools@v0.3.0`. It runs the CLI bundled at `action/asitis.mjs` with no npm install, puts findings on the pull request as annotations, writes SARIF (`sarif-file`, default `asitis.sarif`) and can upload it to code scanning (`upload-sarif: true`). Inputs: `paths`, `root`, `fail-on`, `format`, `include`, `config`, `baseline`, `sarif-file`, `upload-sarif`. Outputs: `exit-code`, `errors`, `warnings`, `notes`, `sarif-file`. On Node older than 22.13 it stops with one line saying to add `actions/setup-node`.
+- pre-commit hook `asitis-lint` (`.pre-commit-hooks.yaml`). It runs the same bundled CLI on staged steering files only, and fails on errors by default (`args: [--fail-on, warning]` to fail on warnings too).
+- `docs/ci.md`: GitHub Actions, pre-commit, lefthook, husky, GitLab CI and the plain `npx` line.
+- `action-selftest` workflow: runs the Action on Ubuntu and Windows against `test-fixtures/ci/clean` and `test-fixtures/ci/dirty`, checks the Node message on a runner without setup-node, and runs `pre-commit try-repo` on both systems.
