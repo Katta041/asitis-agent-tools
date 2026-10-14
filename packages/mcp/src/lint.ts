@@ -90,6 +90,10 @@ export function suggestSkillName(name: string): string | null {
 class Collector {
   readonly issues: Issue[] = [];
   private readonly perRule = new Map<string, number>();
+  /** True once a rule has hit its cap and its "more findings" note, so callers can skip building messages. */
+  full(rule: string): boolean {
+    return (this.perRule.get(rule) ?? 0) > CAPS.maxFindingsPerRule;
+  }
   add(severity: Severity, rule: string, message: string, line = 1): void {
     const n = this.perRule.get(rule) ?? 0;
     this.perRule.set(rule, n + 1);
@@ -472,6 +476,18 @@ function checkRules(doc: Doc, c: Collector): void {
   let parent = ""; // the last top-level list item, for nested items
   let lead = false; // the paragraph before this list introduces things to avoid ("Avoid these:")
   let block: Block | null = null;
+  // Steering files repeat lines; a hostile one repeats a pair 100,000 times. Each distinct text
+  // is analysed once (bounded cache), and messages are not built once a rule is at its cap.
+  type Facts = { norm: string; rule: boolean; pos: ReturnType<typeof polarity> };
+  const analysed = new Map<string, Facts>();
+  const analyse = (text: string): Facts => {
+    let a = analysed.get(text);
+    if (!a) {
+      a = { norm: normRule(text), rule: readsAsRule(text), pos: polarity(text, false) };
+      if (analysed.size < 50_000) analysed.set(text, a);
+    }
+    return a;
+  };
 
   const flush = (): void => {
     const b = block;
@@ -490,12 +506,13 @@ function checkRules(doc: Doc, c: Collector): void {
     // A list item is one rule; a paragraph is a run of sentences.
     const parts = b.listItem ? [{ at: 0, text: b.text }] : sentences(b.text);
     for (const part of parts) {
-      const norm = normRule(part.text);
+      const facts = analyse(part.text);
+      const norm = facts.norm;
       if (norm.startsWith("#") || norm.startsWith("|") || norm.startsWith("<!--")) continue;
       // A short label that introduces a list or code ("Code comments:", "Run tests:") is not a rule.
       if (norm.length < 40 && part.text.replace(/[*_`\s]+$/, "").endsWith(":")) continue;
       const words = norm.split(" ").length;
-      const rule = readsAsRule(part.text);
+      const rule = facts.rule;
       // Very short text is a rule only when it reads as one ("Use pnpm", "Never use tabs").
       if (norm.length < 12 && !(rule && words >= 2)) continue;
       // A sentence taken out of a longer paragraph needs four words to be a rule:
@@ -510,18 +527,20 @@ function checkRules(doc: Doc, c: Collector): void {
         // "Bugfix PRs:" each with "- Add a changelog entry") is a per-parent checklist, even when it is an instruction.
         const myParent = b.nested ? normRule(parent) : "";
         const structural = b.listItem && norm.length < 40 && ((!rule && (first.section !== b.section || b.nested)) || (b.nested && first.parent !== myParent));
-        if (!structural) {
+        if (!structural && !c.full("duplicate-rule")) {
           // Copies under different headings are sometimes deliberate (Path A and Path B each list the step).
           const where = first.section !== b.section ? ", under another heading" : "";
           const unless = first.section !== b.section ? ", unless the two sections are alternatives that never apply together" : "";
           c.add("warning", "duplicate-rule", `Same rule as line ${first.line}${where}: ${q(preview, 60)}. Duplicates cost context and drift apart when one is edited; keep one${unless}`, line);
         }
       } else seen.set(norm, { line, section: b.section, parent: b.listItem && b.nested ? normRule(parent) : "" });
-      const pol = polarity(part.text, negativeContext);
+      // Under a list of things to avoid, polarity() drops a bare imperative ("Use X") and "Prefer X"; the rest stands.
+      const p0 = facts.pos;
+      const pol = negativeContext && p0 && !p0.neg && (!p0.explicit || p0.core.startsWith("prefer: ")) ? null : p0;
       if (!pol || pol.core.length < 4) continue;
       const mine = pol.neg ? neg : pos;
       const other = (pol.neg ? pos : neg).get(pol.core);
-      if (other !== undefined) {
+      if (other !== undefined && !c.full("contradiction")) {
         c.add(
           "warning",
           "contradiction",
