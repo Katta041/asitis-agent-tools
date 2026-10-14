@@ -30,7 +30,7 @@ All notable changes to `@asitis/mcp` are documented here. The format follows [Ke
 - Protocol: bad JSON gets a -32700 response, a batch or a malformed request -32600, an unknown tool or wrong parameters -32602 with a one-line message. A message over the 10 MB read buffer ends the session with one line on stderr and exit code 1. Filesystem errors say "Permission denied" or "Symlink loop", and internal errors have absolute paths removed. At most 4 tool calls run at once and 32 wait; more get a "Busy" result.
 - Folder walk: a `.claude/projects/<project>/memory` fixture replaces the old top-level `memory/` in the tests, and a `memory` folder deep in a source tree (for example `src/lib/memory/README.md`) is no longer treated as Claude memory.
 
-On the pinned sample of 200 public AGENTS.md and CLAUDE.md files, `duplicate-rule` goes from 4 to 5 findings (the new one is a real repeat in strapi/strapi), `contradiction` stays at 0, and no other rule changes.
+On the pinned sample of 200 public AGENTS.md and CLAUDE.md files, `duplicate-rule` goes from 4 to 5 findings (the new one is a real repeat in strapi/strapi), `contradiction` stays at 0, and `broken-import` gains 4 findings in one AGENTS.md (it has no CLAUDE.md beside it in the sample, so its `@path` imports are now checked, and the linked files were not part of the sample). No other rule changes.
 
 ## [0.2.4] - 2026-10-14
 
