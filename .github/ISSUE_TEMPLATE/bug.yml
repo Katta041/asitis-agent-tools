@@ -1,0 +1,35 @@
+name: Bug
+description: Something does not install, start or behave as documented.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the exact error line if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. claude plugin install asitis@asitis
+        2. Start a new session
+        3. Run /asitis:md-lint
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: AsItIs version
+      description: Plugin or @asitis/mcp version (asitis-mcp --version prints it).
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Client, operating system and Node version
+      placeholder: Claude Code on macOS 15, Node 22.13
+    validations:
+      required: true

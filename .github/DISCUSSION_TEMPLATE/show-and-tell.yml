@@ -1,0 +1,17 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share a steering-file pattern that works for you, or something the linter caught. Please use simulated content only, and leave out anything private.
+  - type: textarea
+    id: pattern
+    attributes:
+      label: What you want to share
+      description: The pattern, a trimmed excerpt of the file, or the finding.
+    validations:
+      required: true
+  - type: input
+    id: tools
+    attributes:
+      label: Which agents read this file
+      placeholder: Claude Code, Codex, Cursor

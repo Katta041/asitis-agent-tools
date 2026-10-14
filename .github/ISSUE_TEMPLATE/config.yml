@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Katta041/asitis-agent-tools/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue. See SECURITY.md.
+  - name: Question or idea
+    url: https://github.com/Katta041/asitis-agent-tools/discussions
+    about: Ask how something works, or share a steering-file pattern, in Discussions.

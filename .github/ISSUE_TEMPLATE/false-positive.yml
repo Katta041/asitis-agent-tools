@@ -1,0 +1,48 @@
+name: False positive or missed finding
+description: The linter flagged something that is fine, or missed something it should catch.
+labels: ["lint"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. False positives are treated as bugs. Please use simulated content only, never real secrets or private instructions.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What happened
+      options:
+        - It flagged something that is fine (false positive)
+        - It missed something it should catch (false negative)
+    validations:
+      required: true
+  - type: input
+    id: rule
+    attributes:
+      label: Rule name
+      description: The rule in the output, for example hidden-instruction, duplicate-rule or broken-import. Leave empty for a missed finding.
+  - type: textarea
+    id: file
+    attributes:
+      label: Smallest file that shows it
+      description: Paste the file, or the few lines that trigger it. If invisible characters matter, say which ones (for example U+200B) because pasting may drop them.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output you got
+      render: text
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and where you ran it
+      description: For example "plugin 0.2.4 in Claude Code", "@asitis/mcp 0.2.4 in Cursor" or "browser checker".
+    validations:
+      required: true

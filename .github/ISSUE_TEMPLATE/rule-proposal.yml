@@ -1,0 +1,37 @@
+name: Rule proposal
+description: Suggest a new check, or a change to a limit when a vendor updates its docs.
+labels: ["enhancement", "lint"]
+body:
+  - type: textarea
+    id: check
+    attributes:
+      label: What should it check
+      description: One or two sentences, plus a short example that should be flagged and one that should not.
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: A link to the vendor's published docs or spec that the rule is based on. Rules based on published docs are easier to review and to keep accurate when the docs change.
+  - type: dropdown
+    id: files
+    attributes:
+      label: Which files
+      multiple: true
+      options:
+        - CLAUDE.md or MEMORY.md
+        - AGENTS.md
+        - SKILL.md
+        - Subagents or commands
+        - Cursor, Windsurf or Cline rules
+        - Copilot instructions
+        - GEMINI.md
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
+      description: What goes wrong for the agent or the person when this is not caught.
