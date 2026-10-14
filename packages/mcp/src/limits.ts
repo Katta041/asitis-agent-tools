@@ -32,8 +32,11 @@ export const VENDOR = {
 export const CAPS = {
   /** Largest file any tool will analyse. */
   maxFileBytes: 16 * 1024 * 1024,
-  /** Default and hard maximum bytes returned by one read_markdown call. */
-  readDefaultBytes: 256 * 1024,
+  /**
+   * Default and hard maximum bytes returned by one read_markdown call. The default page is
+   * about 8k tokens, under Claude Code's 10k-token tool-result warning and its 25k-token limit.
+   */
+  readDefaultBytes: 32 * 1024,
   readMaxBytes: 1024 * 1024,
   /** Frontmatter larger than this is not parsed. */
   maxFrontmatterBytes: 64 * 1024,
@@ -55,6 +58,12 @@ export const CAPS = {
   maxPathChars: 4096,
   /** Wall-clock budget for one tool call. */
   callBudgetMs: 20000,
-  /** Headings returned by outline. */
+  /** Headings found by outline, and headings listed per outline call (a page). */
   maxHeadings: 5000,
+  outlinePage: 400,
+  /** Files listed per load group by find_steering_files, and per list by context_budget; totals still count every file. */
+  listMaxFiles: 60,
+  /** Tool calls that run at once; more wait in a queue of at most maxQueued, then are refused. */
+  maxConcurrentCalls: 4,
+  maxQueuedCalls: 32,
 } as const;

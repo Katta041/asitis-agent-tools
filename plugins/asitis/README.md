@@ -85,8 +85,7 @@ The plugin works with no setup, so installing it asks nothing. To change a defau
 ```json
 {
   "env": {
-    "ASITIS_GUARD_MODE": "deny",
-    "ASITIS_MCP_FOOTER": "0"
+    "ASITIS_GUARD_MODE": "deny"
   }
 }
 ```
@@ -94,7 +93,7 @@ The plugin works with no setup, so installing it asks nothing. To change a defau
 | Variable | Default | Effect |
 |---|---|---|
 | `ASITIS_GUARD_MODE` | `ask` | `ask`, `deny` or `off` for the guard hook. |
-| `ASITIS_MCP_FOOTER` | on | The first tool result of each session ends with one line linking to asitis.app. Set to `0` to hide it. |
+| `ASITIS_MCP_FOOTER` | off | Set to `1` to end the first tool result of each session with one line linking to asitis.app. Before 0.2.5 this line was on by default. |
 
 Before 0.2.1 these were plugin options (`guard_mode`, `footer`) set with `/plugin configure`. Claude Code reports every plugin option the user has not saved as "not yet set" at install, even one with a default, so 0.2.1 reads environment variables instead. If you set either option, set the variable instead.
 

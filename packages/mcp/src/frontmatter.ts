@@ -10,7 +10,8 @@ export type FrontmatterProblem =
   | { rule: "frontmatter-unclosed"; line: number; message: string }
   | { rule: "frontmatter-yaml"; line: number; message: string }
   | { rule: "frontmatter-not-mapping"; line: number; message: string }
-  | { rule: "frontmatter-too-large"; line: number; message: string };
+  | { rule: "frontmatter-too-large"; line: number; message: string }
+  | { rule: "frontmatter-value-cut"; line: number; message: string };
 
 export interface Frontmatter {
   /** True when a frontmatter block that tools will read starts on line 1. */
@@ -30,7 +31,44 @@ const isFence = (s: string): boolean => {
   return true;
 };
 
-export function readFrontmatter(lines: LineIndex): Frontmatter {
+import type { Kind } from "./kinds.js";
+
+/** What goes wrong when a file's frontmatter does not parse, in the words of the tool that reads it. */
+function unreadable(kind: Kind | undefined): string {
+  switch (kind) {
+    case "skill":
+      return "Claude Code and other skill readers may not read this skill's name and description, so fix the YAML";
+    case "claude-command":
+      return "Claude Code may not read this command's fields, so fix the YAML";
+    case "claude-agent":
+      return "Claude Code may not read this subagent's name and description, so fix the YAML";
+    case "claude-rule":
+      return "Claude Code may not read this rule's paths, so fix the YAML";
+    case "cursor-rule":
+      return "Cursor may not read this rule's description, globs or alwaysApply, so fix the YAML";
+    case "copilot-scoped":
+    case "prompt-file":
+      return "VS Code may not read these fields, so fix the YAML";
+    case "windsurf-rule":
+      return "Windsurf may not read these fields, so fix the YAML";
+    case "memory-topic":
+      return "Claude Code may not read this memory's name, description or type, so fix the YAML";
+    default:
+      return "Tools that read this frontmatter may not see these fields, so fix the YAML";
+  }
+}
+
+/**
+ * Cursor writes `globs: *.ts,*.tsx` without quotes and reads it back as a string, but to YAML
+ * a leading `*` is an alias. For Cursor rules only, such a value is quoted before parsing.
+ */
+function cursorGlobLine(line: string): string {
+  const m = /^(globs\s*:\s*)([^\s"'[{|>#&!%@`][^\n]*)$/.exec(line);
+  if (!m || !/^\*|,/.test(m[2]!)) return line;
+  return `${m[1]}${JSON.stringify(m[2]!.trimEnd())}`;
+}
+
+export function readFrontmatter(lines: LineIndex, kind?: Kind): Frontmatter {
   const out: Frontmatter = { present: false, startLine: -1, endLine: -1, data: null, keyLines: {}, problems: [] };
   if (lines.count === 0) return out;
   let first = lines.line(0);
@@ -90,7 +128,7 @@ export function readFrontmatter(lines: LineIndex): Frontmatter {
   out.startLine = open;
   out.endLine = close;
   const yamlText: string[] = [];
-  for (let j = open + 1; j < close; j++) yamlText.push(lines.line(j));
+  for (let j = open + 1; j < close; j++) yamlText.push(kind === "cursor-rule" ? cursorGlobLine(lines.line(j)) : lines.line(j));
   const src = yamlText.join("\n");
   // prettyErrors fills linePos (1-based within the YAML text); without it every error fell back to line 1.
   const doc = parseDocument(src, { uniqueKeys: true, prettyErrors: true, strict: true });
@@ -101,7 +139,7 @@ export function readFrontmatter(lines: LineIndex): Frontmatter {
     out.problems.push({
       rule: "frontmatter-yaml",
       line: open + 1 + lineInFm,
-      message: `Frontmatter YAML does not parse (${msg}). Claude Code loads a skill with no fields set when this happens`,
+      message: `Frontmatter YAML does not parse (${msg}). ${unreadable(kind)}`,
     });
     return out;
   }
@@ -122,8 +160,22 @@ export function readFrontmatter(lines: LineIndex): Frontmatter {
   }
   out.data = data as Record<string, unknown>;
   for (let j = open + 1; j < close; j++) {
-    const m = /^([A-Za-z_][\w.-]*)\s*:/.exec(lines.line(j));
-    if (m && out.keyLines[m[1]!] === undefined) out.keyLines[m[1]!] = j + 1;
+    const raw = lines.line(j);
+    const m = /^([A-Za-z_][\w.-]*)\s*:/.exec(raw);
+    if (!m || out.keyLines[m[1]!] !== undefined) continue;
+    out.keyLines[m[1]!] = j + 1;
+    // "description: Use for A #1 and B": YAML reads " #1 and B" as a comment and drops it.
+    const value = raw.slice(m[0].length).trim();
+    const hash = value.indexOf(" #");
+    const parsed = out.data[m[1]!];
+    if (hash > 0 && !/^["'[{|>&*!]/.test(value) && typeof parsed === "string" && parsed.length < value.length) {
+      const dropped = value.slice(hash + 1).trim();
+      out.problems.push({
+        rule: "frontmatter-value-cut",
+        line: j + 1,
+        message: `The value of ${m[1]} stops before " #": YAML reads ${JSON.stringify(dropped.length > 60 ? dropped.slice(0, 60) + "..." : dropped)} as a comment and drops it. Put the value in quotes to keep it`,
+      });
+    }
   }
   return out;
 }

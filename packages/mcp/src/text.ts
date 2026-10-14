@@ -37,7 +37,42 @@ export function detectEncoding(buf: Uint8Array): { encoding: Encoding; bom: bool
   if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return { encoding: "utf-8", bom: true, bomBytes: 3 };
   if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return { encoding: "utf-16le", bom: true, bomBytes: 2 };
   if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) return { encoding: "utf-16be", bom: true, bomBytes: 2 };
+  const guess = guessUtf16(buf);
+  if (guess) return { encoding: guess, bom: false, bomBytes: 0 };
   return { encoding: "utf-8", bom: false, bomBytes: 0 };
+}
+
+/**
+ * UTF-16 without a byte order mark, as some Windows editors and PowerShell's `Out-File` write it.
+ * Mostly-ASCII text then has a zero in every other byte: the high byte of each code unit.
+ * Only the first 4 KiB is sampled; a file needs an even length, at least 8 code units, a zero
+ * high byte in 70% of them and almost never a zero low byte. Binary files rarely look like that,
+ * and UTF-8 text never has NUL bytes in that pattern.
+ */
+function guessUtf16(buf: Uint8Array): Encoding | null {
+  if (buf.length < 16 || buf.length % 2 !== 0) return null;
+  const units = Math.min(buf.length, 4096) >> 1;
+  let evenZero = 0;
+  let oddZero = 0;
+  for (let k = 0; k < units; k++) {
+    if (buf[2 * k] === 0) evenZero++;
+    if (buf[2 * k + 1] === 0) oddZero++;
+  }
+  if (oddZero >= units * 0.7 && evenZero <= units * 0.05) return "utf-16le";
+  if (evenZero >= units * 0.7 && oddZero <= units * 0.05) return "utf-16be";
+  return null;
+}
+
+/** 1-based line of a byte offset, with the same line breaks as LineIndex (LF, CRLF, lone CR). Only for UTF-8. */
+export function lineOfByte(buf: Uint8Array, offset: number): number {
+  let line = 1;
+  const end = Math.min(offset, buf.length);
+  for (let i = 0; i < end; i++) {
+    const b = buf[i];
+    if (b === 10) line++;
+    else if (b === 13 && buf[i + 1] !== 10) line++;
+  }
+  return line;
 }
 
 /**
@@ -203,8 +238,10 @@ export function profile(buf: Uint8Array, text: string, lines: LineIndex): Profil
   }
   const kinds = [lf > 0, crlf > 0, cr > 0].filter(Boolean).length;
   const style: EolKind = kinds === 0 ? "none" : kinds > 1 ? "mixed" : lf ? "lf" : crlf ? "crlf" : "cr";
+  // In UTF-16 every ASCII character has a zero byte, so count NUL characters, not bytes.
   let nul = 0;
-  for (let i = 0; i < buf.length; i++) if (buf[i] === 0) nul++;
+  if (enc.encoding === "utf-8") for (let i = 0; i < buf.length; i++) { if (buf[i] === 0) nul++; }
+  else for (let i = 0; i < text.length; i++) { if (text.charCodeAt(i) === 0) nul++; }
   const last = text.charCodeAt(text.length - 1);
   return {
     bytes: buf.length,

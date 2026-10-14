@@ -15,7 +15,7 @@ Requires Node 22.13 or later. Always pin the version; never use `@latest` in an 
 Check that it runs:
 
 ```bash
-npx -y @asitis/mcp@0.2.4 --version
+npx -y @asitis/mcp@0.2.5 --version
 ```
 
 ### Claude Code
@@ -23,7 +23,7 @@ npx -y @asitis/mcp@0.2.4 --version
 Run this in your project folder:
 
 ```bash
-claude mcp add asitis -- npx -y @asitis/mcp@0.2.4 --root "$PWD"
+claude mcp add asitis -- npx -y @asitis/mcp@0.2.5 --root "$PWD"
 ```
 
 Or install the [Claude Code plugin](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/README.md), which adds a byte-clean editing skill, `/asitis:md-lint`, `/asitis:md-budget` and an optional guard hook, and runs this server under Node's permission model:
@@ -42,7 +42,7 @@ claude plugin install asitis@asitis
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.5", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -57,7 +57,7 @@ claude plugin install asitis@asitis
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.4", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.2.5", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -72,7 +72,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 ```toml
 [mcp_servers.asitis]
 command = "npx"
-args = ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
+args = ["-y", "@asitis/mcp@0.2.5", "--root", "/absolute/path/to/project"]
 ```
 
 ### Gemini CLI
@@ -84,7 +84,7 @@ args = ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.5", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -95,7 +95,7 @@ args = ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
 Run the file directly under Node's permission model so Node itself denies writes and child processes (and network access on Node 25 and later):
 
 ```bash
-npm install -g @asitis/mcp@0.2.4
+npm install -g @asitis/mcp@0.2.5
 node --permission \
   --allow-fs-read="$(npm root -g)/@asitis/mcp" \
   --allow-fs-read=/absolute/path/to/project \
@@ -116,7 +116,7 @@ If a desktop app cannot find `npx` or `node`, use its full path (run `which npx`
 | `context_budget` | Approximate tokens per file and per tool for what loads every session: Claude Code (CLAUDE.md plus `@imports` up to 4 hops, rules without `paths`, MEMORY.md first 200 lines, the skill and subagent listing), Codex (AGENTS.md, 32 KiB cap), Gemini CLI (GEMINI.md plus imports), Cursor always-applied rules, Copilot repository instructions. |
 | `find_steering_files` | Every steering file, grouped by when it loads: every session, on match (`paths`, `globs`, `applyTo`), on invocation (skills, commands, agents, prompts), on demand (nested instruction files), memory. |
 
-Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. The first result of each session ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`; later results and errors do not repeat it. Turn it off with `--no-footer` (or `--footer false`, or `ASITIS_MCP_FOOTER=0`).
+Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. Tool results carry no link to asitis.app unless you ask for one: with `--footer` (or `ASITIS_MCP_FOOTER=1`) the first result of each session ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`, and later results and errors do not repeat it. `--no-footer` is still accepted and changes nothing.
 
 Vendor limits checked, with sources in [`src/limits.ts`](https://github.com/Katta041/asitis-agent-tools/blob/main/packages/mcp/src/limits.ts):
 
@@ -157,14 +157,14 @@ Vendor limits checked, with sources in [`src/limits.ts`](https://github.com/Katt
 asitis-mcp --root <folder> [--root <folder>...] [options]
 
   --root <folder>      Folder the server may read (repeatable). Default: the current folder.
-  --no-footer          Hide the asitis.app line (shown once per session, on the first result).
+  --footer             Add one line linking to asitis.app to the first result of the session. Off by default.
   --max-file-mb <n>    Largest file to analyse, in MB (default 16, max 64).
   --allow-broad-root   Allow your home folder or the filesystem root as the root.
   --version            Print the version.
   --help               Print this help.
 ```
 
-`ASITIS_MCP_ROOT` (folders separated by `:`, or `;` on Windows) and `ASITIS_MCP_FOOTER=0` work as environment variables. Add a second `--root` for a memory folder that lives outside the project, for example `~/.claude/projects/<project>/memory`.
+`ASITIS_MCP_ROOT` (folders separated by `:`, or `;` on Windows) and `ASITIS_MCP_FOOTER=1` work as environment variables. Add a second `--root` for a memory folder that lives outside the project, for example `~/.claude/projects/<project>/memory`.
 
 Mistakes print one line and exit with code 2, for example:
 

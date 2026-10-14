@@ -70,8 +70,17 @@ export interface Classified {
   note?: string;
 }
 
+/**
+ * Whether a file sits where Claude Code keeps auto memory: under a second --root, or under
+ * .claude/projects/<project>/memory/. A memory/ folder inside a project is ordinary markdown,
+ * because Claude Code reads auto memory only from ~/.claude/projects/<project>/memory/.
+ */
+export function inMemoryFolder(rel: string, extraRoot: boolean): boolean {
+  return extraRoot || /(?:^|\/)\.claude\/projects\/[^/]+\/memory\//.test(rel);
+}
+
 /** Classifies a root-relative POSIX path. Content-dependent refinement happens in refineLoad. */
-export function classify(rel: string): Classified {
+export function classify(rel: string, memory = false): Classified {
   const parts = rel.split("/");
   const base = parts[parts.length - 1] ?? "";
   const lower = base.toLowerCase();
@@ -90,8 +99,8 @@ export function classify(rel: string): Classified {
   }
   if (base === "AGENTS.md") {
     return atRoot || inDotClaudeRoot
-      ? { kind: "agents-md", tools: ["codex", "claude-code (when there is no CLAUDE.md)", "cursor", "copilot", "gemini-cli (if configured)"], load: "every-session" }
-      : { kind: "agents-md", tools: ["codex", "claude-code", "cursor", "copilot"], load: "on-demand", note: "The closest AGENTS.md to the edited file applies" };
+      ? { kind: "agents-md", tools: ["codex", "cursor", "copilot", "gemini-cli (if configured)", "claude-code (only through @AGENTS.md in CLAUDE.md)"], load: "every-session" }
+      : { kind: "agents-md", tools: ["codex", "cursor", "copilot"], load: "on-demand", note: "The closest AGENTS.md to the edited file applies" };
   }
   if (base === "GEMINI.md") {
     return atRoot
@@ -101,15 +110,21 @@ export function classify(rel: string): Classified {
   if (base === "SKILL.md") {
     return { kind: "skill", tools: ["claude-code", "codex", "cursor", "copilot", "gemini-cli"], load: "on-invocation", note: "name and description load every session in the skill listing; the body loads when the skill runs" };
   }
-  if (base === "MEMORY.md") {
+  if (base === "MEMORY.md" && memory) {
     return { kind: "memory-index", tools: ["claude-code"], load: "memory", note: "First 200 lines or 25 KB load every session" };
   }
   if (lower.endsWith(".md") && has([".claude", "agents"])) return { kind: "claude-agent", tools: ["claude-code"], load: "on-invocation" };
   if (lower.endsWith(".md") && has([".claude", "commands"])) return { kind: "claude-command", tools: ["claude-code"], load: "on-invocation" };
   if (lower.endsWith(".md") && has([".claude", "rules"])) return { kind: "claude-rule", tools: ["claude-code"], load: "every-session" };
   if (lower.endsWith(".mdc") && has([".cursor", "rules"])) return { kind: "cursor-rule", tools: ["cursor"], load: "on-invocation" };
-  if (lower === ".cursorrules") return { kind: "cursor-legacy", tools: ["cursor"], load: "every-session", note: "Legacy format; Cursor recommends .cursor/rules/*.mdc" };
-  if (lower === ".windsurfrules" || (lower.endsWith(".md") && has([".windsurf", "rules"]))) return { kind: "windsurf-rule", tools: ["windsurf"], load: "every-session" };
+  // Only the project's own root files load every session; copies in subfolders (templates, examples,
+  // nested packages) apply when the editor works in that folder, if at all.
+  const nestedNote = "In a subfolder: applies when the editor works there, not every session";
+  if (lower === ".cursorrules") return atRoot ? { kind: "cursor-legacy", tools: ["cursor"], load: "every-session", note: "Legacy format; Cursor recommends .cursor/rules/*.mdc" } : { kind: "cursor-legacy", tools: ["cursor"], load: "on-demand", note: nestedNote };
+  if (lower === ".windsurfrules" || (lower.endsWith(".md") && has([".windsurf", "rules"]))) {
+    const rootLevel = atRoot || (dirs[0] === ".windsurf" && dirs[1] === "rules");
+    return rootLevel ? { kind: "windsurf-rule", tools: ["windsurf"], load: "every-session" } : { kind: "windsurf-rule", tools: ["windsurf"], load: "on-demand", note: nestedNote };
+  }
   if (lower === ".clinerules" || (lower.endsWith(".md") && dirs.includes(".clinerules"))) return { kind: "cline-rule", tools: ["cline"], load: "every-session" };
   if (rel === ".github/copilot-instructions.md") return { kind: "copilot-instructions", tools: ["copilot"], load: "every-session" };
   if (lower.endsWith(".instructions.md")) return { kind: "copilot-scoped", tools: ["copilot"], load: "on-match" };
@@ -117,7 +132,7 @@ export function classify(rel: string): Classified {
   if (lower.endsWith(".agent.md") || lower.endsWith(".chatmode.md") || (lower.endsWith(".md") && has([".github", "agents"]))) {
     return { kind: "custom-agent", tools: ["copilot"], load: "on-invocation" };
   }
-  if (lower.endsWith(".md") && dirs[dirs.length - 1] === "memory") return { kind: "memory-topic", tools: ["claude-code"], load: "memory", note: "Loads when the agent reads it from the memory index" };
+  if (lower.endsWith(".md") && memory) return { kind: "memory-topic", tools: ["claude-code"], load: "memory", note: "Loads when the agent reads it from the memory index" };
   return { kind: "markdown", tools: [], load: "other" };
 }
 
@@ -131,17 +146,19 @@ const truthy = (v: unknown): boolean => v === true || v === "true";
 const nonEmpty = (v: unknown): boolean => (Array.isArray(v) ? v.length > 0 : typeof v === "string" ? v.trim().length > 0 : v !== undefined && v !== null);
 
 /** Refines the load group from frontmatter, for kinds whose load depends on it. */
-export function refineLoad(c: Classified, data: Data): Classified {
+export function refineLoad(c: Classified, data: Data, rel = ""): Classified {
+  const nested = rel !== "" && !rel.startsWith(".cursor/");
   if (c.kind === "claude-rule") {
     return data && nonEmpty(data["paths"]) ? { ...c, load: "on-match", note: "Loads when Claude works with files matching paths" } : { ...c, load: "every-session" };
   }
   if (c.kind === "cursor-rule") {
+    if (nested) return { ...c, load: "on-demand", note: "Nested rule: applies when Cursor works with files in this folder" };
     if (data && truthy(data["alwaysApply"])) return { ...c, load: "every-session", note: "Rule type: Always" };
     if (data && nonEmpty(data["globs"])) return { ...c, load: "on-match", note: "Rule type: Auto Attached" };
     if (data && nonEmpty(data["description"])) return { ...c, load: "on-invocation", note: "Rule type: Agent Requested" };
     return { ...c, load: "on-invocation", note: "Rule type: Manual, only when @-mentioned" };
   }
-  if (c.kind === "windsurf-rule" && data) {
+  if (c.kind === "windsurf-rule" && data && c.load === "every-session") {
     const t = String(data["trigger"] ?? "");
     if (t === "glob") return { ...c, load: "on-match" };
     if (t === "model_decision" || t === "manual") return { ...c, load: "on-invocation" };

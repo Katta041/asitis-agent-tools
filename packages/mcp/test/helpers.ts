@@ -41,9 +41,10 @@ export async function toResult(client: Client, name: string, args: Record<string
 }
 
 /** Connects an SDK client to an in-process server over the SDK's in-memory transport. */
-export async function connect(roots: string[], opts: { footer?: boolean } & SandboxOptions = {}): Promise<Connected> {
+export async function connect(roots: string[], opts: { footer?: boolean; structured?: boolean } & SandboxOptions = {}): Promise<Connected> {
   const sandbox = await Sandbox.create(roots, opts);
-  const server = createServer(sandbox, { footer: opts.footer ?? true });
+  // Most tests read the JSON; the default (text only) is tested on its own.
+  const server = createServer(sandbox, { footer: opts.footer ?? false, structured: opts.structured ?? true });
   const [a, b] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "asitis-test", version: "0.0.0" });
   await Promise.all([server.connect(a), client.connect(b)]);

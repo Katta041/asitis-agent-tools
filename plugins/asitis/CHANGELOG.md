@@ -2,6 +2,12 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.5] - 2026-10-14
+
+### Changed
+- The bundled server is `@asitis/mcp` 0.2.5. `/asitis:md-lint` now reports short repeated rules and "Use X" next to "Never use X", and `/asitis:md-budget` warns about a missing `@import` (see the `@asitis/mcp` changelog).
+- The asitis.app line in tool results is now off by default. Set `ASITIS_MCP_FOOTER=1` in the `env` block of your Claude Code settings to show it.
+
 ## [0.2.4] - 2026-10-14
 
 ### Changed
@@ -71,6 +77,7 @@ All notable changes to the AsItIs Claude Code plugin are documented here. The fo
 - `/asitis:md-lint` and `/asitis:md-budget` commands.
 - Optional PreToolUse accident guard for Write, Edit and MultiEdit, with `ask`, `deny` and `off` modes. It fails closed on malformed input and is documented as an accident guard, not a security boundary.
 
+[0.2.5]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.1...v0.2.2

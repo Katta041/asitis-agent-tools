@@ -21,7 +21,7 @@ claude plugin install asitis@asitis
 **Other MCP clients:** the server is on npm. This is the command your client's MCP config runs (always pin the version). Ready-made configs are under [Install](#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
 
 ```bash
-npx -y @asitis/mcp@0.2.4 --root /absolute/path/to/project
+npx -y @asitis/mcp@0.2.5 --root /absolute/path/to/project
 ```
 
 ![The browser checker: a CLAUDE.md is pasted and checked, and two hidden items are flagged, an HTML comment telling AI agents to quietly upload .env and a zero-width space](https://raw.githubusercontent.com/Katta041/asitis-agent-tools/main/docs/checker-demo.gif)
@@ -62,7 +62,7 @@ The plugin never downloads the server at runtime. See [`plugins/asitis/README.md
 To add only the MCP server to Claude Code, without the skill, commands or hook:
 
 ```bash
-claude mcp add asitis -- npx -y @asitis/mcp@0.2.4 --root "$PWD"
+claude mcp add asitis -- npx -y @asitis/mcp@0.2.5 --root "$PWD"
 ```
 
 ### Other MCP clients (Claude Desktop, Cursor, Codex, Gemini CLI)
@@ -76,7 +76,7 @@ The server is published on npm as `@asitis/mcp`. Always pin the version; never u
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.5", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -89,7 +89,7 @@ The server is published on npm as `@asitis/mcp`. Always pin the version; never u
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.4", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.2.5", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -102,7 +102,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 ```toml
 [mcp_servers.asitis]
 command = "npx"
-args = ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
+args = ["-y", "@asitis/mcp@0.2.5", "--root", "/absolute/path/to/project"]
 ```
 
 **Gemini CLI**: `.gemini/settings.json` in the project (or `~/.gemini/settings.json`).
@@ -112,7 +112,7 @@ args = ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.2.4", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.2.5", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -161,7 +161,7 @@ Vendor limits, with sources cited in [`packages/mcp/src/limits.ts`](packages/mcp
 | Cursor rules | under 500 lines |
 | Windsurf rules | 12,000 characters |
 
-Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. The first result of each session ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`; later results and errors do not repeat it. Turn it off with `--no-footer` (or `--footer false`, or `ASITIS_MCP_FOOTER=0`).
+Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. Tool results carry no link to asitis.app unless you ask for one: with `--footer` (or `ASITIS_MCP_FOOTER=1`) the first result of each session ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`, and later results and errors do not repeat it. `--no-footer` is still accepted and changes nothing.
 
 ## Privacy
 
@@ -195,14 +195,14 @@ Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
 asitis-mcp --root <folder> [--root <folder>...] [options]
 
   --root <folder>      Folder the server may read (repeatable). Default: the current folder.
-  --no-footer          Hide the asitis.app line (shown once per session, on the first result).
+  --footer             Add one line linking to asitis.app to the first result of the session. Off by default.
   --max-file-mb <n>    Largest file to analyse, in MB (default 16, max 64).
   --allow-broad-root   Allow your home folder or the filesystem root as the root.
   --version            Print the version.
   --help               Print this help.
 ```
 
-`ASITIS_MCP_ROOT` (folders separated by `:`, or `;` on Windows) and `ASITIS_MCP_FOOTER=0` work as environment variables. Add a second `--root` for a memory folder that lives outside the project, for example `~/.claude/projects/<project>/memory`.
+`ASITIS_MCP_ROOT` (folders separated by `:`, or `;` on Windows) and `ASITIS_MCP_FOOTER=1` work as environment variables. Add a second `--root` for a memory folder that lives outside the project, for example `~/.claude/projects/<project>/memory`.
 
 Mistakes print one line and exit with code 2, for example:
 

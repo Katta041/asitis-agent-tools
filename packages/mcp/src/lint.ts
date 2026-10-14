@@ -1,12 +1,14 @@
 // lint_steering: checks one steering file against vendor rules and for hidden content.
 
 import path from "node:path";
-import type { Doc } from "./doc.js";
+import { analyse, type Doc } from "./doc.js";
+import { outline } from "./outline.js";
 import type { Kind } from "./kinds.js";
 import { CAPS, VENDOR } from "./limits.js";
 import type { Sandbox } from "./paths.js";
 import { esc, hasUnsafe, q } from "./escape.js";
-import { extractImports, extractLinks, isExternalTarget, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
+import { extractImports, extractLinks, importIsSurelyFile, isExternalTarget, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
+import { lineOfByte } from "./text.js";
 import { approxTokens } from "./tokens.js";
 
 export type Severity = "error" | "warning" | "info";
@@ -79,12 +81,47 @@ class Collector {
   }
 }
 
+/** Edit distance, capped: returns max + 1 as soon as it is clearly larger. Keys are short (at most 60 characters here). */
+function editDistance(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const v = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+      cur.push(v);
+      if (v < best) best = v;
+    }
+    if (best > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length]!;
+}
+
+/** A known key one or two edits away from an unknown one ("user-invokable" for "user-invocable"), or null. */
+function nearestKey(key: string, known: string[]): string | null {
+  if (key.length < 4 || key.length > 60) return null;
+  const norm = (x: string): string => x.toLowerCase().replace(/_/g, "-");
+  const k = norm(key);
+  let best: string | null = null;
+  let bestD = 3;
+  for (const cand of known) {
+    const d = editDistance(k, norm(cand), 2);
+    if (d < bestD && (d < 2 || cand.length >= 6)) {
+      best = cand;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const isStrOrList = (v: unknown): boolean => typeof v === "string" || (Array.isArray(v) && v.every((x) => typeof x === "string"));
 
 function checkFrontmatter(doc: Doc, c: Collector): void {
   const fm = doc.frontmatter;
-  for (const p of fm.problems) c.add(p.rule === "frontmatter-bom" ? "warning" : "error", p.rule, p.message, p.line);
+  for (const p of fm.problems) c.add(p.rule === "frontmatter-bom" || p.rule === "frontmatter-value-cut" ? "warning" : "error", p.rule, p.message, p.line);
   const kind = doc.kind.kind;
   const data = fm.present ? fm.data : null;
   const line = (k: string): number => fm.keyLines[k] ?? 1;
@@ -174,7 +211,10 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
   const known = KNOWN_KEYS[kind];
   if (known && data) {
     for (const k of Object.keys(data)) {
-      if (!known.keys.includes(k)) c.add("info", "unknown-key", `Frontmatter key ${q(k, 60)} is not read by ${known.reader}; it is kept but ignored`, line(k));
+      if (known.keys.includes(k)) continue;
+      const near = nearestKey(k, known.keys);
+      if (near) c.add("warning", "unknown-key", `Frontmatter key ${q(k, 60)} is not read by ${known.reader}; did you mean ${q(near, 60)}? As written it is ignored`, line(k));
+      else c.add("info", "unknown-key", `Frontmatter key ${q(k, 60)} is not read by ${known.reader}; it is kept but ignored`, line(k));
     }
   }
 }
@@ -204,10 +244,15 @@ function checkLength(doc: Doc, c: Collector, tokens: number): void {
 
 function checkProfile(doc: Doc, c: Collector): void {
   const p = doc.profile;
-  if (p.encoding !== "utf-8") c.add("warning", "encoding", `File is ${p.encoding}; most agent tools expect UTF-8 steering files`);
+  if (p.encoding !== "utf-8") c.add("warning", "encoding", `File is ${p.encoding.toUpperCase()}${p.bom ? "" : " without a byte order mark"}; most agent tools expect UTF-8 steering files, so save it as UTF-8`);
   if (p.invalidUtf8.count > 0) {
     const r = p.invalidUtf8.ranges[0]!;
-    c.add("warning", "invalid-utf8", `${p.invalidUtf8.count === 1 ? "1 invalid UTF-8 byte sequence" : `${p.invalidUtf8.count} invalid UTF-8 byte sequences`}, first at byte ${r.start.toLocaleString("en-US")}; tools that decode and re-save will replace them`);
+    c.add(
+      "warning",
+      "invalid-utf8",
+      `${p.invalidUtf8.count === 1 ? "1 invalid UTF-8 byte sequence" : `${p.invalidUtf8.count} invalid UTF-8 byte sequences, the first`} at byte ${r.start.toLocaleString("en-US")}. The file may be saved in another encoding, such as Latin-1 or Windows-1252; tools that decode and re-save it will replace ${p.invalidUtf8.count === 1 ? "it" : "them"} with U+FFFD`,
+      lineOfByte(doc.file.buf, r.start),
+    );
   }
   if (p.nulBytes > 0) c.add("warning", "nul-bytes", `${p.nulBytes === 1 ? "1 NUL byte" : `${p.nulBytes.toLocaleString("en-US")} NUL bytes`}; this may be a binary file`);
   if (p.eol.style === "mixed") c.add("info", "mixed-eol", `Mixed line endings (${p.eol.crlf} CRLF, ${p.eol.lf} LF, ${p.eol.cr} CR). Edit minimal ranges so they stay as they are`);
@@ -225,21 +270,28 @@ function checkHidden(doc: Doc, c: Collector): void {
   }
   const com = scanComments(doc.lines, doc.fence);
   let benign = 0;
+  let firstBenign = Infinity; // the note points at the first plain comment, HTML or [//]: #
   for (const f of com.findings) {
     if (!f.closed) c.add("warning", "unclosed-comment", `An HTML comment opens here and never closes, so everything after it is hidden in rendered views`, f.line);
     if (f.instructionLike) {
       c.add("warning", "hidden-instruction", `Hidden HTML comment ${f.matched}: ${q(f.preview, 80)}. It is invisible when rendered but agents reading the raw file see it. Remove it unless you wrote it`, f.line);
-    } else benign++;
+    } else {
+      benign++;
+      firstBenign = Math.min(firstBenign, f.line);
+    }
   }
   for (const f of scanRefComments(doc.lines, doc.fence)) {
     if (f.instructionLike) {
       c.add("warning", "hidden-instruction", `Hidden link-reference comment ([//]: # style) ${f.matched}: ${q(f.preview, 80)}. It renders as nothing but agents reading the raw file see it. Remove it unless you wrote it`, f.line);
-    } else benign++;
+    } else {
+      benign++;
+      firstBenign = Math.min(firstBenign, f.line);
+    }
   }
   const benignTotal = benign + Math.max(0, com.total - com.findings.length);
   if (benignTotal > 0) {
     const note = doc.kind.kind === "claude-md" ? " Claude Code strips block-level comments before loading CLAUDE.md, but its Read tool still sees them." : "";
-    c.add("info", "hidden-comment", `${benignTotal === 1 ? "1 comment (HTML or [//]: # style) is" : `${benignTotal} comments (HTML or [//]: # style) are`} hidden in rendered views.${note}`, com.findings.find((f) => !f.instructionLike)?.line ?? 1);
+    c.add("info", "hidden-comment", `${benignTotal === 1 ? "1 comment (HTML or [//]: # style) is" : `${benignTotal} comments (HTML or [//]: # style) are`} hidden in rendered views.${note}`, Number.isFinite(firstBenign) ? firstBenign : 1);
   }
   for (const line of scanHiddenStyles(doc.lines, doc.fence)) c.add("warning", "hidden-styled-text", "Inline style or the hidden attribute hides text (display:none, zero size, zero opacity, white text or <div hidden>)", line);
 }
@@ -295,31 +347,109 @@ function normRule(s: string): string {
       .replace(HTML_TAG, " ")
       .replace(/[*_`]/g, "")
       .replace(/\s+/g, " ")
-      .trim(),
+      .trim()
+      // "A cohesive palette" and "Cohesive palette" are the same rule.
+      .replace(/^(?:a|an|the) /, ""),
     ".!;:, ",
   );
 }
 
+/**
+ * Verbs that start an instruction ("Run `pnpm test` before every commit", "Keep PRs small").
+ * Words that often start a label instead ("Commit messages", "Release notes", "Test coverage",
+ * "Open questions", "Build output") are left out on purpose; a short item that starts with one
+ * of those still counts as a rule when it says always, never, must or should, or holds a command.
+ */
+const IMPERATIVE = new Set(
+  (
+    "use run keep prefer avoid add write follow check make ensure put include remove delete update read create push install " +
+    "wrap pass ask verify validate handle define declare mark prefix leave let stop skip ignore treat consider split move rename " +
+    "reuse replace extract cite explain describe mention fix refactor rebase squash sign bump pin lock sort throw raise await wait " +
+    "rerun regenerate compile restart reset edit modify configure enable disable set favor favour stick stay prefer double-check " +
+    "re-run look search grep execute invoke apply append insert rewrite review confirm keep"
+  ).split(" "),
+);
+const MODAL = /\b(?:always|never|don'?t|do not|must|mustn'?t|should|shouldn'?t)\b/;
+/** An inline code span that holds a command: a known tool followed by arguments, or ./script. */
+const CODE_COMMAND = /`(?:\.\/[\w.-]+|(?:npm|pnpm|yarn|npx|bun|bunx|git|make|cargo|go|python3?|pip3?|uv|uvx|poetry|docker|just|deno|node|pytest|tox|gradlew?|\.\/gradlew|mvn|dotnet|bazel|rake|bundle|composer|mix|swift|xcodebuild|turbo|nx|ruff|mypy|tsc|eslint|prettier|vitest|jest|rustup|kubectl|helm|terraform)\s[^`]+)`/;
+
+/** Whether a short list item reads as an instruction rather than a label such as "Quality checklist". */
+function readsAsRule(text: string): boolean {
+  const t = text.replace(LIST_MARKER, "").replace(/[*_]/g, "").trim();
+  const lower = t.toLowerCase();
+  const first = /^[a-z][a-z-]*/.exec(lower)?.[0] ?? "";
+  if (IMPERATIVE.has(first) && /\s\S/.test(t) && !/^use cases?\b/.test(lower)) return true;
+  if (MODAL.test(lower)) return true;
+  return CODE_COMMAND.test(t);
+}
+
+/** Section headings and parent bullets that list things to avoid ("## Don'ts", "- Avoid:"): their items are written positively but mean "do not". */
+const NEGATIVE_CONTEXT = /\b(?:don'?ts?|do not|avoid|never|not allowed|anti-?patterns?|bad|wrong|forbidden|prohibited|banned|mistakes?|pitfalls?)\b|\u274c|\u{1f6ab}|\u26d4/iu;
+
+/** Rule text for the contradiction check: case, markup, backticks and punctuation removed, contractions expanded. */
+function contraNorm(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(LIST_MARKER, "")
+    .replace(HTML_TAG, " ")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\bdon'?t\b/g, "do not")
+    .replace(/\bmustn'?t\b/g, "must not")
+    .replace(/\bshouldn'?t\b/g, "should not")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+/** "Prefer X" against "Avoid X" is its own pair: neither is the plain opposite of "Use X" or "Never X". */
+const PREFER_RULE = /^(?:please )?(?:always )?(?:prefer|favou?r) (.+)$/;
+const AVOID_RULE = /^(?:please )?(?:always )?avoid (.+)$/;
+const NEG_RULE = /^(?:please )?(?:you )?(?:never|do not|must not|must never|should not|should never)(?: ever)? (.+)$/;
+const POS_RULE = /^(?:please )?(?:you )?(?:always|must always|must|should always|should|do)(?: always)? (.+)$/;
+
+/** Splits a rule into its polarity and the action it is about, or null when it is not a do or do-not rule. */
+function polarity(text: string, negativeContext: boolean): { neg: boolean; core: string; explicit: boolean } | null {
+  const norm = contraNorm(text);
+  const avoid = AVOID_RULE.exec(norm);
+  if (avoid) return { neg: true, core: `prefer: ${avoid[1]!}`, explicit: true };
+  const prefer = PREFER_RULE.exec(norm);
+  if (prefer) return negativeContext ? null : { neg: false, core: `prefer: ${prefer[1]!}`, explicit: true };
+  const n = NEG_RULE.exec(norm);
+  if (n) return { neg: true, core: n[1]!, explicit: true };
+  const p = POS_RULE.exec(norm);
+  if (p) return { neg: false, core: p[1]!, explicit: true };
+  // A bare imperative ("Use named exports") is a "do" rule, unless it sits under a list of things to avoid.
+  const first = /^[a-z][a-z-]*/.exec(norm)?.[0] ?? "";
+  if (!negativeContext && IMPERATIVE.has(first) && norm.includes(" ")) return { neg: false, core: norm, explicit: false };
+  return null;
+}
+
 function checkRules(doc: Doc, c: Collector): void {
-  // Heuristics: duplicate rules, and "always X" next to "never X".
+  // Heuristics: duplicate rules, and "do X" against "do not X".
   // A rule is a whole list item or a sentence of a paragraph, with wrapped lines joined
   // first, so the continuation lines of two different sentences ("the contribution
   // guide.") never match. Markup-only lines (`</details>`), headings, tables, comments
   // and thematic breaks are not rules.
   // Noise control: bold labels ("**Instructions:**") and short labels ("Code comments:")
   // repeat by design, and a short list item repeated under another heading or parent
-  // bullet is structure, not a rule.
-  const seen = new Map<string, { line: number; section: number }>();
-  const pos = new Map<string, number>();
-  const neg = new Map<string, number>();
+  // bullet is structure ("- Quality checklist"), unless it reads as an instruction
+  // ("- Run `pnpm test` before every commit"), which is exactly what steering files repeat by mistake.
+  const seen = new Map<string, { line: number; section: number; parent: string }>();
+  const pos = new Map<string, { line: number; text: string }>();
+  const neg = new Map<string, { line: number; text: string }>();
   const start = doc.frontmatter.present ? doc.frontmatter.endLine + 1 : 0;
   let section = 0;
+  let negSection = false;
+  let parent = ""; // the last top-level list item, for nested items
+  let lead = false; // the paragraph before this list introduces things to avoid ("Avoid these:")
   let block: Block | null = null;
 
   const flush = (): void => {
     const b = block;
     block = null;
     if (!b) return;
+    if (b.listItem && !b.nested) parent = b.text;
+    if (!b.listItem) lead = NEGATIVE_CONTEXT.test(b.text) && /:[*_\s]*$/.test(b.text);
+    const negativeContext = negSection || (b.listItem && lead) || (b.nested && NEGATIVE_CONTEXT.test(parent));
     if (b.lineAt.length === 1 && BOLD_LABEL.test(b.text)) return;
     // Sentences come in order, so one forward pointer maps offsets to lines.
     let k = 0;
@@ -331,44 +461,67 @@ function checkRules(doc: Doc, c: Collector): void {
     const parts = b.listItem ? [{ at: 0, text: b.text }] : sentences(b.text);
     for (const part of parts) {
       const norm = normRule(part.text);
-      if (norm.length < 12 || norm.startsWith("#") || norm.startsWith("|") || norm.startsWith("<!--")) continue;
+      if (norm.startsWith("#") || norm.startsWith("|") || norm.startsWith("<!--")) continue;
+      // A short label that introduces a list or code ("Code comments:", "Run tests:") is not a rule.
+      if (norm.length < 40 && part.text.replace(/[*_`\s]+$/, "").endsWith(":")) continue;
+      const words = norm.split(" ").length;
+      const rule = readsAsRule(part.text);
+      // Very short text is a rule only when it reads as one ("Use pnpm", "Never use tabs").
+      if (norm.length < 12 && !(rule && words >= 2)) continue;
       // A sentence taken out of a longer paragraph needs four words to be a rule:
       // emphasis such as "No exceptions." or "Every single time." repeats by design.
-      if (parts.length > 1 && norm.split(" ").length < 4) continue;
-      // A short label that introduces a list or code ("Code comments:") is not a rule.
-      if (norm.length < 40 && part.text.replace(/[*_`\s]+$/, "").endsWith(":")) continue;
+      if (parts.length > 1 && words < 4) continue;
       const line = lineOf(part.at);
+      const preview = rulePreview(part.text);
       const first = seen.get(norm);
       if (first !== undefined) {
-        // Short list items ("- Quality checklist") repeat as structure under another heading or as sub-items of another bullet.
-        const structural = b.listItem && norm.length < 40 && (first.section !== b.section || b.nested);
-        if (!structural) c.add("warning", "duplicate-rule", `Same rule as line ${first.line}: ${q(rulePreview(part.text), 60)}. Duplicates cost context and drift apart when one is edited; keep one`, line);
-      } else seen.set(norm, { line, section: b.section });
-      const p = /^(?:always|you must|must|you should|should|do) (.{4,})$/.exec(norm);
-      const n = /^(?:never|do not|don't|must not|mustn't|should not|shouldn't) (.{4,})$/.exec(norm);
-      if (p) {
-        const other = neg.get(p[1]!);
-        if (other !== undefined) c.add("warning", "contradiction", `Looks contradictory with line ${other} (one says do, the other says do not): ${q(rulePreview(part.text), 60)}. Keep the one you mean`, line);
-        if (!pos.has(p[1]!)) pos.set(p[1]!, line);
-      } else if (n) {
-        const other = pos.get(n[1]!);
-        if (other !== undefined) c.add("warning", "contradiction", `Looks contradictory with line ${other} (one says do, the other says do not): ${q(rulePreview(part.text), 60)}. Keep the one you mean`, line);
-        if (!neg.has(n[1]!)) neg.set(n[1]!, line);
+        // Short list items that are labels ("- Quality checklist") repeat as structure under another
+        // heading or parent bullet. A short sub-item under a different parent bullet ("Feature PRs:" /
+        // "Bugfix PRs:" each with "- Add a changelog entry") is a per-parent checklist, even when it is an instruction.
+        const myParent = b.nested ? normRule(parent) : "";
+        const structural = b.listItem && norm.length < 40 && ((!rule && (first.section !== b.section || b.nested)) || (b.nested && first.parent !== myParent));
+        if (!structural) {
+          // Copies under different headings are sometimes deliberate (Path A and Path B each list the step).
+          const where = first.section !== b.section ? ", under another heading" : "";
+          const unless = first.section !== b.section ? ", unless the two sections are alternatives that never apply together" : "";
+          c.add("warning", "duplicate-rule", `Same rule as line ${first.line}${where}: ${q(preview, 60)}. Duplicates cost context and drift apart when one is edited; keep one${unless}`, line);
+        }
+      } else seen.set(norm, { line, section: b.section, parent: b.listItem && b.nested ? normRule(parent) : "" });
+      const pol = polarity(part.text, negativeContext);
+      if (!pol || pol.core.length < 4) continue;
+      const mine = pol.neg ? neg : pos;
+      const other = (pol.neg ? pos : neg).get(pol.core);
+      if (other !== undefined) {
+        c.add(
+          "warning",
+          "contradiction",
+          `Contradicts line ${other.line}: line ${other.line} says ${q(other.text, 60)} and line ${line} says ${q(preview, 60)}. Keep the one you mean`,
+          line,
+        );
       }
+      if (!mine.has(pol.core)) mine.set(pol.core, { line, text: preview });
     }
   };
 
   for (let i = start; i < doc.lines.count; i++) {
     if (doc.fence[i]) { flush(); continue; }
     const len = doc.lines.end(i) - doc.lines.start(i);
-    if (len > 400) { flush(); continue; } // too long to compare; it ends the block it belongs to
+    if (len > MAX_BLOCK_CHARS) { flush(); continue; } // too long to compare; it ends the block it belongs to
     const raw = doc.lines.line(i);
     const trimmed = raw.trim();
-    if (HEADING.test(raw)) { flush(); section = i; continue; }
+    if (HEADING.test(raw)) {
+      flush();
+      section = i;
+      negSection = NEGATIVE_CONTEXT.test(trimmed);
+      parent = "";
+      lead = false;
+      continue;
+    }
     if (!trimmed || RULE_LINE.test(raw) || MARKUP_ONLY.test(raw) || trimmed.startsWith("|") || trimmed.startsWith("<!--")) { flush(); continue; }
     const marker = LIST_MARKER.exec(raw);
     if (marker || !block) {
       flush();
+      if (!marker) parent = "";
       const text = trimmed.replace(/\s+/g, " ");
       block = { text, lineAt: [0], firstLine: i, listItem: !!marker, nested: !!marker && /^\s+/.test(raw), section };
       continue;
@@ -387,7 +540,7 @@ function checkRules(doc: Doc, c: Collector): void {
   flush();
 }
 
-/** A line that is only a bold label, such as "**Instructions to user:**" or "- __Note__". Bounded by the 400-character line cap. */
+/** A line that is only a bold label, such as "**Instructions to user:**" or "- __Note__". Bounded by the line cap. */
 const BOLD_LABEL = /^\s*(?:[-*+]\s+)?(?:\*\*[^*\n]{1,120}\*\*|__[^_\n]{1,120}__)\s*:?\s*$/;
 
 /** Trims trailing characters from a set without a backtracking regex. */
@@ -405,25 +558,107 @@ function safeDecode(t: string): string {
   }
 }
 
+/** GitHub-style heading anchors: lowercase, punctuation dropped, spaces to hyphens. */
+function slug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "")
+    .replace(/ /g, "-");
+}
+
+/**
+ * Every anchor a renderer could give this file: each heading's slug (with the -1, -2 suffixes
+ * GitHub adds to repeats, and with and without emphasis underscores), explicit {#id} heading
+ * ids, and id= or name= attributes in HTML. Matching is case-insensitive.
+ */
+function anchorsOf(doc: Doc): Set<string> {
+  const out = new Set<string>();
+  const counts = new Map<string, number>();
+  const add = (a: string): void => {
+    if (!a) return;
+    const n = counts.get(a) ?? 0;
+    counts.set(a, n + 1);
+    out.add(a);
+    out.add(`${a}-${n}`);
+    out.add(`${a}-${n + 1}`);
+  };
+  for (const h of outline(doc.lines, doc.fence, doc.frontmatter.present ? doc.frontmatter.endLine : -1).headings) {
+    const custom = /\{#([^}\s]{1,200})\}\s*$/.exec(h.text);
+    if (custom) out.add(custom[1]!.toLowerCase());
+    const text = h.text
+      .replace(/\{#[^}]*\}\s*$/, "")
+      .replace(/!?\[([^\]]{0,300})\]\([^)]{0,500}\)/g, "$1")
+      .replace(HTML_TAG, "")
+      .replace(/[`*~]/g, "")
+      .trim();
+    add(slug(text));
+    add(slug(text.replace(/_/g, "")));
+  }
+  for (let i = 0; i < doc.lines.count; i++) {
+    if (doc.fence[i]) continue;
+    const line = doc.lines.line(i);
+    if (line.length > 4000 || (!line.includes("id=") && !line.includes("name="))) continue;
+    for (const m of line.matchAll(/\b(?:id|name)\s*=\s*["']([^"'\s]{1,200})["']/g)) out.add(m[1]!.toLowerCase());
+  }
+  return out;
+}
+
+const MARKDOWN_TARGET = /\.(?:md|markdown|mdx|mdc)$/i;
+
 async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<void> {
   const dir = path.dirname(doc.file.real);
   const links = extractLinks(doc.lines, doc.fence);
-  const cache = new Map<string, string>();
+  const cache = new Map<string, { state: string; real?: string }>();
+  const anchorCache = new Map<string, Set<string> | null>();
+  let own: Set<string> | null = null;
+  const missingAnchor = (anchors: Set<string>, frag: string): boolean => {
+    const f = safeDecode(frag).toLowerCase();
+    // Line anchors (#L10) and #top are provided by the renderer, not by headings.
+    if (!f || f === "top" || /^l\d+(?:-l\d+)?$/.test(f)) return false;
+    return !anchors.has(f);
+  };
   for (const l of links) {
+    if (l.target.startsWith("#")) {
+      own ??= anchorsOf(doc);
+      if (missingAnchor(own, l.target.slice(1))) {
+        c.add("warning", "broken-link", `No heading in this file has the anchor ${q(l.target, 200)}. Fix the link or the heading it points to`, l.line);
+      }
+      continue;
+    }
     if (isExternalTarget(l.target)) continue;
+    // Placeholders in examples and templates: [Title](URL), [run](${GITHUB_SERVER_URL}/...), [x]({{ link }}), [x](<path>).
+    if (/\$\{|\{\{|^<.*>$/.test(l.target) || /^[A-Z][A-Z0-9_]*$/.test(l.target)) continue;
     let t = l.target;
     const h = t.search(/[#?]/);
+    const frag = h >= 0 && t[h] === "#" ? t.slice(h + 1) : "";
     if (h >= 0) t = t.slice(0, h);
     if (!t) continue;
     t = safeDecode(t);
     if (t.startsWith("/")) continue; // site-absolute paths depend on the renderer
-    let state = cache.get(t);
-    if (!state) {
-      state = (await sandbox.probe(t, dir)).state;
-      cache.set(t, state);
+    let probe = cache.get(t);
+    if (!probe) {
+      const p = await sandbox.probe(t, dir);
+      probe = { state: p.state, ...(p.real ? { real: p.real } : {}) };
+      cache.set(t, probe);
     }
+    const state = probe.state;
     if (state === "missing") c.add("warning", "broken-link", `Relative link target not found: ${q(l.target, 200)}. Fix the path or remove the link`, l.line);
     else if (state === "outside") c.add("info", "link-outside-root", `Link points outside the allowed folder and was not checked: ${q(l.target, 200)}`, l.line);
+    else if (frag && probe.real && MARKDOWN_TARGET.test(t)) {
+      let anchors = anchorCache.get(probe.real);
+      if (anchors === undefined) {
+        try {
+          const f = await sandbox.open(probe.real);
+          anchors = anchorsOf(analyse(f, sandbox.displayFile(f)));
+        } catch {
+          anchors = null; // unreadable or refused: not checked
+        }
+        anchorCache.set(probe.real, anchors);
+      }
+      if (anchors && missingAnchor(anchors, frag)) {
+        c.add("warning", "broken-link", `${q(t, 200)} exists, but no heading in it has the anchor ${q("#" + frag, 200)}. Fix the link or the heading it points to`, l.line);
+      }
+    }
   }
   if (!IMPORT_KINDS.includes(doc.kind.kind)) return;
   const imports = extractImports(doc.lines, doc.fence, doc.frontmatter.present ? doc.frontmatter.endLine : -1);
@@ -435,8 +670,8 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
     const probe = await sandbox.probe(im.path, dir);
     if (probe.state === "missing") {
       // @scope/package (an npm name: one slash, no file extension, not ./ or ../) is far more often a package than a file.
-      const npmName = /^[a-z0-9][\w.-]*\/[a-z0-9][\w-]*$/i.test(im.path) && !/\.[A-Za-z0-9]{1,10}$/.test(im.path);
-      const sure = im.looksLikePath && !npmName;
+      const sure = importIsSurelyFile(im);
+      const npmName = im.looksLikePath && !sure;
       c.add(
         sure ? "warning" : "info",
         "broken-import",

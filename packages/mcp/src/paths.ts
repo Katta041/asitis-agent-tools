@@ -31,6 +31,8 @@ export interface Root {
    * containment must be checked against this form.
    */
   canon: string;
+  /** A second or later --root: the place for a Claude Code memory folder (~/.claude/projects/<project>/memory). */
+  extra?: boolean;
 }
 
 export interface Resolved {
@@ -44,6 +46,14 @@ export interface Resolved {
 export interface OpenedFile extends Resolved {
   buf: Buffer;
   stat: Stats;
+  /**
+   * When the file was reached through a symlink inside the root (CLAUDE.md -> AGENTS.md, or a
+   * symlinked .claude/skills folder): the root-relative path of the real file. `rel` is then the
+   * path the agent tools see, which is what decides how the file loads.
+   */
+  linkTarget?: string;
+  /** The absolute path as opened, before symlinks are resolved. */
+  lexical?: string;
 }
 
 const toPosix = (p: string): string => p.split(path.sep).join("/");
@@ -157,6 +167,17 @@ export interface SandboxOptions {
   maxFileBytes?: number;
 }
 
+/** A one-line UserError for the filesystem errors a user can fix, or null for the rest. Never includes an absolute path. */
+export function fsError(e: unknown, input: string): UserError | null {
+  const code = (e as NodeJS.ErrnoException | null)?.code;
+  if (code === "ERR_ACCESS_DENIED") return new UserError(`Refused: ${input} resolves outside the folders the server may read.`);
+  if (code === "EACCES" || code === "EPERM") return new UserError(`Permission denied: the server cannot read ${input}. Check the file's permissions.`);
+  if (code === "ELOOP") return new UserError(`Symlink loop: ${input} is a symlink that points back to itself or into a cycle.`);
+  if (code === "ENOENT" || code === "ENOTDIR") return new UserError(`File not found: ${input}. Paths are relative to the allowed folder; find_steering_files lists the steering files.`);
+  if (code === "EISDIR") return new UserError(`Not a regular file: ${input}.`);
+  return null;
+}
+
 export class Sandbox {
   readonly maxFileBytes: number;
 
@@ -183,7 +204,7 @@ export class Sandbox {
         if ([real, canon].some((r) => path.parse(r).root === r)) throw new UserError(`Refusing the filesystem root (${real}) as the allowed folder. Pass your project folder with --root, or add --allow-broad-root.`);
         if (homes.some((h) => same(h, real) || same(h, canon))) throw new UserError(`Refusing your home folder (${real}) as the allowed folder. Pass your project folder with --root, or add --allow-broad-root.`);
       }
-      roots.push({ given: g, real, canon });
+      roots.push({ given: g, real, canon, ...(roots.length ? { extra: true } : {}) });
     }
     return new Sandbox(roots, opts);
   }
@@ -237,7 +258,12 @@ export class Sandbox {
     let real: string;
     try {
       real = await fsp.realpath(lex.abs);
-    } catch {
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException | null)?.code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") {
+        const fe = fsError(e, input);
+        if (fe) throw fe;
+      }
       throw new UserError(`File not found: ${input} (inside ${lex.root.real}). Paths are relative to that folder; find_steering_files lists the steering files.`);
     }
     const inside = this.contain(real);
@@ -256,7 +282,12 @@ export class Sandbox {
     const r = await this.resolveReal(input, baseDir);
     const refusal = policyRefusal(r.rel);
     if (refusal) throw new UserError(`Refused: ${refusal}${r.rel !== lex?.rel ? ` (resolved from ${input})` : ""}.`);
-    const before = await fsp.stat(r.real);
+    let before: Awaited<ReturnType<typeof fsp.stat>>;
+    try {
+      before = await fsp.stat(r.real);
+    } catch (e) {
+      throw fsError(e, input) ?? new UserError(`File not found: ${input}. It may have been moved or deleted just now.`);
+    }
     if (!before.isFile()) throw new UserError(`Not a regular file: ${input}.`);
     if (before.size > this.maxFileBytes) {
       throw new UserError(`File too large: ${input} is ${mb(before.size)}; the limit is ${mb(this.maxFileBytes)} (raise it with --max-file-mb).`);
@@ -267,8 +298,8 @@ export class Sandbox {
     let fh: fsp.FileHandle;
     try {
       fh = await fsp.open(r.real, flags);
-    } catch {
-      throw new UserError(`Could not open ${input} for reading.`);
+    } catch (e) {
+      throw fsError(e, input) ?? new UserError(`Could not open ${input} for reading.`);
     }
     try {
       const st = await fh.stat();
@@ -281,7 +312,14 @@ export class Sandbox {
         if (bytesRead === 0) break;
         off += bytesRead;
       }
-      return { ...r, buf: off === st.size ? buf : buf.subarray(0, off), stat: st };
+      const out: OpenedFile = { ...r, buf: off === st.size ? buf : buf.subarray(0, off), stat: st };
+      // Reached through a symlink: classify by the linked path, keep the real one for messages.
+      if (lex && lex.rel && lex.root === r.root && lex.rel.toLowerCase() !== r.rel.toLowerCase()) {
+        out.linkTarget = r.rel;
+        out.rel = lex.rel;
+        out.lexical = lex.abs;
+      }
+      return out;
     } finally {
       await fh.close();
     }
@@ -304,6 +342,12 @@ export class Sandbox {
     if (!inside) return { state: "outside" };
     const st = await fsp.stat(inside.real).catch(() => null);
     return st ? { state: "ok", size: st.isFile() ? st.size : 0, real: inside.real, rel: inside.rel } : { state: "missing" };
+  }
+
+  /** Display path of an opened file: the path as the agent tools see it, and where a symlink points. */
+  displayFile(f: OpenedFile): string {
+    if (!f.lexical || !f.linkTarget) return this.display(f.real);
+    return `${this.display(f.lexical)} (symlink to ${f.linkTarget})`;
   }
 
   /** Root-relative display path for a real path inside a root. */

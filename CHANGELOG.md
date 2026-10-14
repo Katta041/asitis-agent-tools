@@ -2,6 +2,15 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.2.5] - 2026-10-14
+
+### Changed
+- The asitis.app line in tool results is now off by default. Add `--footer` or set `ASITIS_MCP_FOOTER=1` to show it once per session. `--no-footer` is still accepted.
+
+### Fixed
+- `lint_steering` missed short repeated rules and plain contradictions. A list item under 40 characters that appeared under another heading was treated as a label, so "Run `pnpm test` before every commit" in two sections went unreported, and "Use named exports" next to "Never use named exports" was not compared because only "always", "must", "should" and "do" counted as the positive form. Short items that read as instructions (a leading verb such as use, run or keep; always, never, must or should; or a command in backticks) now count as rules, and "Use X" or "Always X" against "Never X", "Don't X" or "Do not X" is reported anywhere in the file, on the later line, naming both lines. Items listed under a heading or lead-in such as "Don'ts" or "Avoid:" are not read as "do" rules.
+- `context_budget` explains why CLAUDE.md shows two sizes (Claude Code strips block HTML comments before loading) and prints a warning for an `@import` whose file does not exist.
+
 ## [0.2.4] - 2026-10-14
 
 ### Changed
@@ -72,6 +81,7 @@ All notable changes to this repository are documented here. The format follows [
 - CI on Ubuntu, macOS and Windows, and a manual release workflow for npm trusted publishing with provenance.
 - MIT licence.
 
+[0.2.5]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.1...v0.2.2

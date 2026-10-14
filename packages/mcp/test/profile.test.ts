@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { readFrontmatter } from "../src/frontmatter.js";
-import { classify } from "../src/kinds.js";
+import { classify, inMemoryFolder } from "../src/kinds.js";
 import { extractImports, extractLinks, fenceMask, scanComments } from "../src/scan.js";
 import { alignUtf8End, alignUtf8Start, decode, invalidUtf8Ranges, LineIndex, profile } from "../src/text.js";
 import { FIXTURES } from "./helpers.js";
@@ -129,10 +129,12 @@ describe("classification", () => {
     [".github/copilot-instructions.md", "copilot-instructions", "every-session"],
     [".github/instructions/a.instructions.md", "copilot-scoped", "on-match"],
     [".github/prompts/p.prompt.md", "prompt-file", "on-invocation"],
-    ["memory/MEMORY.md", "memory-index", "memory"],
-    ["memory/topic.md", "memory-topic", "memory"],
+    [".claude/projects/demo/memory/MEMORY.md", "memory-index", "memory"],
+    [".claude/projects/demo/memory/topic.md", "memory-topic", "memory"],
+    ["memory/MEMORY.md", "markdown", "other"],
+    ["src/memory/README.md", "markdown", "other"],
     ["docs/readme.md", "markdown", "other"],
   ])("%s", (p, kind, load) => {
-    expect(classify(p)).toMatchObject({ kind, load });
+    expect(classify(p, inMemoryFolder(p, false))).toMatchObject({ kind, load });
   });
 });

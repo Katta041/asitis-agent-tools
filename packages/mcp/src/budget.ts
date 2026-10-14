@@ -4,9 +4,9 @@ import path from "node:path";
 import { analyse, type Doc } from "./doc.js";
 import { walk, type Deadline } from "./discover.js";
 import { KIND_LABEL, LOAD_SHORT } from "./kinds.js";
-import { VENDOR } from "./limits.js";
+import { CAPS, VENDOR } from "./limits.js";
 import { policyRefusal, UserError, type Sandbox } from "./paths.js";
-import { extractImports } from "./scan.js";
+import { extractImports, importIsSurelyFile } from "./scan.js";
 import { approxTokens, tokensFromBytes } from "./tokens.js";
 
 export interface BudgetEntry {
@@ -14,6 +14,10 @@ export interface BudgetEntry {
   tokens: number;
   note?: string;
   depth?: number;
+  /** True on the entry that stands for imports beyond the listing cap: they are neither listed nor counted. */
+  overflow?: boolean;
+  /** For an @import whose file does not exist: the file that imports it and the line. */
+  missingFrom?: { path: string; line: number };
 }
 
 export interface ToolBudget {
@@ -34,14 +38,15 @@ export function stripBlockComments(doc: Doc): string {
     if (open < 0) break;
     const li = doc.lines.lineOf(open);
     const close = s.indexOf("-->", open + 4);
-    const end = close < 0 ? s.length : close + 3;
+    // An unclosed comment is not stripped: Claude Code loads the text after it (checked with a canary).
+    if (close < 0) break;
+    const end = close + 3;
     pos = end;
     const lineStart = doc.lines.start(li);
     if (!doc.fence[li] && open - lineStart <= 3 && s.slice(lineStart, open).trim() === "") {
       out += s.slice(copied, open);
       copied = end;
     }
-    if (close < 0) break;
   }
   return out + s.slice(copied);
 }
@@ -53,7 +58,7 @@ function bodyTokens(doc: Doc, stripComments: boolean): number {
 
 async function openDoc(sandbox: Sandbox, p: string, baseDir?: string): Promise<Doc> {
   const f = await sandbox.open(p, baseDir);
-  return analyse(f, sandbox.display(f.real));
+  return analyse(f, sandbox.displayFile(f));
 }
 
 const MAX_IMPORTS_LISTED = 200;
@@ -69,7 +74,10 @@ export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string
   for (const im of imports) {
     if (deadline?.expired) break;
     if (++listed > MAX_IMPORTS_LISTED) {
-      out.push({ path: `${imports.length - MAX_IMPORTS_LISTED} more imports in ${doc.path}`, note: "not listed", tokens: 0, depth });
+      // extractImports stops at CAPS.maxLinkChecks, so at the cap the real number is higher.
+      const more = imports.length - MAX_IMPORTS_LISTED;
+      const atCap = imports.length >= CAPS.maxLinkChecks;
+      out.push({ path: `${atCap ? "At least " : ""}${more.toLocaleString("en-US")} more imports in ${doc.path}`, note: "not listed or counted", tokens: 0, depth, overflow: true });
       break;
     }
     if (im.path.startsWith("~")) {
@@ -78,7 +86,14 @@ export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string
     }
     const probe = await sandbox.probe(im.path, dir);
     if (probe.state !== "ok" || !probe.real || !probe.rel) {
-      out.push({ path: `@${shown(im.path)}`, tokens: 0, note: probe.state === "missing" ? "missing, not counted" : "outside the allowed folder, not counted", depth });
+      const missing = probe.state === "missing";
+      out.push({
+        path: `@${shown(im.path)}`,
+        tokens: 0,
+        note: missing ? "missing, not counted" : "outside the allowed folder, not counted",
+        depth,
+        ...(missing && importIsSurelyFile(im) ? { missingFrom: { path: doc.path, line: im.line } } : {}),
+      });
       continue;
     }
     if (seen.has(probe.real)) continue;
@@ -122,11 +137,29 @@ export function claudeCodeLoads(d: Doc): "yes" | "nested" | "no" {
   return "no";
 }
 
+/** One warning per @import whose file does not exist, so a broken import is not just a quiet "not counted". */
+export function missingImportWarnings(entries: BudgetEntry[]): string[] {
+  return entries
+    .filter((e) => e.missingFrom)
+    .map((e) => `${e.path} (${e.missingFrom!.path}, line ${e.missingFrom!.line}) points to a file that does not exist, so nothing from it loads. Fix the path or remove the line`);
+}
+
+function walkNote(cut: { depth: boolean; size: boolean; time: boolean }): string {
+  const parts: string[] = [];
+  if (cut.size) parts.push("the folder walk stopped at the file or entry limit, so some files may be missing");
+  if (cut.time) parts.push("the folder walk stopped at the time limit, so some files may be missing");
+  if (cut.depth) parts.push(`folders more than ${CAPS.walkMaxDepth} levels deep were not searched`);
+  const t = parts.join("; ");
+  return t ? `${t.charAt(0).toUpperCase()}${t.slice(1)}.` : "";
+}
+
 export interface ProjectBudget {
   tools: ToolBudget[];
   files: BudgetEntry[];
   skippedFiles: string[];
   truncated: boolean;
+  /** Why the folder walk stopped early, as a sentence, or "". */
+  walkNote: string;
 }
 
 export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Promise<ProjectBudget> {
@@ -151,14 +184,22 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     const entries: BudgetEntry[] = [];
     const warnings: string[] = [];
     const seen = new Set<string>();
+    // Claude Code reads CLAUDE.md, not AGENTS.md: AGENTS.md loads only when a CLAUDE.md @-imports it
+    // (checked with a canary file on Claude Code 2.1.299), and then it is counted as an import.
     const claudeFiles = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"].map(byRel).filter((d): d is Doc => !!d);
-    const instr = claudeFiles.length ? claudeFiles : ["AGENTS.md", ".claude/AGENTS.md"].map(byRel).filter((d): d is Doc => !!d);
-    for (const d of instr) {
+    if (!claudeFiles.length && byRel("AGENTS.md")) {
+      warnings.push("There is no CLAUDE.md, and Claude Code does not read AGENTS.md on its own. To give Claude Code the same instructions, add a CLAUDE.md that contains the line @AGENTS.md");
+    }
+    for (const d of claudeFiles) {
       seen.add(d.file.real);
       const t = bodyTokens(d, true);
-      entries.push({ path: d.path, tokens: t, note: claudeFiles.length ? "project instructions; block HTML comments not counted" : "used because there is no CLAUDE.md" });
+      const raw = approxTokens(d.text);
+      const stripped = raw > t ? `; the file is about ${raw.toLocaleString("en-US")} tokens, but Claude Code strips block HTML comments before loading` : "";
+      entries.push({ path: d.path, tokens: t, note: `project instructions${stripped}` });
       if (d.profile.lines > VENDOR.claudeMdTargetLines) warnings.push(`${d.path} is ${d.profile.lines.toLocaleString("en-US")} lines; Claude Code recommends under ${VENDOR.claudeMdTargetLines}`);
-      entries.push(...(await expandImports(sandbox, d, seen, 1, deadline)));
+      const imported = await expandImports(sandbox, d, seen, 1, deadline);
+      entries.push(...imported);
+      warnings.push(...missingImportWarnings(imported));
     }
     for (const d of docs) {
       if (d.kind.kind === "claude-rule" && d.kind.load === "every-session" && !seen.has(d.file.real)) {
@@ -214,8 +255,9 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     const d = byRel("GEMINI.md");
     if (d) {
       const entries: BudgetEntry[] = [{ path: d.path, tokens: bodyTokens(d, false), note: "root GEMINI.md" }];
-      entries.push(...(await expandImports(sandbox, d, new Set([d.file.real]), 1, deadline)));
-      tools.push({ tool: "gemini-cli", tokens: entries.reduce((a, e) => a + e.tokens, 0), entries, warnings: [] });
+      const imported = await expandImports(sandbox, d, new Set([d.file.real]), 1, deadline);
+      entries.push(...imported);
+      tools.push({ tool: "gemini-cli", tokens: entries.reduce((a, e) => a + e.tokens, 0), entries, warnings: missingImportWarnings(imported) });
     }
   }
 
@@ -234,7 +276,7 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
   }
 
   const files = docs.map((d) => ({ path: d.path, tokens: approxTokens(d.text), note: `${KIND_LABEL[d.kind.kind]}, ${LOAD_SHORT[d.kind.load]}` })).sort((a, b) => b.tokens - a.tokens);
-  return { tools, files, skippedFiles: skipped, truncated: found.truncated };
+  return { tools, files, skippedFiles: skipped, truncated: found.truncated, walkNote: found.truncated ? walkNote(found.cut) : "" };
 }
 
 export async function fileBudget(sandbox: Sandbox, p: string, deadline?: Deadline): Promise<{ doc: Doc; tokens: number; imports: BudgetEntry[] }> {

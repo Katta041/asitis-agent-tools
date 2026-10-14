@@ -2,6 +2,18 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.5] - 2026-10-14
+
+### Changed
+- The asitis.app line in tool results is now off by default. `--footer` (or `--footer true`) or `ASITIS_MCP_FOOTER=1` turns it on, once per session as before. `--no-footer` and `--footer false` are still accepted and win over the variable.
+
+### Fixed
+- `duplicate-rule`: a short list item repeated under another heading or parent bullet is reported when it reads as an instruction: it starts with a verb such as use, run, keep, add or avoid, says always, never, don't, must or should, or holds a command in backticks (`pnpm test`). Labels such as "Quality checklist", "Commit messages", "**Commands**" or "Run the tests:" are still skipped. Short rules such as "Use pnpm" are now compared at all (the old 12-character minimum dropped them).
+- `contradiction`: "Use X" against "Never use X" or "Don't use X", "Always X" against "Never X", "Do X" against "Do not X" and "must" against "must not" are matched after ignoring case, backticks, emphasis and punctuation, anywhere in the file. The finding is on the later line and quotes both: `Contradicts line 10: line 10 says "Use named exports" and line 11 says "Never use named exports"`. A bare imperative is not read as a "do" rule under a heading, parent bullet or lead-in paragraph about things to avoid (Don'ts, Avoid, Anti-patterns, Bad, Pitfalls).
+- `context_budget`: the Claude Code entry for CLAUDE.md says the whole file is larger because Claude Code strips block HTML comments before loading, the size list is labelled "whole file including comments", and the single-file view says "on its own, without its @imports". A missing `@import` now prints a warning with the importing file and line, in the project view and the single-file view; npm-style names such as `@scope/package` do not.
+
+On the pinned sample of 200 public AGENTS.md and CLAUDE.md files, `duplicate-rule` goes from 4 to 5 findings (the new one is a real repeat in strapi/strapi) and `contradiction` stays at 0.
+
 ## [0.2.4] - 2026-10-14
 
 ### Changed
@@ -72,6 +84,7 @@ All notable changes to `@asitis/mcp` are documented here. The format follows [Ke
 - Regression tests for path traversal, symlink file and folder escape, settings and `.env` access, and 10 MB denial-of-service inputs.
 - There is no write, patch or delete tool.
 
+[0.2.5]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.1...v0.2.2
