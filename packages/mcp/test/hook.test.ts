@@ -327,3 +327,38 @@ describe("fails closed instead of timing out", () => {
     asks(runHook(pre("Edit", { file_path: f, old_string: "xx", new_string: "y" })), /larger than 16 MB/);
   });
 });
+
+// 0.3.0: the guard lets through the byte changes /asitis:md-fix offers as safe, because they cannot
+// change how the file renders. Anything that can still asks.
+describe("whitespace changes that cannot change the rendering pass", () => {
+  let t: ReturnType<typeof tempDir>;
+  const file = (name: string, text: string): string => {
+    const f = path.join(t.dir, name);
+    writeFileSync(f, text);
+    return f;
+  };
+  beforeAll(() => {
+    t = tempDir("asitis-hook-safe-");
+  });
+  afterAll(() => t.cleanup());
+
+  test("one trailing space, trailing tabs and a whitespace-only line", () => {
+    const f = file("a.md", "# Rules\n\nRun the tests. \nUse pnpm.\t\n   \nDone.\n");
+    passes(runHook(pre("Write", { file_path: f, content: "# Rules\n\nRun the tests.\nUse pnpm.\n\nDone.\n" })));
+    passes(runHook(pre("Edit", { file_path: f, old_string: "tests. \n", new_string: "tests.\n" })));
+  });
+  test("two spaces at the end of a paragraph (no line after it in the paragraph)", () => {
+    const f = file("b.md", "# Rules\n\nLast line of the paragraph  \n\nNext.\n");
+    passes(runHook(pre("Edit", { file_path: f, old_string: "paragraph  \n", new_string: "paragraph\n" })));
+  });
+  test("adding a final newline", () => {
+    const f = file("c.md", "# Rules\n\nRun the tests.");
+    passes(runHook(pre("Edit", { file_path: f, old_string: "tests.", new_string: "tests.\n" })));
+  });
+  test("still asks: a hard break inside a paragraph, code, frontmatter", () => {
+    const f = file("d.md", "---\nname: x  \n---\n# Rules\n\nRoses are red  \nViolets are blue\n\n```\nkeep me  \n```\n");
+    asks(runHook(pre("Edit", { file_path: f, old_string: "red  \n", new_string: "red\n" })), /strips trailing whitespace on 1 line \(line 6\)/);
+    asks(runHook(pre("Edit", { file_path: f, old_string: "keep me  \n", new_string: "keep me\n" })), /strips trailing whitespace on 1 line \(line 10\)/);
+    asks(runHook(pre("Edit", { file_path: f, old_string: "name: x  \n", new_string: "name: x\n" })), /strips trailing whitespace on 1 line \(line 2\)/);
+  });
+});

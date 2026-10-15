@@ -1,5 +1,5 @@
 {
-  "description": "AsItIs markdown accident guard: warns before a Write, Edit or MultiEdit that would change line endings, strip trailing spaces, drop a BOM or break frontmatter in an existing markdown file. Not a security boundary.",
+  "description": "AsItIs markdown accident guard: warns before a Write, Edit or MultiEdit that would change line endings, strip trailing spaces that make a line break, drop a BOM or break frontmatter in an existing markdown file. Not a security boundary.",
   "hooks": {
     "PreToolUse": [
       {

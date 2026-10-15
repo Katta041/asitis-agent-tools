@@ -661,6 +661,7 @@ function auditPermissions(fc: FileCtx, doc: Obj): void {
   if (!isObj(perms)) return;
   // settings-reference, permissions.defaultMode: "auto and bypassPermissions don't take effect
   // from project or local settings ... Before v2.1.257, bypassPermissions took effect from any file."
+  // Rechecked 15 October 2026 against settings and settings-reference: both still say this.
   if (perms["defaultMode"] === "bypassPermissions") {
     emit(fc, ["permissions", "defaultMode"], {
       severity: "warning",

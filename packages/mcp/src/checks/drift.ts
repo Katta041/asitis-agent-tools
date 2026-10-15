@@ -9,7 +9,9 @@
 //   ~/.claude/CLAUDE.md, managed CLAUDE.md and .claude/rules/ do not. A CLAUDE.md that imports
 //   AGENTS.md, or is symlinked to it, gives Claude the AGENTS.md content. "Not read:
 //   AGENTS.local.md, AGENTS.override.md, or anything under a .agents/ directory". The Project
-//   instructions value claude-md-and-agents-md makes Claude read both.
+//   instructions value claude-md-and-agents-md makes Claude read both. Rechecked 15 October 2026:
+//   memory, "Choose which instruction files load", says to type /config and set Project
+//   instructions to claude-md-and-agents-md, so the messages below can point there.
 // - claude-code issue 96117: a CLAUDE.local.md alone switches the AGENTS.md fallback off.
 // - Codex AGENTS.md guide (https://learn.chatgpt.com/docs/agent-configuration/agents-md) and
 //   codex-rs/core/src/agents_md.rs: from the project root down to the working folder, one file per

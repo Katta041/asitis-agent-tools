@@ -498,7 +498,7 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
     {
       title: "Suggest fixes",
       description:
-        "Suggest fixes for mechanical lint findings (invisible and bidirectional characters, skill name fields, frontmatter not on line 1, hidden comments) as a unified diff plus byte-range edits. It never writes. Apply the edits with minimal Edit calls, never by rewriting the whole file.",
+        "Suggest fixes for mechanical lint findings (invisible and bidirectional characters, skill name fields, frontmatter not on line 1, HTML comments that give the agent instructions, trailing whitespace, a missing final newline) as a unified diff plus byte-range edits. It never writes. Apply the edits with minimal Edit calls, never by rewriting the whole file.",
       inputSchema: {
         path: z.string().min(1).max(CAPS.maxPathChars).optional().describe("One file; omit for every steering file"),
         paths: z.array(z.string().min(1).max(CAPS.maxPathChars)).max(CAPS.lintMaxPaths).optional().describe("Several files"),

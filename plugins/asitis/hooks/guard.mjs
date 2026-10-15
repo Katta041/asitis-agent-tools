@@ -2,9 +2,11 @@
 // AsItIs markdown accident guard: a Claude Code PreToolUse hook for Write, Edit and MultiEdit.
 //
 // It warns when a change to an existing markdown file would also change bytes the
-// agent probably did not mean to touch: line endings, trailing whitespace (hard
-// line breaks), the BOM, the final newline, invalid UTF-8 bytes, or the
-// frontmatter block. It is an ACCIDENT GUARD, NOT A SECURITY BOUNDARY: it does not
+// agent probably did not mean to touch: line endings, trailing whitespace that can be
+// a hard line break, the BOM, dropping the final newline, invalid UTF-8 bytes, or the
+// frontmatter block. Since 0.3.0 it lets through the whitespace changes that cannot
+// change how the file renders (the ones /asitis:md-fix offers as safe): trailing
+// spaces and tabs that are not a hard break, and adding a final newline. It is an ACCIDENT GUARD, NOT A SECURITY BOUNDARY: it does not
 // see Bash (sed -i, redirects), other tools, or other programs, and anything that
 // runs as you can bypass it.
 //
@@ -251,7 +253,7 @@ function diffLines(a, b) {
  * diff), so of two identical lines only the one that changed is named, and a deleted
  * line whose twin stays elsewhere is not "stripped".
  */
-function strippedLines(lb, la) {
+function strippedLines(lb, la, renderSafe = null) {
   let p = 0;
   while (p < lb.length && p < la.length && lb[p] === la[p]) p++;
   let s = 0;
@@ -311,6 +313,7 @@ function strippedLines(lb, la) {
     for (const i of rest) {
       const l = a[i];
       if (!hasTrailingWs(l)) continue;
+      if (renderSafe && renderSafe(p + i)) continue;
       const q = byTrim.get(trimWs(l));
       if (!q || q.head >= q.list.length) continue;
       // Same text with less trailing whitespace: stripped. More is not stripping.
@@ -337,6 +340,46 @@ function strippedLines(lb, la) {
     }
   }
   return out.sort((x, y) => x - y);
+}
+
+/**
+ * A predicate over 0-based lines of the current file: true when deleting that line's trailing
+ * spaces and tabs cannot change how the markdown renders, so the guard lets it through. This is
+ * the same rule asitis uses for its safe trailing-whitespace fix (fixes/hygiene.ts, from CommonMark
+ * 0.31.2 "Hard line breaks"): a run can be a hard break only when it holds two spaces and a
+ * non-blank line follows. Lines in fenced code, frontmatter, after a backslash or indented four
+ * columns are never treated as safe, since their trailing bytes may matter.
+ */
+function renderSafeStrip(lb) {
+  const unsafe = new Uint8Array(lb.length);
+  let i = 0;
+  if (lb.length && isFence(lb[0].charCodeAt(0) === 0xfeff ? lb[0].slice(1) : lb[0])) {
+    unsafe[0] = 1;
+    for (i = 1; i < lb.length && i < 2000; i++) {
+      unsafe[i] = 1;
+      if (isFence(lb[i]) || lb[i] === "...") { i++; break; }
+    }
+  }
+  let fence = "";
+  for (; i < lb.length; i++) {
+    const m = /^ {0,3}(`{3,}|~{3,})/.exec(lb[i]);
+    if (fence) {
+      unsafe[i] = 1;
+      if (m && m[1][0] === fence[0] && m[1].length >= fence.length) fence = "";
+    } else if (m) {
+      fence = m[1];
+      unsafe[i] = 1;
+    }
+  }
+  return (k) => {
+    if (unsafe[k]) return false;
+    const l = lb[k];
+    const t = trimWs(l);
+    if (t === "") return true; // a whitespace-only line is blank either way
+    if (/^(?: {4}|\t| {0,3}\t)/.test(l) || t.endsWith("\\")) return false;
+    const next = lb[k + 1];
+    return !/ {2}/.test(l.slice(t.length)) || next === undefined || trimWs(next) === "";
+  };
 }
 
 /**
@@ -398,14 +441,15 @@ function analyse(before, after, tool, beforeBuf) {
   }
   if (fb.cr > 0 && fa.cr < fb.cr) problems.push(`removes ${count(fb.cr - fa.cr, "lone CR line break")}`);
   if (fb.finalNewline && !fa.finalNewline) problems.push("drops the final newline");
-  if (!fb.finalNewline && fa.finalNewline && before.length > 0) problems.push("adds a final newline the file did not have");
+  // Adding a final newline is not reported: it never changes how the file renders, and it is the
+  // safe final-newline fix that /asitis:md-fix offers.
 
   checkTime();
   // Trailing whitespace: lines whose content survives but loses its trailing spaces,
   // reported by their line number in the current file.
   const lb = splitLines(before);
   const la = splitLines(after);
-  const stripped = strippedLines(lb, la);
+  const stripped = strippedLines(lb, la, renderSafeStrip(lb));
   if (stripped.length > 0) {
     const shown = stripped.slice(0, 8).join(", ");
     const more = stripped.length > 8 ? ` and ${stripped.length - 8} more` : "";
@@ -428,7 +472,8 @@ function analyse(before, after, tool, beforeBuf) {
   // An Edit is meant to be targeted, so it is flagged above 50% when at least 5 lines
   // change, which still catches an Edit whose old_string is the whole file.
   if (lb.length > 0) {
-    const kept = keptInOrder(lb, la);
+    // Compared without trailing whitespace: stripping it is checked above, not counted as a rewrite.
+    const kept = keptInOrder(lb.map(trimWs), la.map(trimWs));
     const changed = lb.length - kept;
     const churn = changed / lb.length;
     const write = tool === "Write";

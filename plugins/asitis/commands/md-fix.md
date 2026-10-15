@@ -27,7 +27,7 @@ When the user agrees:
 - A fix marked "the same edit as fix N" needs no Edit of its own.
 - Change nothing else: no Write, no reformatting, and keep line endings, BOM and trailing spaces as they are outside the edit.
 - If an Edit fails because `old_string` is not found, stop and tell the user which fix failed. Do not guess.
-- The AsItIs guard hook may ask before an edit that removes trailing spaces or adds a final newline. Those are the fixes the user just accepted.
+- The AsItIs guard hook lets the safe whitespace fixes through. If it asks about an edit the user accepted, say which fix it is and let the user decide.
 
 After the edits, call `suggest_fixes` again on the same files and tell the user in one line that the fixes you applied are gone, or which ones are still listed.
 
