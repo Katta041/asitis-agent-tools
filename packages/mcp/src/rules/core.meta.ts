@@ -45,7 +45,7 @@ export const CORE_RULES: RuleMeta[] = [
   rule({ id: "mixed-eol", category: "format", defaultSeverity: "note", summary: "File mixes CRLF, LF or CR line endings", why: "Mixed endings are easy to normalise by accident in an edit, which turns a small change into a whole-file diff.", source: SRC.gitattributes }),
 
   // Links and imports
-  rule({ id: "broken-link", category: "format", defaultSeverity: "warning", summary: "Relative link or anchor points to nothing", why: "The agent follows the link and finds nothing, or the reader does.", source: SRC.skills }),
+  rule({ id: "broken-link", category: "format", defaultSeverity: "warning", summary: "Relative link or anchor points to nothing", why: "An agent told to read the linked file finds nothing and carries on without it, and a person gets a 404. Renamed files and changed headings break links silently.", source: SRC.skills }),
   rule({ id: "broken-import", category: "format", defaultSeverity: "warning", summary: "@import names a file that does not exist", why: "Claude Code and Gemini CLI load imported files with the instructions. A missing file means the instructions are silently incomplete.", source: SRC.memory }),
   rule({ id: "link-outside-root", category: "format", defaultSeverity: "note", summary: "Link points outside the project and was not checked", why: "Files outside the allowed folder are never read, so the link cannot be checked.", source: SRC.memory }),
   rule({ id: "import-outside-root", category: "format", defaultSeverity: "warning", summary: "@import reaches outside the project", why: "Claude Code asks for approval before loading external imports, and teammates will not have the file.", source: SRC.memory }),

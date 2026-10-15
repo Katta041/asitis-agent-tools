@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://asitis.app/schema/asitisrc-1.json",
   "title": "AsItIs config (.asitisrc.json)",
-  "description": "Config for the asitis linter and the lint_steering tool. Rule ids are listed at https://asitis.app/rules. asitis itself checks rule ids against the rules of the installed version.",
+  "description": "Config for the asitis linter and the lint_steering tool. Rule ids are listed at https://github.com/Katta041/asitis-agent-tools/tree/main/docs/rules. asitis itself checks rule ids against the rules of the installed version.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
