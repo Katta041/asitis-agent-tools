@@ -153,6 +153,10 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
   const results: LintResult[] = [];
   const failures: Array<{ path: string; error: string }> = [];
   const docs: Doc[] = [];
+  // A folder symlinked into the tree (.claude/skills -> ../.agents/skills, as in next.js) makes the
+  // walk find each file twice. Lint it once, under the path found first. Two names for one file in
+  // the same folder (CLAUDE.md -> AGENTS.md) are both linted: they are read as different kinds.
+  const seenReal = new Map<string, boolean>(); // real path -> reached through a symlinked folder
   for (const t of targets) {
     if (deadline.expired) {
       truncated = true;
@@ -161,6 +165,12 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
     }
     try {
       const f = await sandbox.open(t);
+      if (discovered) {
+        const viaFolderLink = path.dirname(f.real) !== path.dirname(t);
+        const prior = seenReal.get(f.real);
+        if (prior !== undefined && (prior || viaFolderLink)) continue;
+        if (prior === undefined) seenReal.set(f.real, viaFolderLink);
+      }
       const doc = analyse(f, sandbox.displayFile(f));
       const result = await lintDoc(doc, sandbox);
       docs.push(doc);

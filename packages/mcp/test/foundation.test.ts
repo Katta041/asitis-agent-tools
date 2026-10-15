@@ -1,7 +1,7 @@
 // The 0.3.0 seams: lintProject, findings and fingerprints, read classes, redaction and the stubs
 // later tracks fill in. The stubs are tested for their "off" behaviour, so a track that fills one
 // in updates the matching test here.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { Deadline } from "../src/discover.js";
@@ -213,5 +213,27 @@ describe("suggest_fixes registration", () => {
     const r = await c.call("suggest_fixes", { path: "CLAUDE.md" });
     expect(r.isError).toBe(false);
     expect(r.structured).toMatchObject({ available: true });
+  });
+});
+
+describe("a folder symlinked into the tree is linted once", () => {
+  test(".claude/skills -> ../.agents/skills: one result per file; a CLAUDE.md -> AGENTS.md file link keeps both", async (ctx) => {
+    const { dir, cleanup } = tempDir("asitis-mirror-");
+    try {
+      mkdirSync(path.join(dir, ".agents/skills/demo"), { recursive: true });
+      mkdirSync(path.join(dir, ".claude"), { recursive: true });
+      writeFileSync(path.join(dir, ".agents/skills/demo/SKILL.md"), "---\nname: demo\ndescription: Demo skill. Use when asked for a demo.\n---\n\n# Demo\n\nSay hello. \n");
+      writeFileSync(path.join(dir, "AGENTS.md"), "# Agents\n\nRun the tests.\n");
+      try {
+        symlinkSync("../.agents/skills", path.join(dir, ".claude/skills"), "dir");
+        symlinkSync("AGENTS.md", path.join(dir, "CLAUDE.md"));
+      } catch {
+        return ctx.skip(); // no symlink permission (Windows without developer mode)
+      }
+      const p = await lintProject(await Sandbox.create([dir]), { deadline: new Deadline(60_000) });
+      expect(p.results.map((r) => r.path).sort()).toEqual([".agents/skills/demo/SKILL.md", "AGENTS.md", "CLAUDE.md (symlink to AGENTS.md)"]);
+    } finally {
+      cleanup();
+    }
   });
 });
