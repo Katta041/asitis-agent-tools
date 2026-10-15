@@ -9,3 +9,6 @@ test-fixtures/** linguist-generated=true
 
 # The vendored server is pinned by SHA-256.
 plugins/asitis/server/asitis-mcp.mjs -text -diff linguist-generated=true
+# The asitis CLI bundle and its copies are pinned the same way.
+plugins/asitis/server/asitis.mjs -text -diff linguist-generated=true
+action/asitis.mjs -text -diff linguist-generated=true
