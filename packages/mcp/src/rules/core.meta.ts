@@ -2,6 +2,15 @@
 
 import { rule, SRC, type RuleMeta } from "./types.js";
 
+/**
+ * Severity of dangerous hidden content: invisible-char, bidi-control, and hidden-instruction when
+ * the comment asks to ignore other instructions, hide something from the user, act covertly, run a
+ * command or reach for secrets (DANGEROUS_HIDDEN_LABELS in lint.ts). Hidden comments that only
+ * address the AI stay warnings whatever this says. The owner has not decided yet whether these
+ * should be errors by default; to make them errors, change "warning" to "error" on the next line.
+ */
+export const DANGEROUS_HIDDEN_SEVERITY: "warning" | "error" = "warning";
+
 export const CORE_RULES: RuleMeta[] = [
   // Frontmatter (frontmatter.ts reports these, lint.ts sets the severity)
   rule({ id: "frontmatter-not-line-1", category: "format", defaultSeverity: "error", summary: "Frontmatter does not start on line 1", why: "Agent tools only read YAML frontmatter that starts on the first line. Blank lines or text above it turn the whole block into body text, so name, description and paths are lost.", source: SRC.skills, fixable: "safe" }),
@@ -52,9 +61,9 @@ export const CORE_RULES: RuleMeta[] = [
   rule({ id: "orphan-memory", category: "format", defaultSeverity: "warning", summary: "Memory topic file is not linked from MEMORY.md", why: "Claude Code reads topic files through the index, so an unlinked file never loads.", source: SRC.memory, scope: "project" }),
 
   // Hidden content: security, never suppressible inline
-  rule({ id: "invisible-char", category: "security", defaultSeverity: "warning", summary: "Invisible Unicode characters", why: "Zero-width and tag characters are read by agents but not seen by people, which is how the Rules File Backdoor hid instructions.", source: SRC.rulesFileBackdoor, fixable: "safe" }),
-  rule({ id: "bidi-control", category: "security", defaultSeverity: "warning", summary: "Bidirectional control characters", why: "Bidi controls make text display in a different order from the one the agent reads (Trojan Source).", source: SRC.trojanSource, fixable: "review" }),
-  rule({ id: "hidden-instruction", category: "security", defaultSeverity: "warning", summary: "Hidden comment that reads like an instruction to the agent", why: "HTML and [//]: # comments do not render, but an agent reading the raw file sees them. An instruction there is a classic prompt-injection hiding place.", source: SRC.rulesFileBackdoor, fixable: "review" }),
+  rule({ id: "invisible-char", category: "security", defaultSeverity: DANGEROUS_HIDDEN_SEVERITY, summary: "Invisible Unicode characters", why: "Zero-width and tag characters are read by agents but not seen by people, which is how the Rules File Backdoor hid instructions.", source: SRC.rulesFileBackdoor, fixable: "safe" }),
+  rule({ id: "bidi-control", category: "security", defaultSeverity: DANGEROUS_HIDDEN_SEVERITY, summary: "Bidirectional control characters", why: "Bidi controls make text display in a different order from the one the agent reads (Trojan Source).", source: SRC.trojanSource, fixable: "review" }),
+  rule({ id: "hidden-instruction", category: "security", defaultSeverity: DANGEROUS_HIDDEN_SEVERITY, summary: "Hidden comment that reads like an instruction to the agent", why: "HTML and [//]: # comments do not render, but an agent reading the raw file sees them. An instruction there is a classic prompt-injection hiding place.", source: SRC.rulesFileBackdoor, fixable: "review" }),
   rule({ id: "hidden-comment", category: "security", defaultSeverity: "note", summary: "Comments hidden in rendered views", why: "Reviewers reading the rendered file do not see comments that the agent reads. Most are harmless, so this is a note.", source: SRC.githubHiddenUnicode }),
   rule({ id: "hidden-styled-text", category: "security", defaultSeverity: "warning", summary: "Inline style or the hidden attribute hides text", why: "display:none, zero size, zero opacity and white text hide content from people but not from agents.", source: SRC.toolPoisoning }),
   rule({ id: "unclosed-comment", category: "security", defaultSeverity: "warning", summary: "HTML comment never closes", why: "Everything after an unclosed <!-- is hidden in rendered views, so a reviewer sees less than the agent.", source: SRC.githubHiddenUnicode }),

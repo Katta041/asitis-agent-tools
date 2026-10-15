@@ -11,6 +11,7 @@ import { extractImports, extractLinks, importIsSurelyFile, isExternalTarget, sca
 import { isSuppressionComment } from "./suppress.js";
 import { lineOfByte } from "./text.js";
 import { approxTokens } from "./tokens.js";
+import { DANGEROUS_HIDDEN_SEVERITY } from "./rules/core.meta.js";
 import { hygieneIssues } from "./fixes/hygiene.js";
 import type { FindingFix, Suppression } from "./findings.js";
 
@@ -325,11 +326,15 @@ function checkProfile(doc: Doc, c: Collector): void {
   if (p.eol.style === "mixed") c.add("info", "mixed-eol", `Mixed line endings (${p.eol.crlf} CRLF, ${p.eol.lf} LF, ${p.eol.cr} CR). Edit minimal ranges so they stay as they are`);
 }
 
+/** scanComments labels for a hidden comment that asks for something harmful, not just one that talks to the AI. */
+const DANGEROUS_HIDDEN_LABELS = new Set(["asks to ignore other instructions", "asks to hide something from the user", "asks for covert action", "asks to run a command", "mentions commands or secrets"]);
+const hiddenSeverity = (matched: string | null): Severity => (matched !== null && DANGEROUS_HIDDEN_LABELS.has(matched) ? DANGEROUS_HIDDEN_SEVERITY : "warning");
+
 function checkHidden(doc: Doc, c: Collector): void {
   const inv = scanInvisible(doc.lines);
   for (const f of inv.findings) {
     c.add(
-      "warning",
+      DANGEROUS_HIDDEN_SEVERITY,
       f.bidi ? "bidi-control" : "invisible-char",
       `${f.count === 1 ? "1 invisible character" : `${f.count} invisible characters`}: ${f.codepoints.join(", ")}.${f.bidi ? " Bidirectional controls can make text read differently than it displays." : ""} Agents read these; people do not see them. Delete ${f.count === 1 ? "it" : "them"} unless you put ${f.count === 1 ? "it" : "them"} there on purpose`,
       f.line,
@@ -341,7 +346,7 @@ function checkHidden(doc: Doc, c: Collector): void {
   for (const f of com.findings) {
     if (!f.closed) c.add("warning", "unclosed-comment", `An HTML comment opens here and never closes, so everything after it is hidden in rendered views`, f.line);
     if (f.instructionLike) {
-      c.add("warning", "hidden-instruction", `Hidden HTML comment ${f.matched}: ${q(f.preview, 80)}. It is invisible when rendered but agents reading the raw file see it. Remove it unless you wrote it`, f.line);
+      c.add(hiddenSeverity(f.matched), "hidden-instruction", `Hidden HTML comment ${f.matched}: ${q(f.preview, 80)}. It is invisible when rendered but agents reading the raw file see it. Remove it unless you wrote it`, f.line);
     } else if (f.closed && isSuppressionComment(f.preview)) {
       // An asitis-disable comment is checked by suppress.ts; counting it as hidden would make every suppression add a note.
     } else {
@@ -351,7 +356,7 @@ function checkHidden(doc: Doc, c: Collector): void {
   }
   for (const f of scanRefComments(doc.lines, doc.fence)) {
     if (f.instructionLike) {
-      c.add("warning", "hidden-instruction", `Hidden link-reference comment ([//]: # style) ${f.matched}: ${q(f.preview, 80)}. It renders as nothing but agents reading the raw file see it. Remove it unless you wrote it`, f.line);
+      c.add(hiddenSeverity(f.matched), "hidden-instruction", `Hidden link-reference comment ([//]: # style) ${f.matched}: ${q(f.preview, 80)}. It renders as nothing but agents reading the raw file see it. Remove it unless you wrote it`, f.line);
     } else {
       benign++;
       firstBenign = Math.min(firstBenign, f.line);
