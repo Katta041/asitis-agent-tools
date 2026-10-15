@@ -8,6 +8,7 @@
 // gets a new fingerprint and is reported.
 
 import { parseJsonLines, readOwnFile, showValue } from "./config.js";
+import { q } from "./escape.js";
 import type { Finding } from "./findings.js";
 import { UserError, type Sandbox } from "./paths.js";
 
@@ -36,7 +37,7 @@ export function parseBaseline(text: string, file: string): Baseline {
         return it.value;
       });
     } else {
-      throw new UserError(`${file} line ${e.line}: unknown key ${JSON.stringify(e.key.slice(0, 60))} in a baseline file; it holds only schemaVersion and fingerprints`);
+      throw new UserError(`${file} line ${e.line}: unknown key ${q(e.key, 60)} in a baseline file; it holds only schemaVersion and fingerprints`);
     }
   }
   if (!version) throw new UserError(`${file} line ${root.line}: schemaVersion is missing; write the file again with --write-baseline`);

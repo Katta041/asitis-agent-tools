@@ -303,8 +303,9 @@ describe("hidden-instruction", () => {
 });
 
 describe("diff format", () => {
-  test("paths with spaces and non-ASCII are quoted as git quotes them, and git apply takes them", async () => {
-    expect(quotePath("docs/a b.md")).toEqual({ a: "a/docs/a b.md", b: "b/docs/a b.md" });
+  test("paths with spaces and non-ASCII are quoted, and git apply takes them", async () => {
+    // A space is quoted too (git leaves it plain): "a/x.md b/CLAUDE.md" must not read as two names.
+    expect(quotePath("docs/a b.md")).toEqual({ a: '"a/docs/a b.md"', b: '"b/docs/a b.md"' });
     expect(quotePath("café.md").a).toBe('"a/caf\\303\\251.md"');
     const t = tempDir("asitis-fixq-");
     cleanups.push(t.cleanup);

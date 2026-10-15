@@ -159,6 +159,6 @@ describe("workflow-command injection", () => {
   });
   test("suppressed findings are not annotated", () => {
     const f: Finding = { ruleId: "duplicate-rule", severity: "warning", category: "format", path: "CLAUDE.md", line: 1, column: 1, endLine: 1, endColumn: 2, message: "m", fingerprint: "a".repeat(64), suppressed: { kind: "external" } };
-    expect(formatGithub(buildReport(".", 1, [f]))).toBe("asitis: Linted 1 file: no issues found (1 suppressed).\n");
+    expect(formatGithub(buildReport(".", 1, [f]))).toBe("asitis: Linted 1 file: no issues found, 1 suppressed.\n");
   });
 });

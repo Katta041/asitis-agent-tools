@@ -275,6 +275,15 @@ describe("2. no key from a file reaches any output", () => {
     for (const id of ["hidden-instruction", "broken-link", "sec-hook-config", "sec-permission-allow", "sec-mcp-launcher", "sec-mcp-inline-secret", "sec-remote-exec", "sec-safety-off"]) expect(fired, id).toContain(id);
   });
 
+  test("a baseline file with a token as a key does not echo it", async () => {
+    const tok = `ghp_${rnd(35)}`;
+    const d = project("baseline-echo", { "CLAUDE.md": "# x\n", "hosts.json": JSON.stringify({ [tok]: { x: 1 } }) });
+    const r = await cli(["lint", "--baseline", "hosts.json"], d);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("unknown key");
+    expect(leaks(r.err, [tok])).toEqual([]);
+  });
+
   test("config errors do not echo a value that could be a password", async () => {
     const pw = `Pa${rnd(4, "0123456789")}w0rd${rnd(3, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")}`;
     const d = project("cfg-echo", { "CLAUDE.md": "# x\n", ".asitisrc.json": JSON.stringify({ extends: pw }) });
@@ -374,9 +383,11 @@ describe("3b. refused files stay refused", () => {
 
   test("the CLI names agent config files and says how to audit them, and never says 'this server'", async () => {
     const dir = project("cfg-named", { "CLAUDE.md": "# x\n", ".mcp.json": "{}", ".claude/settings.json": "{}", ".claude/settings.local.json": "{}" });
-    expect((await cli(["lint", ".mcp.json"], dir)).err).toBe("asitis: .mcp.json is an agent config file, not markdown; pass --include config to audit it\n");
-    expect((await cli(["lint", ".claude/settings.json"], dir)).err).toContain("pass --include config to audit it");
-    expect((await cli(["lint", ".claude/settings.local.json"], dir)).err).toContain("pass --include config-local to audit it");
+    for (const f of [".mcp.json", ".claude/settings.json", ".claude/settings.local.json"]) {
+      const r = await cli(["lint", f], dir);
+      expect(r.err, f).toContain("run asitis lint --include config");
+      expect(r.err, f).not.toContain("server");
+    }
     writeFileSync(path.join(dir, ".env.md"), "x");
     const env = await cli(["lint", ".env.md"], dir);
     expect(env.err).toContain("asitis never reads .env files");
