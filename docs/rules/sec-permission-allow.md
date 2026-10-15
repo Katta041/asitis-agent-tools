@@ -8,7 +8,7 @@
 
 Allow rule or trust flag skips the prompt for any shell command, network tool or interpreter.
 
-A `permissions.allow` entry in `.claude/settings.json` that pre-approves `Bash` with no pattern, a network tool with no host, or a wildcard that covers an interpreter (`Bash(python *)`, `Bash(node *)`, `Bash(sh *)`). Needs `--include config`.
+A `permissions.allow` entry in `.claude/settings.json` that pre-approves `Bash` or `PowerShell` with no pattern or `(*)` (error), or, as warnings: `WebFetch` with no domain, a network tool with a wildcard (`Bash(curl *)`, `Bash(nslookup *)`), `Bash(git push *)` or `Bash(gh api *)`, or a wildcard that covers an interpreter or package runner (`Bash(python *)`, `Bash(node *)`, `Bash(sh *)`, `Bash(npx *)`, `Bash(uv run *)`). A Gemini CLI MCP server with `trust: true` is reported here too. Needs `--include config`; `.claude/settings.local.json` is read only with `--include config-local`.
 
 ## Why it matters
 

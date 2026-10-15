@@ -8,7 +8,7 @@
 
 Skill script makes network calls.
 
-A skill script that makes network calls. The note lists the hosts it found so a reviewer can judge them. Needs `--include skills`. Not a problem by itself: many skills call an API.
+A script in a skill folder that makes network calls (`curl`, `wget`, `requests`, `fetch` and the like). The note lists the hosts written in the script, or says the host is not written literally, so a reviewer can judge them. Markdown in the skill folder is not checked for this. Needs `--include skills`. Not a problem by itself: many skills call an API.
 
 ## Why it matters
 
@@ -30,6 +30,7 @@ The second host is a bare IP with no mention anywhere in the skill. That is the 
 # Reads the public docs index from api.example.invalid (see SKILL.md, "Network").
 curl -s https://api.example.invalid/v1/docs
 ```
+This still gets the note, since every network call does. The difference is that the one host is the API the skill is for, and SKILL.md says so.
 
 ## How to fix
 

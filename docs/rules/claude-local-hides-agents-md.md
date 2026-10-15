@@ -8,7 +8,7 @@
 
 A CLAUDE.local.md switches off the AGENTS.md fallback.
 
-A folder with an `AGENTS.md`, no `CLAUDE.md`, and a `CLAUDE.local.md`. Claude Code counts CLAUDE.local.md as a CLAUDE.md for the "is there a CLAUDE.md" check, so AGENTS.md stops loading for the person who has the local file, and only for them. Only runs when the whole folder is linted.
+An `AGENTS.md` where the only CLAUDE-style file in its folder or above is a `CLAUDE.local.md` (no `CLAUDE.md` or `.claude/CLAUDE.md`), and that local file does not import the AGENTS.md. Claude Code counts CLAUDE.local.md as a CLAUDE.md for the "is there a CLAUDE.md" check, so AGENTS.md stops loading for the person who has the local file, and only for them. Linting the AGENTS.md on its own is enough; the check looks at the folders around it.
 
 ## Why it matters
 
@@ -35,7 +35,7 @@ Use the staging URL https://staging.example.invalid
 
 ## How to fix
 
-Add a committed CLAUDE.md that imports AGENTS.md, so every CLAUDE.md-style load includes the shared file. Alternatively set Claude Code's project instructions setting to `claude-md-and-agents-md`, which reads both; that setting lives in user or managed settings, not in the repository.
+Add a committed CLAUDE.md that imports AGENTS.md, so every CLAUDE.md-style load includes the shared file. The quicker fix the message offers, putting `@AGENTS.md` at the top of your CLAUDE.local.md, works too, but only on your machine. Or type `/config` in Claude Code and set Project instructions to `claude-md-and-agents-md`, which reads both; that is a per-user setting, not something in the repository.
 
 ## Suppress or configure
 

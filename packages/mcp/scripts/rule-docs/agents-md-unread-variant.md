@@ -14,4 +14,4 @@ AGENTS.md            # one file every agent reads
 ```
 
 ## Fix
-Keep instructions that apply to everyone in AGENTS.md. Use an override only as a short-lived local file, and delete it when the reason is gone. If a variant must stay, say in AGENTS.md which agents read it.
+Merge the content into AGENTS.md if every agent should follow it. Use an override only as a short-lived local file, and delete it when the reason is gone. A variant that a loaded file points at on purpose is not reported: for AGENTS.local.md or a file under `.agents/`, mention it by name in a loaded file (better, import it); for AGENTS.override.md, import it from a CLAUDE.md with `@AGENTS.override.md`.

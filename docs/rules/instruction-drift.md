@@ -8,7 +8,7 @@
 
 Mirrored instruction files share most rules but not all.
 
-Two files that are meant to say the same thing (AGENTS.md and CLAUDE.md, say) and mostly do, but one has rules the other lacks. The check stays silent for files that are not alike enough to be mirrors, so unrelated documents do not alert. Only runs when the whole folder is linted.
+Two files that are meant to say the same thing (AGENTS.md and CLAUDE.md, say) and mostly do, but one has rules the other lacks. Each rule found in only one file gets a note on its line, up to 10 per pair. The files must sit in the same folder, and the check stays silent unless at least three rules match and the matching rules are at least half of all the rules in the two files, so unrelated documents do not alert. A pair where one file imports the other is skipped. Both files have to be in the same lint run: a whole-folder lint, or both passed as paths.
 
 ## Why it matters
 

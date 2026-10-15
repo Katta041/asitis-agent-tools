@@ -1,5 +1,5 @@
 ## Catches
-A script in a skill folder, or a command in `SKILL.md`, that downloads code and runs it in one step: `curl ... | sh`, `wget -O- ... | bash`, `bash <(curl ...)`, `python -c "$(curl ...)"` and the like. An install snippet in a README is a note; the same line in a script the skill runs is an error. Needs `--include skills`.
+A script in a skill folder, or a command in `SKILL.md`, that downloads code and runs it in one step: `curl ... | sh`, `wget -O- ... | bash`, `bash <(curl ...)`, `python -c "$(curl ...)"` and the like. It also catches a script that downloads a file and runs it within the next five lines, and (as warnings) unpacking a password-protected archive or removing the macOS quarantine flag. In a script or the SKILL.md body it is an error; in README.md and other markdown in the skill folder, where vendor install snippets live, it is a note. Needs `--include skills`.
 
 ## Bad
 ```bash
@@ -16,4 +16,4 @@ pip install "somepackage==2.4.1"
 Or vendor the installer into the skill folder, where it can be read, and run that.
 
 ## Fix
-Install from a package registry with an exact version, or copy the script into the repository and run the local copy. If a download is unavoidable, download to a file, check its hash against one written in the script, and only then run it.
+Install from a package registry with an exact version, or copy the script into the repository and run the local copy. If a download is unavoidable, download to a file, check its hash against one written in the script, and only then run it. AsItIs cannot tell that the hash check happened and still reports the run, so once you have checked it, turn the rule off for that one script with an `overrides` entry in `.asitisrc.json` or accept the finding in a baseline. A comment in the script does not work: security rules cannot be suppressed inline.

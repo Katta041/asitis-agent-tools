@@ -1,5 +1,5 @@
 ## Catches
-An executable binary (ELF, Mach-O or PE, recognised by the first four bytes) inside a skill folder. Needs `--include skills`.
+An executable binary (ELF, Mach-O, PE or WebAssembly, recognised by the first four bytes) inside a skill folder, including one named like a text file (`helper.txt` that is really an ELF). Only those four bytes are read. Needs `--include skills`.
 
 ## Bad
 ```text

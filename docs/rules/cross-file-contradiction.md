@@ -8,7 +8,7 @@
 
 Two files loaded for the same agent, or mirrored for different agents, contradict.
 
-Two files that are loaded for the same agent in one session, or that mirror each other for different agents (CLAUDE.md and AGENTS.md, AGENTS.md and GEMINI.md), where one says "always X" and the other "never X" for the same action. Only runs when the whole folder is linted.
+Two files that are loaded for the same agent in one session, or that mirror each other for different agents (CLAUDE.md and AGENTS.md, AGENTS.md and GEMINI.md), where one says "always X" and the other "never X" (or "do not X") for the same action, worded the same way. The files have to apply to the same folder, and both have to be in the same lint run: a whole-folder lint, or both passed as paths. A file that already says both sides on its own is left to the single-file contradiction rule.
 
 ## Why it matters
 
@@ -22,7 +22,8 @@ When CLAUDE.md says one thing and AGENTS.md or GEMINI.md the opposite, agents be
 ```
 ```markdown
 <!-- AGENTS.md -->
-- Never squash commits; keep the full history.
+- Never squash commits before merging.
+- Keep the full history.
 ```
 A contributor using Claude Code squashes, one using Codex does not. Each agent did what its file said.
 

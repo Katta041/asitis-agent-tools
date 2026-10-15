@@ -8,7 +8,7 @@
 
 asitis-disable names a rule that does not exist, or no rule at all.
 
-An `asitis-disable` comment that names a rule id not in the registry, or one that is still planned. Nothing is suppressed, and the finding the comment was meant for stays.
+An `asitis-disable` comment that names a rule id not in the registry, one that is still planned, or one of the three suppression rules (which a comment cannot turn off). Also a comment with no rule id at all, and a directive that does not exist, such as `asitis-disable-line`. Nothing is suppressed, and the finding the comment was meant for stays. When the id is close to a real one, the message suggests it.
 
 ## Why it matters
 
@@ -31,7 +31,7 @@ The id is `duplicate-rule`, singular. The duplicate finding is still reported an
 
 ## How to fix
 
-Copy the id from the finding you are suppressing; the [index](README.md) lists every active rule. A rule id is required: there is no comment that disables everything.
+Fix the rule id or delete the comment. Copy the id from the finding you are suppressing; the [index](README.md) lists every active rule. The directives are `asitis-disable-next-line` and `asitis-disable-file`, and a rule id is required: there is no comment that disables everything.
 
 ## Suppress or configure
 

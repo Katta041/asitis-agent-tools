@@ -1,5 +1,5 @@
 ## Catches
-Text in a skill, command or script that turns off the agent's permission checks: `--dangerously-skip-permissions`, `--yolo`, `permissionMode: bypassPermissions`, and equivalents. A sentence that says not to do it ("never run with --yolo") does not fire.
+Text in a skill, Claude Code command, subagent file or skill script that turns off the agent's permission checks: `--dangerously-skip-permissions`, `bypassPermissions`, Codex `--dangerously-bypass-approvals-and-sandbox` and `danger-full-access`, Gemini `--approval-mode yolo`, `--trust-all-tools`, and `--yolo` when an agent CLI is named on the same line. A sentence that says not to do it ("never run with --yolo") does not fire. In README.md inside a skill folder it is a note. Needs `--include skills`; a `permissions.defaultMode` in settings is [sec-permission-mode](sec-permission-mode.md) instead.
 
 ## Bad
 ```markdown

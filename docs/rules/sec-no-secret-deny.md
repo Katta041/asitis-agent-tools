@@ -8,7 +8,7 @@
 
 The folder has a .env file but no permissions.deny rule keeps Claude Code out of it.
 
-A `.claude/settings.json` with no `permissions.deny` rule covering `.env` files or other secret locations. It is a note: a hint, not a finding of something wrong. Needs `--include config`.
+A project with a `.env` file at the top of the folder (templates like `.env.example` do not count) and a `.claude/settings.json` that has no `permissions.deny` or `permissions.ask` rule mentioning `.env` or secrets. It is a note: a hint, not a finding of something wrong. No `.env` file, or no settings file, means no note. Needs `--include config`.
 
 ## Why it matters
 
@@ -23,7 +23,7 @@ Claude Code reads files in the project without asking. The settings reference sa
   }
 }
 ```
-Nothing stops a `Read` of `.env` when a task, or an injected instruction, asks for it.
+With a `.env` next to it, nothing stops a `Read` of `.env` when a task, or an injected instruction, asks for it.
 
 ## Good example
 
@@ -38,7 +38,7 @@ Nothing stops a `Read` of `.env` when a task, or an injected instruction, asks f
 
 ## How to fix
 
-Add deny rules for the files that hold secrets in this project. The Claude Code settings reference describes deny rules as the way to keep such files out of reach.
+Add deny rules for the files that hold secrets in this project, at least `"Read(./.env)"` and `"Read(./.env.*)"`. The Claude Code settings reference describes deny rules as the way to keep such files out of reach.
 
 ## Suppress or configure
 
