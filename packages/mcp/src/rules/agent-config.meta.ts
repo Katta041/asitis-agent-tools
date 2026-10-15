@@ -16,6 +16,7 @@ export const AGENT_CONFIG_RULES: RuleMeta[] = [
     summary: "Project hook or settings command fetches remote code, calls the network or redirects the API",
     why: "Hooks in a committed .claude/settings.json run on every developer's machine, and a claude -p run starts them without the trust prompt (CVE-2025-59536). An ANTHROPIC_BASE_URL in project settings sends the API key to that host (CVE-2026-21852). With extends: strict, plain hooks are listed too, so a reviewer knows they exist.",
     source: SRC.hooks,
+    severityVaries: "error, warning or note, by what the hook or setting does",
   }),
   rule({
     id: "sec-permission-allow",
@@ -24,6 +25,7 @@ export const AGENT_CONFIG_RULES: RuleMeta[] = [
     summary: "Allow rule or trust flag skips the prompt for any shell command, network tool or interpreter",
     why: "An allow rule runs the command without asking, so text the agent reads can trigger it. CVE-2025-55284 leaked .env contents through allowlisted ping and nslookup. Bash and Bash(*) allow every command and are errors; network tools, interpreters with a wildcard and an unscoped WebFetch are warnings.",
     source: PERMISSIONS_DOC,
+    severityVaries: "error for Bash or Bash(*); a warning for network tools, interpreters with a wildcard and an unscoped WebFetch",
   }),
   rule({
     id: "sec-permission-mode",

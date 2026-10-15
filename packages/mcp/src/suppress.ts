@@ -34,6 +34,8 @@ export interface InlineSuppression {
   endLine: number;
   /** The word after asitis- is not a directive (asitis-disable-line, for example). */
   unknown?: boolean;
+  /** For a directive written with the wrong separator, the directive it was probably meant to be. */
+  meant?: string;
 }
 
 /** Rules about the comments themselves. A comment cannot suppress these. */
@@ -48,15 +50,23 @@ const MAX_DIRECTIVES = 500;
 /** Longest comment body read as a directive. */
 const MAX_BODY = 1000;
 
+/** "asitis disable-next-line", "asitis_disable", "asitis  disable file": a directive with the wrong separator, which would otherwise be ignored. */
+const NEAR_DIRECTIVE = /^\s*(asitis[\s_]{1,4}disable(?:[\s_-]{1,4}(?:next[\s_-]{0,4}line|file))?)(?![A-Za-z0-9])/i;
+
 /** True when a comment body (between <!-- and -->) is an asitis directive. lint.ts uses it so these comments do not count as hidden comments. */
 export function isSuppressionComment(body: string): boolean {
   return /^\s*asitis-disable(?![A-Za-z0-9_])/.test(body);
 }
 
+/** A directive or a misspelt one ("asitis disable-next-line"): reported by unknown-suppression, so lint.ts does not count it as a hidden comment too. */
+export function looksLikeSuppression(body: string): boolean {
+  return isSuppressionComment(body) || NEAR_DIRECTIVE.test(body);
+}
+
 /** Finds asitis-disable comments outside code fences, code spans and frontmatter. Linear: forward indexOf only. */
 export function parseSuppressions(doc: Doc): InlineSuppression[] {
   const s = doc.text;
-  if (!s.includes("asitis-disable")) return [];
+  if (!s.includes("asitis-disable") && !/asitis[\s_]{1,4}disable/i.test(s)) return [];
   const lines = doc.lines;
   const spans = new InlineCodeSpans(lines);
   const fmEnd = doc.frontmatter.present ? doc.frontmatter.endLine : -1;
@@ -71,7 +81,16 @@ export function parseSuppressions(doc: Doc): InlineSuppression[] {
     const startLine = lines.lineOf(open);
     if (startLine <= fmEnd || doc.fence[startLine] || spans.inCode(startLine, open)) continue;
     const body = s.slice(open + 4, Math.min(close, open + 4 + MAX_BODY));
-    if (!isSuppressionComment(body)) continue;
+    if (!isSuppressionComment(body)) {
+      const near = NEAR_DIRECTIVE.exec(body);
+      if (near) {
+        const written = near[1]!.replace(/\s+/g, " ");
+        const words = written.toLowerCase().replace(/[\s_-]+/g, " ");
+        const meant = words.includes("next") ? "asitis-disable-next-line" : words.includes("file") ? "asitis-disable-file" : "asitis-disable";
+        out.push({ kind: "file", directive: written, ruleIds: [], justification: "", line: startLine + 1, endLine: lines.lineOf(close) + 1, unknown: true, meant });
+      }
+      continue;
+    }
     const m = /^\s*(asitis-disable[A-Za-z0-9_-]*)/.exec(body)!;
     const directive = m[1]!;
     const rest = body.slice(m[0].length);
@@ -119,7 +138,8 @@ export function applyInlineSuppressions(_doc: Doc, issues: Issue[], found: Inlin
 
   for (const s of found) {
     if (s.unknown) {
-      add({ severity: "warning", rule: "unknown-suppression", message: `${q(s.directive, 60)} is not an asitis directive, so nothing is suppressed. Use asitis-disable-next-line or asitis-disable-file followed by a rule id`, line: s.line });
+      const fix = s.meant ? `Write it with hyphens, as ${s.meant}, followed by a rule id` : "Use asitis-disable-next-line or asitis-disable-file followed by a rule id";
+      add({ severity: "warning", rule: "unknown-suppression", message: `${q(s.directive, 60)} is not an asitis directive${s.meant ? ` (did you mean ${s.meant}?)` : ""}, so nothing is suppressed. ${fix}`, line: s.line });
       continue;
     }
     if (!s.ruleIds.length) {

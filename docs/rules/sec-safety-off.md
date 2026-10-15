@@ -2,13 +2,15 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| security | warning | one file | no | no (security rule) |
+| security | warning, depends on location (see below) | one file | no | no (security rule) |
+
+Severity: warning; a note in README.md; one finding per skill and flag.
 
 ## What it catches
 
 Turns off the agent's permission checks.
 
-Text in a skill, Claude Code command, subagent file or skill script that turns off the agent's permission checks: `--dangerously-skip-permissions`, `bypassPermissions`, Codex `--dangerously-bypass-approvals-and-sandbox` and `danger-full-access`, Gemini `--approval-mode yolo`, `--trust-all-tools`, and `--yolo` when an agent CLI is named on the same line. A sentence that says not to do it ("never run with --yolo") does not fire. In README.md inside a skill folder it is a note. Needs `--include skills`; a `permissions.defaultMode` in settings is [sec-permission-mode](sec-permission-mode.md) instead.
+Text in a skill, Claude Code command, subagent file or skill script that turns off the agent's permission checks: `--dangerously-skip-permissions`, `bypassPermissions`, Codex `--dangerously-bypass-approvals-and-sandbox` and `danger-full-access`, Gemini `--approval-mode yolo`, `--trust-all-tools`, and `--yolo` when an agent CLI is named on the same line. A sentence that says not to do it ("never run with --yolo") does not fire. In README.md inside a skill folder it is a note. Each flag is reported once per skill, on the line that sets it in code if there is one, with a count of the other places that mention it. Needs `--include skills`; a `permissions.defaultMode` in settings is [sec-permission-mode](sec-permission-mode.md) instead.
 
 ## Why it matters
 

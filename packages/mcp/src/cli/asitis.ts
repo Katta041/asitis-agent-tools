@@ -53,12 +53,48 @@ Options for lint:
   --max-files <n>          most steering files to lint when walking the root (default and max 1,000)
   --max-file-mb <n>        largest file analysed, 1 to 64 (default 16)
   --quiet, -q              text and github: findings only, no summary or notices
+  --annotate-notes         github: also annotate notes (by default only errors and warnings are)
   --allow-broad-root       allow your home folder or the filesystem root as --root
 
 Options for budget: --root, --format text|json, --max-file-mb, --allow-broad-root.
 
 Exit codes: 0 no findings at or above --fail-on, 1 findings, 2 usage or input error, 3 internal error.
 Docs: https://github.com/Katta041/asitis-agent-tools/blob/main/docs/cli-contract.md
+`;
+
+export const HELP_LINT = `asitis lint [paths...] [options]
+
+Lints the files you name, or every steering file under the root (CLAUDE.md, AGENTS.md, SKILL.md,
+Cursor rules, Copilot instructions, GEMINI.md, ...). Prints one line per finding, then a summary.
+
+  --root <dir>             the one folder asitis may read (default: the current folder)
+  --format <f>             text (default), json, sarif or github
+  --fail-on <level>        error (default), warning, note or never: lowest severity that exits 1
+  --config <file>          config file inside the root (default: .asitisrc.json if present)
+  --baseline <file>        hide findings whose fingerprint is listed in this file
+  --write-baseline         print a baseline of the current findings (needs --format json)
+  --include <list>         opt-in scans, comma-separated: skills (scripts in skill folders),
+                           config (.claude/settings.json and MCP config), config-local
+  --fix-preview[=safe]     attach suggested fixes; with text, print them as one unified diff
+  --max-files <n>          most steering files to lint when walking the root (default and max 1,000)
+  --max-file-mb <n>        largest file analysed, 1 to 64 (default 16)
+  --quiet, -q              text and github: findings only, no summary or notices
+  --annotate-notes         github: also annotate notes (by default only errors and warnings are)
+  --allow-broad-root       allow your home folder or the filesystem root as --root
+
+Exit codes: 0 no findings at or above --fail-on, 1 findings, 2 usage or input error, 3 internal error.
+`;
+
+export const HELP_BUDGET = `asitis budget [file] [options]
+
+Counts the tokens each agent (Claude Code, Codex, Gemini CLI, Cursor, Copilot) loads at the start of
+every session, largest first. With a file, counts that file and what it imports. Counts are local
+estimates. Exits 0 when the count ran, 2 on a usage or input error.
+
+  --root <dir>             the one folder asitis may read (default: the current folder)
+  --format <f>             text (default) or json
+  --max-file-mb <n>        largest file analysed, 1 to 64 (default 16)
+  --allow-broad-root       allow your home folder or the filesystem root as --root
 `;
 
 export interface CliIO {
@@ -105,6 +141,7 @@ function userLine(e: UserError): string {
     .replace(/ \(inside [^)]*\)/, "")
     .replace(/the allowed folder/g, "the root folder")
     .replace(/the server/g, "asitis")
+    .replace(/this server/g, "asitis")
     .replace(/ Start the server with --root[^.]*\./, "");
   return scrubPaths(m).replace(/\.$/, "");
 }
@@ -115,10 +152,16 @@ class Failure {
 
 const usage = (line: string): Failure => new Failure(EXIT.usage, line);
 
-/** A path as the user gave it, or relative to the current folder when they gave an absolute one. */
+/**
+ * A path as the user gave it, or relative to the current folder when they gave an absolute one.
+ * An absolute path outside the current folder is shown by its last part only ("hosts (absolute
+ * path)"): "../../../../etc/hosts" reads oddly, and error lines never carry an absolute path.
+ */
 function relativeShown(given: string, io: CliIO): string {
   if (!path.isAbsolute(given)) return given;
-  return path.relative(io.cwd, given).split(path.sep).join("/") || ".";
+  const rel = path.relative(io.cwd, given).split(path.sep).join("/") || ".";
+  if (rel === ".." || rel.startsWith("../") || path.isAbsolute(rel)) return `${path.basename(given) || "/"} (absolute path)`;
+  return rel;
 }
 
 function shown(p: string): string {
@@ -148,6 +191,7 @@ async function openSandbox(root: string | undefined, io: CliIO, opts: { allowBro
  * against the current folder, as in any CLI. Returns the path relative to the root.
  */
 async function namedFile(sandbox: Sandbox, given: string, io: CliIO, flag = ""): Promise<string> {
+  if (!given.trim()) throw usage(`${flag ? `${flag} got` : "got"} an empty path; pass a file inside the root${flag ? "" : ", or leave paths out to lint every steering file"}`);
   const abs = path.resolve(io.cwd, given);
   // An absolute path is shown relative to the current folder, so no error line carries one.
   const display = relativeShown(given, io);
@@ -167,6 +211,17 @@ async function namedFile(sandbox: Sandbox, given: string, io: CliIO, flag = ""):
   return lex.rel || ".";
 }
 
+/** Agent config files the opt-in config scan reads, by lower-case name. */
+const CONFIG_NAMES = new Set([".mcp.json", "mcp.json", "settings.json", "settings.local.json"]);
+
+/** For a refused non-markdown file the opt-in scans would read, which flag reads it. */
+function optInHint(p: string, include: readonly string[]): string {
+  const base = path.posix.basename(p.replace(/\\/g, "/")).toLowerCase();
+  if (CONFIG_NAMES.has(base) && !include.includes("config")) return `; to audit agent config files, run asitis lint --include config`;
+  if (/\.(?:sh|bash|zsh|py|js|mjs|cjs|ts|ps1|rb|pl)$/.test(base) && !include.includes("skills")) return `; to scan scripts in skill folders, run asitis lint --include skills`;
+  return "";
+}
+
 function failsOn(f: Finding, failOn: FailOn): boolean {
   if (failOn === "never" || f.suppressed) return false;
   return SEVERITY_RANK[f.severity] <= SEVERITY_RANK[failOn];
@@ -179,16 +234,23 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
   const configPath = a.configPath === undefined ? undefined : await namedFile(sandbox, a.configPath, io, "--config");
   const baselinePath = a.baselinePath === undefined ? undefined : await namedFile(sandbox, a.baselinePath, io, "--baseline");
 
-  const project = await lintProject(sandbox, {
-    targets,
-    include: a.include,
-    // The CLI honours include and extends from .asitisrc.json; the MCP server does not (cli-contract.md).
-    configInclude: true,
-    deadline: new Deadline(RUN_BUDGET_MS),
-    maxFiles: a.maxFiles,
-    ...(configPath === undefined ? {} : { configPath }),
-    ...(baselinePath === undefined ? {} : { baselinePath }),
-  });
+  let project;
+  try {
+    project = await lintProject(sandbox, {
+      targets,
+      include: a.include,
+      // The CLI honours include and extends from .asitisrc.json; the MCP server does not (cli-contract.md).
+      configInclude: true,
+      deadline: new Deadline(RUN_BUDGET_MS),
+      maxFiles: a.maxFiles,
+      ...(configPath === undefined ? {} : { configPath }),
+      ...(baselinePath === undefined ? {} : { baselinePath }),
+    });
+  } catch (e) {
+    // One named file that cannot be linted (a .mcp.json without --include config) fails the run.
+    if (e instanceof UserError && targets.length === 1) throw usage(`${userLine(e)}${optInHint(targets[0]!, a.include)}`);
+    throw e;
+  }
 
   // A partial lint must never look like a clean one.
   if (project.timedOut) throw usage(`stopped at the ${RUN_BUDGET_MS / 60_000}-minute time limit; pass paths to lint fewer files`);
@@ -209,7 +271,7 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
   // that could not be read are reported and skipped.
   if (!project.discovered && project.failures.length) {
     const f = project.failures[0]!;
-    throw usage(`${shown(f.path)}: ${userLine(new UserError(f.error))}`);
+    throw usage(`${shown(f.path)}: ${userLine(new UserError(f.error))}${optInHint(f.path, a.include)}`);
   }
   for (const f of project.failures) io.err(`asitis: ${shown(f.path)}: not linted (${userLine(new UserError(f.error))})\n`);
 
@@ -243,7 +305,7 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
       for (const n of notes) io.err(`asitis: ${n}\n`);
       break;
     case "github":
-      io.out(formatGithub(report, { quiet: a.quiet, notes }));
+      io.out(formatGithub(report, { quiet: a.quiet, notes, annotateNotes: a.annotateNotes }));
       break;
   }
   return code;
@@ -276,7 +338,7 @@ export async function run(argv: string[], io: CliIO = processIO()): Promise<numb
     const parsed = parse(argv);
     switch (parsed.command) {
       case "help":
-        io.out(HELP);
+        io.out(parsed.topic === "lint" ? HELP_LINT : parsed.topic === "budget" ? HELP_BUDGET : HELP);
         return EXIT.ok;
       case "version":
         io.out(`${VERSION}\n`);

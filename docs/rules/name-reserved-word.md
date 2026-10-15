@@ -2,17 +2,17 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| format | warning | one file | no | yes |
+| format | note | one file | no | yes |
 
 ## What it catches
 
 Skill name contains anthropic or claude.
 
-A skill `name` that contains `anthropic` or `claude`, in any case.
+A skill `name` that contains `anthropic` or `claude`, in any case. It is a note: only claude.ai and Claude API uploads reject the name; Claude Code and the other agents that read skills from disk accept it.
 
 ## Why it matters
 
-The Claude API and claude.ai reject skills whose name contains a reserved word. Claude Code itself accepts them.
+The Claude API and claude.ai reject skills whose name contains a reserved word. Claude Code and other agents that read skills from disk accept them, so this is a note.
 
 ## Bad example
 

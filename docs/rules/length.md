@@ -2,13 +2,17 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| budget | warning | one file | no | yes |
+| budget | warning, varies (see below) | one file | no | yes |
+
+Severity: warning; a note for a CLAUDE.md of 201 to 300 lines.
 
 ## What it catches
 
 File is longer than the vendor recommends or reads.
 
 A steering file longer than the tool that reads it recommends or loads. The thresholds come from the vendor docs: CLAUDE.md over 200 lines, SKILL.md over 500 lines, a Cursor rule over 500 lines, AGENTS.md over 32 KiB (Codex's `project_doc_max_bytes`, shared by every AGENTS.md from the root down), a Windsurf rule over 12,000 characters, and MEMORY.md past 200 lines or 25 KB. The message says which limit applies and what the tool does past it.
+
+A CLAUDE.md of 201 to 300 lines is a note; the warning starts above 300, since 200 is a soft target. A SKILL.md that is also over the token guideline is reported once, by [body-tokens](body-tokens.md), with both counts. A CLAUDE.md or AGENTS.md in a template, example, fixture or temp folder, or inside a skill, is skipped: it belongs to a sample project or to the skill's reference material, not to the project being linted.
 
 ## Why it matters
 

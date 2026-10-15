@@ -8,6 +8,7 @@ import path from "node:path";
 import { CAPS } from "./limits.js";
 import { AGENT_CONFIG_POLICY } from "./policy/agent-config.js";
 import { ASITISRC_POLICY } from "./policy/asitisrc.js";
+import { GITMODULES_POLICY } from "./policy/gitmodules.js";
 import { SKILL_SCRIPT_POLICY } from "./policy/skill-script.js";
 
 export class UserError extends Error {
@@ -23,7 +24,7 @@ export const EXTENSIONLESS_STEERING = [".cursorrules", ".windsurfrules", ".cline
  * unless a call opts in with include. The other classes are decided by their policy in policy/*.ts,
  * after the refusals every class shares (.env, .git, node_modules, Windows streams and devices).
  */
-export type ReadClass = "markdown" | "asitisrc" | "skill-script" | "agent-config";
+export type ReadClass = "markdown" | "asitisrc" | "skill-script" | "agent-config" | "gitmodules";
 
 export interface PolicyContext {
   sandbox: Sandbox;
@@ -50,6 +51,7 @@ export const READ_POLICIES: Readonly<Record<Exclude<ReadClass, "markdown">, Read
   asitisrc: ASITISRC_POLICY,
   "skill-script": SKILL_SCRIPT_POLICY,
   "agent-config": AGENT_CONFIG_POLICY,
+  gitmodules: GITMODULES_POLICY,
 };
 
 export interface Root {

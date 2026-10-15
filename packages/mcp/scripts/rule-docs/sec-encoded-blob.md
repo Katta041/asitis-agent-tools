@@ -1,5 +1,5 @@
 ## Catches
-A script, or a command in a skill's markdown, that decodes base64 or hex and runs or evaluates the result (`base64 -d | sh`, `echo ... | xxd -r -p | bash`, `eval "$(base64 -d ...)"`, an encoded PowerShell command). It also decodes runs of 24 or more base64 characters (40 or more hex) and reports them when the decoded text is a command or matches another `sec-` rule, quoting what it decodes to. Checksums, data: URIs and binary data are left alone. Needs `--include skills`.
+A script, or a command in a skill's markdown, that decodes base64 or hex and runs or evaluates the result (`base64 -d | sh`, `echo ... | xxd -r -p | bash`, `eval "$(base64 -d ...)"`, an encoded PowerShell command). It also decodes runs of 24 or more base64 characters (40 or more hex) and reports them when the decoded text is a command or matches another `sec-` rule, quoting what it decodes to. Checksums, data: URIs and binary data are left alone. In a reference page of a skill, a hit in a code block or code span under a heading about patterns or examples ("Dangerous Code Patterns") is a note: a security skill documenting what it detects. Needs `--include skills`.
 
 ## Bad
 ```bash

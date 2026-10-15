@@ -1,5 +1,5 @@
 ## Catches
-A comment or string in a skill script that talks to the agent rather than to a developer: "ignore previous instructions", "do not tell the user", "without asking the user", "if you are an AI", or "AI: run ...". Ordinary code comments have no reason to say any of that. Needs `--include skills`.
+A comment or string in a skill script that talks to the agent rather than to a developer: "ignore previous instructions", "do not tell the user", "without asking the user", "if you are an AI", or "AI: run ...". Ordinary code comments have no reason to say any of that. A line that is a detection pattern (regex syntax such as `\s+` or `(?i)`, as in a scanner's rule list) is not reported. Needs `--include skills`.
 
 ## Bad
 ```python

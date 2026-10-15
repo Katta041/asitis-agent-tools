@@ -2,13 +2,15 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| security | warning | one file | no | no (security rule) |
+| security | warning, depends on location (see below) | one file | no | no (security rule) |
+
+Severity: warning; a note in README.md and in examples under a patterns or examples heading of a reference page.
 
 ## What it catches
 
 Decodes base64 or hex and runs the result, or hides a command in an encoding.
 
-A script, or a command in a skill's markdown, that decodes base64 or hex and runs or evaluates the result (`base64 -d | sh`, `echo ... | xxd -r -p | bash`, `eval "$(base64 -d ...)"`, an encoded PowerShell command). It also decodes runs of 24 or more base64 characters (40 or more hex) and reports them when the decoded text is a command or matches another `sec-` rule, quoting what it decodes to. Checksums, data: URIs and binary data are left alone. Needs `--include skills`.
+A script, or a command in a skill's markdown, that decodes base64 or hex and runs or evaluates the result (`base64 -d | sh`, `echo ... | xxd -r -p | bash`, `eval "$(base64 -d ...)"`, an encoded PowerShell command). It also decodes runs of 24 or more base64 characters (40 or more hex) and reports them when the decoded text is a command or matches another `sec-` rule, quoting what it decodes to. Checksums, data: URIs and binary data are left alone. In a reference page of a skill, a hit in a code block or code span under a heading about patterns or examples ("Dangerous Code Patterns") is a note: a security skill documenting what it detects. Needs `--include skills`.
 
 ## Why it matters
 

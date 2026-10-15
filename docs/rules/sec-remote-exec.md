@@ -2,17 +2,19 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| security | error | one file | no | no (security rule) |
+| security | error, depends on location (see below) | one file | no | no (security rule) |
+
+Severity: error in scripts and SKILL.md; a warning for the project's own URL; a note in README.md and other skill markdown.
 
 ## What it catches
 
 Downloads code and runs it (curl or wget piped to a shell, and similar).
 
-A script in a skill folder, or a command in `SKILL.md`, that downloads code and runs it in one step: `curl ... | sh`, `wget -O- ... | bash`, `bash <(curl ...)`, `python -c "$(curl ...)"` and the like. It also catches a script that downloads a file and runs it within the next five lines, and (as warnings) unpacking a password-protected archive or removing the macOS quarantine flag. In a script or the SKILL.md body it is an error; in README.md and other markdown in the skill folder, where vendor install snippets live, it is a note. Needs `--include skills`.
+A script in a skill folder, or a command in `SKILL.md`, that downloads code and runs it in one step: `curl ... | sh`, `wget -O- ... | bash`, `bash <(curl ...)`, `python -c "$(curl ...)"` and the like. It also catches a script that downloads a file and runs it within the next five lines, and unpacking a password-protected archive or removing the macOS quarantine flag (warnings in scripts and the SKILL.md body, notes in other markdown). In a script or the SKILL.md body a download-and-run is an error; in README.md and other markdown in the skill folder, where vendor install snippets live, it is a note. When the URL is the project's own repository or homepage (a release-test skill running the project's installer), it is a warning instead of an error. The project is known from the root folder's name and, with `--include config`, the `name`, `homepage` and `repository` of the root `package.json` or `pyproject.toml`. Needs `--include skills`.
 
 ## Why it matters
 
-Download-and-run is the most common pattern in malicious skills. It is an error in scripts and in the SKILL.md body, which the agent follows, and a note in README.md and other markdown in the skill folder, where vendor install snippets live. Password archives and quarantine removal are warnings.
+Download-and-run is the most common pattern in malicious skills. It is an error in scripts and in the SKILL.md body, which the agent follows, and a note in README.md and other markdown in the skill folder, where vendor install snippets live. Password archives and quarantine removal are warnings in scripts and the SKILL.md body, and notes in other markdown.
 
 ## Bad example
 

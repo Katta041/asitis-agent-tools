@@ -224,7 +224,8 @@ export function renderPage(rule, fragment) {
   const facts = [
     `| Category | Severity | Decided from | Fix offered | Inline suppression |`,
     `|---|---|---|---|---|`,
-    `| ${rule.category} | ${rule.defaultSeverity} | ${SCOPE_LABEL[rule.scope]} | ${rule.fixable === false ? "no" : rule.fixable} | ${rule.suppressibleInline ? "yes" : "no (security rule)"} |`,
+    `| ${rule.category} | ${rule.severityVaries ? `${rule.defaultSeverity}, ${rule.severityBy === "location" ? "depends on location" : "varies"} (see below)` : rule.defaultSeverity} | ${SCOPE_LABEL[rule.scope]} | ${rule.fixable === false ? "no" : rule.fixable} | ${rule.suppressibleInline ? "yes" : "no (security rule)"} |`,
+    ...(rule.severityVaries ? ["", `Severity: ${rule.severityVaries}.`] : []),
   ];
   const parts = [
     `# ${rule.id}`,
@@ -275,14 +276,14 @@ export function renderIndex(rules) {
     "",
     `One page per rule: what it catches, why it matters, a bad and a good example, how to fix it, how to suppress or configure it, and the vendor page or incident it rests on. ${rules.length} rules are active in this build. Each finding in \`asitis lint --format sarif\` links to its page as \`${SITE}<rule-id>.md\`.`,
     "",
-    "Severity is the default; `.asitisrc.json` can change it. Security rules can be turned off there or in a baseline, never with a comment in the file.",
+    "Severity is the default; `.asitisrc.json` can change it. Where it says \"depends on location\" or \"varies\", the rule reports some findings at a lower severity (a note in a README, a note for a CLAUDE.md just over 200 lines); the rule page says when. Security rules can be turned off in `.asitisrc.json` or in a baseline, never with a comment in the file.",
     "",
   ];
   for (const c of CATEGORY_ORDER) {
     const list = byCategory.get(c);
     if (!list?.length) continue;
     lines.push(`## ${CATEGORY_TITLE[c]}`, "", CATEGORY_BLURB[c], "", "| Rule | Severity | What it catches |", "|---|---|---|");
-    for (const r of list) lines.push(`| [${r.id}](${r.id}.md) | ${r.defaultSeverity} | ${r.summary} |`);
+    for (const r of list) lines.push(`| [${r.id}](${r.id}.md) | ${r.severityVaries ? `${r.defaultSeverity}, ${r.severityBy === "location" ? "depends on location" : "varies"}` : r.defaultSeverity} | ${r.summary} |`);
     lines.push("");
   }
   lines.push(

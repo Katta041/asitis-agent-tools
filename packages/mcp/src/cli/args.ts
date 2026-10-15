@@ -27,6 +27,7 @@ export interface LintArgs {
   maxFileBytes: number | undefined;
   maxFiles: number;
   quiet: boolean;
+  annotateNotes: boolean;
   allowBroadRoot: boolean;
 }
 
@@ -39,7 +40,7 @@ export interface BudgetArgs {
   allowBroadRoot: boolean;
 }
 
-export type Parsed = LintArgs | BudgetArgs | { command: "help" } | { command: "version" };
+export type Parsed = LintArgs | BudgetArgs | { command: "help"; topic?: "lint" | "budget" } | { command: "version" };
 
 /** "error, warning, note or never". */
 const orList = (xs: readonly string[]): string => `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`;
@@ -124,6 +125,7 @@ export function parse(argv: string[]): Parsed {
         "max-file-mb": { type: "string", multiple: true },
         "max-files": { type: "string", multiple: true },
         quiet: { type: "boolean", short: "q" },
+        "annotate-notes": { type: "boolean" },
         "allow-broad-root": { type: "boolean" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
@@ -133,7 +135,10 @@ export function parse(argv: string[]): Parsed {
     throw parseError(e);
   }
   const { values: v, positionals } = parsed;
-  if (v.help) return { command: "help" };
+  if (v.help) {
+    const topic = positionals[0];
+    return topic === "lint" || topic === "budget" ? { command: "help", topic } : { command: "help" };
+  }
   if (v.version) return { command: "version" };
   const [command, ...rest] = positionals;
   if (command === undefined) throw new UserError("no command given; run asitis lint, asitis budget or asitis --help");
@@ -155,6 +160,7 @@ export function parse(argv: string[]): Parsed {
     }
     if (v["write-baseline"]) throw new UserError("--write-baseline only applies to asitis lint");
     if (v.quiet) throw new UserError("--quiet only applies to asitis lint");
+    if (v["annotate-notes"]) throw new UserError("--annotate-notes only applies to asitis lint");
     if (rest.length > 1) throw new UserError("asitis budget takes at most one file; leave it out for the whole folder");
     return {
       command: "budget",
@@ -170,6 +176,7 @@ export function parse(argv: string[]): Parsed {
   const format = pick("--format", single("--format", v.format), FORMATS, "text");
   const writeBaseline = !!v["write-baseline"];
   if (writeBaseline && format !== "json") throw new UserError("--write-baseline needs --format json");
+  if (v["annotate-notes"] && format !== "github") throw new UserError("--annotate-notes only applies to --format github");
   const fp = single("--fix-preview", v["fix-preview"]);
   if (fp !== undefined && fp !== "all" && fp !== "safe") throw new UserError(`--fix-preview takes no value or =safe, not ${shown(fp)}`);
   return {
@@ -186,6 +193,7 @@ export function parse(argv: string[]): Parsed {
     maxFileBytes,
     maxFiles: maxFiles(single("--max-files", v["max-files"])),
     quiet: !!v.quiet,
+    annotateNotes: !!v["annotate-notes"],
     allowBroadRoot,
   };
 }

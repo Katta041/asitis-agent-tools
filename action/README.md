@@ -85,7 +85,8 @@ The upload uses `github/codeql-action/upload-sarif`, pinned to a commit inside `
 | `paths` | empty | Files to lint, one per line or separated by spaces. Empty lints every steering file under `root`. |
 | `root` | `.` | The one folder the linter may read. Leave it at the repo top so annotation paths match your files. |
 | `fail-on` | `error` | Lowest severity that fails the step: `error`, `warning`, `note` or `never`. |
-| `format` | `github` | What the log shows. `github` makes each finding an annotation; `text` and `json` print the report. |
+| `format` | `github` | What the log shows. `github` makes each error and warning an annotation; `text` and `json` print the report. |
+| `annotate-notes` | `false` | Set to `true` to annotate notes too when `format` is `github`. Notes (a hidden comment, a missing final newline) still count in the `notes` output either way. |
 | `include` | empty | Comma-separated opt-in scans: `skills`, `config`, `config-local`. Empty reads markdown steering files only. |
 | `config` | empty | Config file inside `root`. Empty uses `.asitisrc.json` at the root if there is one. |
 | `baseline` | empty | Baseline file inside `root`. Findings listed there are reported as suppressed and do not fail the step. |

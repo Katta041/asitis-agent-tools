@@ -1,5 +1,5 @@
 ## Catches
-A file that loads at the start of every session (a root CLAUDE.md, `.claude/rules/*.md` without `paths`, `.cursorrules`, `.github/copilot-instructions.md` and similar) with more than about 5,000 tokens in it. It is a note, not a warning: the file may be worth it. The point is that the cost is paid in every conversation, including ones that never touch the subject.
+A file that loads at the start of every session (a root CLAUDE.md, `.claude/rules/*.md` without `paths`, `.cursorrules`, `.github/copilot-instructions.md` and similar) with more than about 5,000 tokens in it. It is a note, not a warning: the file may be worth it. The point is that the cost is paid in every conversation, including ones that never touch the subject. The message says what to do: move topic-specific parts into files that load only when needed, such as path-scoped `.claude/rules/` files, skills or linked docs.
 
 ## Bad
 ```markdown

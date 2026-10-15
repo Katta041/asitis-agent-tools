@@ -73,8 +73,10 @@ describe("the sample project from the real run", () => {
   test("the repeated rule and the contradiction are both reported, naming both lines", async () => {
     const issues = await lint("acme/CLAUDE.md");
     expect(lines(issues, "duplicate-rule")).toEqual([12]);
+    // Under two unrelated headings the copy may be a summary and its detail, so it is a note.
+    expect(of(issues, "duplicate-rule")[0]!.severity).toBe("info");
     expect(of(issues, "duplicate-rule")[0]!.message).toBe(
-      'Same rule as line 6, under another heading: "Run `pnpm test` before every commit". Duplicates cost context and drift apart when one is edited; keep one, unless the two sections are alternatives that never apply together',
+      'Same rule as line 6, under another heading: "Run `pnpm test` before every commit". If one section summarises the other, or they never apply together, this can be on purpose; otherwise keep one',
     );
     expect(lines(issues, "contradiction")).toEqual([11]);
     expect(of(issues, "contradiction")[0]!.message).toBe('Contradicts line 10: line 10 says "Use named exports" and line 11 says "Never use named exports". Keep the one you mean');

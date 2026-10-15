@@ -1,5 +1,5 @@
 ## Catches
-A `SKILL.md` or a Claude Code subagent whose frontmatter has no `name`, or an empty one.
+A `SKILL.md` or a Claude Code subagent whose frontmatter has no `name`, or an empty one. SKILL.md files under tests, fixtures or testdata folders are test material and are not checked.
 
 ## Bad
 ```markdown

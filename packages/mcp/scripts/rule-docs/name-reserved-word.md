@@ -1,5 +1,5 @@
 ## Catches
-A skill `name` that contains `anthropic` or `claude`, in any case.
+A skill `name` that contains `anthropic` or `claude`, in any case. It is a note: only claude.ai and Claude API uploads reject the name; Claude Code and the other agents that read skills from disk accept it.
 
 ## Bad
 ```markdown

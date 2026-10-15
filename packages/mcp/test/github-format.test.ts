@@ -70,7 +70,7 @@ describe("escaping", () => {
 
 describe("annotations", () => {
   test("one command per unsuppressed finding, by severity, and the summary cannot be read as a command", () => {
-    const r = github(["--root", FIXTURE_REPO]);
+    const r = github(["--root", FIXTURE_REPO, "--annotate-notes"]);
     expect(r.code).toBe(1);
     const lines = r.out.trimEnd().split("\n");
     const j = JSON.parse(spawnSync(process.execPath, [CLI, "lint", "--root", FIXTURE_REPO, "--format", "json"], { encoding: "utf8" }).stdout);
@@ -79,6 +79,23 @@ describe("annotations", () => {
     expect(cmds.map((c) => c.command)).toEqual(j.findings.map((f: Finding) => ({ error: "error", warning: "warning", note: "notice" })[f.severity]));
     expect(lines.at(-1)).toMatch(/^asitis: Linted \d+ files: /);
     for (const l of lines.slice(0, -1)) expect(l).toMatch(/^::(error|warning|notice) file=/);
+  });
+  test("notes are not annotated unless --annotate-notes is given; the summary still counts them and says so", () => {
+    const r = github(["--root", FIXTURE_REPO]);
+    const j = JSON.parse(spawnSync(process.execPath, [CLI, "lint", "--root", FIXTURE_REPO, "--format", "json"], { encoding: "utf8" }).stdout);
+    const notes = j.findings.filter((f: Finding) => f.severity === "note").length;
+    expect(notes).toBeGreaterThan(0);
+    const cmds = commands(r.out);
+    expect(cmds).toHaveLength(j.findings.length - notes);
+    expect(cmds.every((c) => c.command !== "notice")).toBe(true);
+    const lines = r.out.trimEnd().split("\n");
+    expect(lines.at(-2)).toMatch(/^asitis: Linted \d+ files: /);
+    expect(lines.at(-1)).toBe(`asitis: ${notes} ${notes === 1 ? "note is" : "notes are"} not shown as annotations; add --annotate-notes to show ${notes === 1 ? "it" : "them"}`);
+  });
+  test("--annotate-notes is only for --format github", () => {
+    const r = spawnSync(process.execPath, [CLI, "lint", "--root", FIXTURE_REPO, "--annotate-notes"], { encoding: "utf8" });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toBe("asitis: --annotate-notes only applies to --format github\n");
   });
   test("properties: file, line, col, endLine, endColumn and title, in that order", () => {
     const c = commands(github(["--root", FIXTURE_REPO]).out)[0]!;

@@ -2,7 +2,7 @@
 
 One page per rule: what it catches, why it matters, a bad and a good example, how to fix it, how to suppress or configure it, and the vendor page or incident it rests on. 73 rules are active in this build. Each finding in `asitis lint --format sarif` links to its page as `https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/<rule-id>.md`.
 
-Severity is the default; `.asitisrc.json` can change it. Security rules can be turned off there or in a baseline, never with a comment in the file.
+Severity is the default; `.asitisrc.json` can change it. Where it says "depends on location" or "varies", the rule reports some findings at a lower severity (a note in a README, a note for a CLAUDE.md just over 200 lines); the rule page says when. Security rules can be turned off in `.asitisrc.json` or in a baseline, never with a comment in the file.
 
 ## Format and vendor rules
 
@@ -24,7 +24,7 @@ The file is not read the way its author expects: frontmatter, required fields, v
 | [name-too-long](name-too-long.md) | error | Skill name is longer than 64 characters |
 | [name-format](name-format.md) | error | Skill name is not lowercase letters, digits and single hyphens |
 | [name-dir-mismatch](name-dir-mismatch.md) | warning | Skill name does not match its folder name |
-| [name-reserved-word](name-reserved-word.md) | warning | Skill name contains anthropic or claude |
+| [name-reserved-word](name-reserved-word.md) | note | Skill name contains anthropic or claude |
 | [xml-tag](xml-tag.md) | warning | Skill name or description contains an XML tag |
 | [description-too-long](description-too-long.md) | error | Skill description is longer than 1,024 characters |
 | [compatibility-too-long](compatibility-too-long.md) | warning | compatibility is longer than 500 characters |
@@ -36,7 +36,7 @@ The file is not read the way its author expects: frontmatter, required fields, v
 | [invalid-utf8](invalid-utf8.md) | warning | File contains invalid UTF-8 bytes |
 | [nul-bytes](nul-bytes.md) | warning | File contains NUL bytes |
 | [mixed-eol](mixed-eol.md) | note | File mixes CRLF, LF or CR line endings |
-| [broken-link](broken-link.md) | warning | Relative link or anchor points to nothing |
+| [broken-link](broken-link.md) | warning, varies | Relative link or anchor points to nothing |
 | [broken-import](broken-import.md) | warning | @import names a file that does not exist |
 | [link-outside-root](link-outside-root.md) | note | Link points outside the project and was not checked |
 | [import-outside-root](import-outside-root.md) | warning | @import reaches outside the project |
@@ -51,10 +51,10 @@ The file costs more context than it earns, or more than the tool will read.
 | Rule | Severity | What it catches |
 |---|---|---|
 | [description-truncated](description-truncated.md) | warning | description plus when_to_use is cut in the skill listing |
-| [length](length.md) | warning | File is longer than the vendor recommends or reads |
-| [body-tokens](body-tokens.md) | warning | SKILL.md body is over about 5,000 tokens |
+| [length](length.md) | warning, varies | File is longer than the vendor recommends or reads |
+| [body-tokens](body-tokens.md) | warning, varies | SKILL.md body is over about 5,000 tokens |
 | [context-cost](context-cost.md) | note | Over 5,000 tokens load every session from this file |
-| [duplicate-rule](duplicate-rule.md) | warning | The same rule appears twice in one file |
+| [duplicate-rule](duplicate-rule.md) | warning, varies | The same rule appears twice in one file |
 | [duplicate-across-files](duplicate-across-files.md) | warning | The same rule is in two files one tool loads every session |
 | [codex-chain-over-budget](codex-chain-over-budget.md) | warning | AGENTS.md files from the root down exceed Codex's 32 KiB |
 
@@ -71,18 +71,18 @@ Content a reviewer does not see but an agent does, and other signs of a steering
 | [hidden-styled-text](hidden-styled-text.md) | warning | Inline style or the hidden attribute hides text |
 | [unclosed-comment](unclosed-comment.md) | warning | HTML comment never closes |
 | [unsafe-path](unsafe-path.md) | warning | File path contains control, bidi or invisible characters |
-| [sec-remote-exec](sec-remote-exec.md) | error | Downloads code and runs it (curl or wget piped to a shell, and similar) |
-| [sec-encoded-blob](sec-encoded-blob.md) | warning | Decodes base64 or hex and runs the result, or hides a command in an encoding |
-| [sec-secret-egress](sec-secret-egress.md) | error | Reads a secret and sends data over the network in the same script or block |
+| [sec-remote-exec](sec-remote-exec.md) | error, depends on location | Downloads code and runs it (curl or wget piped to a shell, and similar) |
+| [sec-encoded-blob](sec-encoded-blob.md) | warning, depends on location | Decodes base64 or hex and runs the result, or hides a command in an encoding |
+| [sec-secret-egress](sec-secret-egress.md) | error, depends on location | Reads a secret and sends data over the network in the same script or block |
 | [sec-skill-network](sec-skill-network.md) | note | Skill script makes network calls |
 | [sec-skill-allowed-tools](sec-skill-allowed-tools.md) | warning | allowed-tools grants unscoped Bash, all tools, any interpreter or unscoped WebFetch |
 | [sec-skill-binary](sec-skill-binary.md) | warning | Executable binary inside a skill folder |
-| [sec-safety-off](sec-safety-off.md) | warning | Turns off the agent's permission checks |
+| [sec-safety-off](sec-safety-off.md) | warning, depends on location | Turns off the agent's permission checks |
 | [sec-skill-arg-injection](sec-skill-arg-injection.md) | warning | Skill argument is pasted into a !`command` that runs when the skill loads |
 | [sec-script-instruction](sec-script-instruction.md) | warning | A script's comment or string gives the agent covert instructions |
 | [sec-script-invisible](sec-script-invisible.md) | warning | Invisible or bidirectional characters in a skill script |
-| [sec-hook-config](sec-hook-config.md) | error | Project hook or settings command fetches remote code, calls the network or redirects the API |
-| [sec-permission-allow](sec-permission-allow.md) | error | Allow rule or trust flag skips the prompt for any shell command, network tool or interpreter |
+| [sec-hook-config](sec-hook-config.md) | error, varies | Project hook or settings command fetches remote code, calls the network or redirects the API |
+| [sec-permission-allow](sec-permission-allow.md) | error, varies | Allow rule or trust flag skips the prompt for any shell command, network tool or interpreter |
 | [sec-permission-mode](sec-permission-mode.md) | warning | Settings turn on bypassPermissions or skip its confirmation |
 | [sec-no-secret-deny](sec-no-secret-deny.md) | note | The folder has a .env file but no permissions.deny rule keeps Claude Code out of it |
 | [sec-mcp-launcher](sec-mcp-launcher.md) | warning | MCP server runs an unpinned package or image, a downloaded script, or connects over plain http |

@@ -108,6 +108,13 @@ describe("comments that do not suppress", () => {
     expect(f[0]!.message).toBe('asitis-disable-next-line names "duplicate-rules", which is not an asitis rule (did you mean "duplicate-rule"?), so nothing is suppressed. Fix the rule id or delete the comment');
   });
 
+  test("a directive written with a space or underscore is reported with the spelling it needs", async () => {
+    const { f } = await lintText(`# Rules\n\n${DUP}\n<!-- asitis disable-next-line duplicate-rule -- alternatives -->\n${DUP}\n<!-- asitis_disable_file length -->\n`);
+    expect(live(f)).toEqual(["4 unknown-suppression", "5 duplicate-rule", "6 unknown-suppression"]);
+    expect(f[0]!.message).toBe('"asitis disable-next-line" is not an asitis directive (did you mean asitis-disable-next-line?), so nothing is suppressed. Write it with hyphens, as asitis-disable-next-line, followed by a rule id');
+    expect(f.find((x) => x.line === 6)!.message).toContain("did you mean asitis-disable-file?");
+  });
+
   test("an unknown directive and a reserved rule id are unknown too", async () => {
     const { f } = await lintText(`# Rules\n\n<!-- asitis-disable-line duplicate-rule -->\n<!-- asitis-disable-file sec-image-exfil -->\n<!-- asitis-disable-file unused-suppression -->\n`);
     expect(live(f)).toEqual(["3 unknown-suppression", "4 unknown-suppression", "5 unknown-suppression"]);

@@ -14,5 +14,8 @@ export const fixTrailingWhitespace: Fixer = (doc, issue) => {
     if (!e) return null;
     edits.push(e);
   }
-  return suggestion(doc, issue, "safe", `remove trailing spaces or tabs on ${runs.length === 1 ? "1 line" : `${runs.length} lines`}`, edits);
+  // Say which lines and how much goes: on a 1,000-character line the diff alone hides that only the end changes.
+  const chars = runs.reduce((n, r) => n + (r.to - r.from), 0);
+  const at = runs.slice(0, 3).map((r) => r.line + 1).join(", ") + (runs.length > 3 ? ` and ${runs.length - 3} more` : "");
+  return suggestion(doc, issue, "safe", `remove ${chars === 1 ? "1 trailing space or tab" : `${chars} trailing spaces or tabs`} at the end of ${runs.length === 1 ? "line" : "lines"} ${at}; nothing else on ${runs.length === 1 ? "that line" : "those lines"} changes`, edits);
 };

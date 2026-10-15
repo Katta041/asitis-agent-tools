@@ -8,7 +8,7 @@
 
 MCP server runs an unpinned package or image, a downloaded script, or connects over plain http.
 
-An MCP server in `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` or `.gemini/settings.json` started from an unpinned package (`npx -y foo`, `npx foo@latest`, `uvx foo`, `pipx run foo`), a container image with no tag or `:latest`, or a git source with no commit or tag. Also a server reached over plain `http` to a non-local host. Errors for a shell wrapper (`sh -c "..."`) whose command downloads and runs code or decodes base64 and runs it, and for `mcp-remote` pinned below 0.1.16 (CVE-2025-6514). A package that matches one of the repository's own workspace folders is skipped. Needs `--include config`.
+An MCP server in `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` or `.gemini/settings.json` started from an unpinned package (`npx -y foo`, `npx foo@latest`, `uvx foo`, `pipx run foo`), a container image with no tag or `:latest`, or a git source with no commit or tag. Also a server reached over plain `http` to a non-local host. Errors for a shell wrapper (`sh -c "..."`) whose command downloads and runs code or decodes base64 and runs it, and for `mcp-remote` pinned below 0.1.16 (CVE-2025-6514). A package that matches one of the repository's own workspace folders, or the repository itself (its folder name, or the `name` in the root `package.json` or `pyproject.toml`), is skipped: running your own published server at its latest release is the point of that config. Needs `--include config`.
 
 ## Why it matters
 

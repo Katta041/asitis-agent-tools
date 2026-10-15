@@ -1,5 +1,5 @@
 ## Catches
-A file that has more than one line but does not end with a line break. It is a note.
+A file that has more than one line but does not end with a line break. It is a note, offered so its safe fix can be applied with the others; no agent misreads the file because of it. With `--format github` notes are not annotated unless you pass `--annotate-notes`.
 
 ## Bad
 ```text

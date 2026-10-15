@@ -12,7 +12,7 @@ import { dp } from "./escape.js";
 import { findingPath, toFindings, type Finding, type FindingSource, type LineText } from "./findings.js";
 import { TOOL_NAME, type Kind } from "./kinds.js";
 import { CAPS } from "./limits.js";
-import { lintDoc, type Issue, type LintResult } from "./lint.js";
+import { lintDoc, readsAsRule, type Issue, type LintResult } from "./lint.js";
 import { UserError, type Sandbox } from "./paths.js";
 import { categoryOf } from "./rules/registry.js";
 import { extractImports } from "./scan.js";
@@ -180,6 +180,7 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
       failures.push({ path: sandbox.display(t), error: e instanceof UserError ? e.message : String(e) });
     }
   }
+  if (docs.length > 1) dropSymlinkCopies(docs, results);
   if (docs.length > 1) crossFileChecks(docs, results);
 
   // Project checks.
@@ -285,6 +286,36 @@ function sessionTool(d: Doc): string | null {
   }
 }
 
+/**
+ * CLAUDE.md as a symlink to AGENTS.md is linted under both names, since the two names are read as
+ * different kinds (imports, length limits). Findings that are the same under both names (a broken
+ * link on line 5) are kept only on the file the link points to, so one problem is listed once.
+ */
+function dropSymlinkCopies(docs: Doc[], results: LintResult[]): void {
+  const byReal = new Map<string, number[]>();
+  docs.forEach((d, i) => {
+    const g = byReal.get(d.file.real) ?? [];
+    g.push(i);
+    byReal.set(d.file.real, g);
+  });
+  for (const group of byReal.values()) {
+    if (group.length < 2) continue;
+    // The file itself is the one not reached through a link; fall back to the first.
+    const target = group.find((i) => !docs[i]!.file.linkTarget) ?? group[0]!;
+    const seen = new Set(results[target]!.issues.map((x) => `${x.rule}\0${x.line}\0${x.message}`));
+    for (const i of group) {
+      if (i === target) continue;
+      const r = results[i]!;
+      r.issues = r.issues.filter((x) => !seen.has(`${x.rule}\0${x.line}\0${x.message}`));
+    }
+  }
+}
+
+/** A line that is only bold text, as in "**Impact: CRITICAL**" or "__Note__:". */
+const BOLD_ONLY = /^(?:\*\*[^*]{1,200}\*\*|__[^_]{1,200}__)\s*:?$/;
+/** A line that is only a link, optionally after "Reference:", "Source:", "See" or "More:". */
+const LINK_ONLY = /^(?:(?:\*\*|__)?(?:references?|sources?|see(?: also)?|more|docs?|link|read more|learn more|details)(?:\*\*|__)?\s*:?(?:\*\*|__)?\s*)?\[[^\]]{0,300}\]\([^)\s]{0,500}\)\s*\.?$/;
+
 /** Cross-file heuristics when several files are linted together. */
 function crossFileChecks(docs: Doc[], results: LintResult[]): void {
   // Same rule line in two files that the same tool loads in the same session. Files of different
@@ -317,6 +348,11 @@ function crossFileChecks(docs: Doc[], results: LintResult[]): void {
       if (len < 20 || len > 400) continue;
       const norm = d.lines.line(i).toLowerCase().replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").replace(/\s+/g, " ").trim();
       if (norm.length < 20 || norm.startsWith("#") || norm.startsWith("|")) continue;
+      // Boilerplate that rule files repeat by design is not a rule: a bold label ("**Impact:
+      // CRITICAL**") unless it reads as an instruction, and a line that is only a link or a
+      // "Reference: [blog](...)" pointer (0.3.0 real-repo review: 23 of 29 hits in one repo).
+      if (BOLD_ONLY.test(norm) && !readsAsRule(norm)) continue;
+      if (LINK_ONLY.test(norm)) continue;
       const prev = seen.get(norm);
       if (prev && prev.path !== d.path) {
         results[idx]!.issues.push({ severity: "warning", rule: "duplicate-across-files", message: `Same rule also in ${dp(prev.path)} line ${prev.line}; ${TOOL_NAME[tool] ?? tool} loads both files every session, so it is paid for twice. Keep it in one file`, line: i + 1 });

@@ -8,7 +8,7 @@
 
 Mirrored instruction files share most rules but not all.
 
-Two files that are meant to say the same thing (AGENTS.md and CLAUDE.md, say) and mostly do, but one has rules the other lacks. Each rule found in only one file gets a note on its line, up to 10 per pair. The files must sit in the same folder, and the check stays silent unless at least three rules match and the matching rules are at least half of all the rules in the two files, so unrelated documents do not alert. A pair where one file imports the other is skipped. Both files have to be in the same lint run: a whole-folder lint, or both passed as paths.
+Two files that are meant to say the same thing (AGENTS.md and CLAUDE.md, say) and mostly do, but one has rules the other lacks. Each file of the pair gets one note, on its first rule the other file lacks, with a count and up to three examples. A pair that [agents-md-shadowed](agents-md-shadowed.md) already reports is skipped, since importing AGENTS.md fixes both. The files must sit in the same folder, and the check stays silent unless at least three rules match and the matching rules are at least half of all the rules in the two files, so unrelated documents do not alert. A pair where one file imports the other is skipped. Both files have to be in the same lint run: a whole-folder lint, or both passed as paths.
 
 ## Why it matters
 

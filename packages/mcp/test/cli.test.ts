@@ -105,8 +105,17 @@ describe("exit codes", () => {
     const h = cli(["--help"]);
     expect(h.code).toBe(0);
     expect(h.out).toMatch(/^asitis \d+\.\d+\.\d+: lint AI agent steering files/);
-    for (const flag of ["--root", "--format", "--fail-on", "--config", "--baseline", "--write-baseline", "--include", "--fix-preview", "--max-files", "--max-file-mb", "--quiet", "--allow-broad-root"]) expect(h.out).toContain(flag);
-    expect(cli(["lint", "-h"]).out).toBe(h.out);
+    for (const flag of ["--root", "--format", "--fail-on", "--config", "--baseline", "--write-baseline", "--include", "--fix-preview", "--max-files", "--max-file-mb", "--quiet", "--annotate-notes", "--allow-broad-root"]) expect(h.out).toContain(flag);
+  });
+  test("lint --help and budget --help print help for that command", () => {
+    const l = cli(["lint", "-h"]);
+    expect(l.code).toBe(0);
+    expect(l.out).toMatch(/^asitis lint \[paths\.\.\.\] \[options\]\n/);
+    for (const flag of ["--root", "--format", "--fail-on", "--include", "--fix-preview", "--annotate-notes"]) expect(l.out).toContain(flag);
+    const b = cli(["budget", "--help"]);
+    expect(b.code).toBe(0);
+    expect(b.out).toMatch(/^asitis budget \[file\] \[options\]\n/);
+    expect(b.out).not.toContain("--fail-on");
   });
 });
 
@@ -133,6 +142,13 @@ describe("one-line errors (exit 2)", () => {
   test("a missing path", () => expectUserError(cli(["lint", "--root", FIXTURE_REPO, "docs/nope.md"], FIXTURE_REPO), /^asitis: docs\/nope\.md: file not found\n$/));
   test("a path outside the root", () => expectUserError(cli(["lint", "--root", FIXTURE_REPO, path.join(CLI_FIX, "clean", "CLAUDE.md")]), /: outside the root folder; pass a path inside it, or change --root\n$/, CLI_FIX));
   test("a relative path that climbs out of the root", () => expectUserError(cli(["lint", "--root", "test-fixtures/agentic/repo", "README.md"]), /^asitis: README\.md: outside the root folder/));
+  test("an absolute path outside the current folder is shown by its name, not as ../../..", () =>
+    expectUserError(cli(["lint", "--root", FIXTURE_REPO, path.join(REPO, "README.md")], FIXTURE_REPO), /^asitis: "README\.md \(absolute path\)": outside the root folder; pass a path inside it, or change --root\n$/));
+  test("an empty path says so", () => expectUserError(cli(["lint", "--root", FIXTURE_REPO, ""], FIXTURE_REPO), /^asitis: got an empty path; pass a file inside the root, or leave paths out to lint every steering file\n$/));
+  test("a named MCP config file without --include config says which flag reads it", () => {
+    const dir = tmp({ ".mcp.json": "{}", "CLAUDE.md": "# P\n" });
+    expectUserError(cli(["lint", ".mcp.json"], dir), /^asitis: Refused: \.mcp\.json is not a markdown file; asitis only reads markdown .*; to audit agent config files, run asitis lint --include config\n$/);
+  });
   test("a folder given as a path", () => expectUserError(cli(["lint", "--root", FIXTURE_REPO, "docs"], FIXTURE_REPO), /^asitis: docs: a folder; pass files, or lint the folder with --root docs\n$/));
   test("a root that does not exist", () => expectUserError(cli(["lint", "--root", "no/such/folder"]), /^asitis: --root no\/such\/folder: folder not found\n$/));
   test("the home folder as the root", () => expectUserError(cli(["lint", "--root", os.homedir()]), /^asitis: refusing to use your home folder as the root; pass your project with --root, or add --allow-broad-root\n$/));

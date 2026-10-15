@@ -8,7 +8,7 @@
 
 Lines end in spaces or tabs that change nothing when rendered.
 
-Lines that end in spaces or tabs that do nothing when the markdown is rendered. Exactly two spaces (a hard line break), lines in code blocks and frontmatter are left alone. The finding points at the first such line and counts the rest. It is a note.
+Lines that end in spaces or tabs that do nothing when the markdown is rendered. Runs that could be a hard line break (two or more spaces before a non-blank line), whitespace after a backslash, fenced code, frontmatter, lines indented four or more columns (they can be code), and the inside of `<pre>`, `<textarea>`, `<script>` and `<style>` are left alone. The finding points at the first such line and counts the rest. It is a note; with `--format github` notes are not annotated unless you pass `--annotate-notes`.
 
 ## Why it matters
 

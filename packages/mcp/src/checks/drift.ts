@@ -29,6 +29,7 @@ import type { CheckContext, ExtraFile, ProjectCheck } from "../project.js";
 import { preview } from "../redact.js";
 import { extractImports } from "../scan.js";
 import { lineOfByte } from "../text.js";
+import { notProjectInstructions } from "../places.js";
 
 export interface DriftOptions {
   /**
@@ -44,23 +45,6 @@ export interface DriftOptions {
 }
 
 export const DRIFT_DEFAULTS: DriftOptions = { jaccard: 0.5, minShared: 3, maxPerPair: 10 };
-
-/**
- * Folders whose AGENTS.md or CLAUDE.md is material, not instructions for this repo: project
- * templates copied elsewhere, example and demo apps, test fixtures, generated temp output and
- * embedded assets (a product's own system prompt). Seen in the 0.3.0 real-repo review.
- */
-const NOT_PROJECT_DIR = /^(?:templates?|scaffolds?|boilerplates?|starters?|examples?|example[_-]projects?|samples?|demos?|fixtures?|__fixtures__|test-fixtures|testdata|assets|tmp|temp(?:[_-][^/]*)?)$/i;
-
-/** True for a path under one of those folders, or inside a skill (skills/<name>/...), where an AGENTS.md is skill reference material. */
-function notProjectInstructions(rel: string): boolean {
-  const parts = rel.split("/").slice(0, -1);
-  for (let i = 0; i < parts.length; i++) {
-    if (NOT_PROJECT_DIR.test(parts[i]!)) return true;
-    if (parts[i] === "skills" && i + 1 < parts.length) return true;
-  }
-  return false;
-}
 
 /** Claude Code follows @imports up to four hops (memory docs, "Import additional files"). */
 const MAX_IMPORT_HOPS = 4;
@@ -324,11 +308,52 @@ function emitGroup(ctx: CheckContext, items: Pending[], groupMessage: (others: s
   ctx.report(first.path, { ...first.issue, message: groupMessage(others) }, first.extra);
 }
 
-async function checkShadowed(ctx: CheckContext, files: Files, agentsDocs: Doc[]): Promise<void> {
+/**
+ * Share of lines two files have in common (as a multiset, blank lines ignored), from 0 to 1. Linear
+ * in the size of both files.
+ */
+export function lineSimilarity(a: string, b: string): number {
+  const count = (t: string): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const raw of t.split("\n")) {
+      const l = raw.trim();
+      if (l) m.set(l, (m.get(l) ?? 0) + 1);
+    }
+    return m;
+  };
+  const ma = count(a);
+  const mb = count(b);
+  let shared = 0;
+  let total = 0;
+  for (const [l, n] of ma) {
+    shared += Math.min(n, mb.get(l) ?? 0);
+    total += n;
+  }
+  for (const n of mb.values()) total += n;
+  return total === 0 ? 1 : (2 * shared) / total;
+}
+
+/**
+ * Above this line similarity a CLAUDE.md is a near-copy of the AGENTS.md beside it: Claude already
+ * gets that content, so "add @AGENTS.md" would load it twice. The 0.3.0 real-repo review found five
+ * such pairs, all above 0.95.
+ */
+const NEAR_COPY = 0.9;
+
+/** What checkShadowed found, for checkPairs: pairs it reported and near-copies it left to the drift check. */
+interface ShadowResult {
+  /** "agentsRel\0claudeRel" of every pair agents-md-shadowed reported. */
+  shadowed: Set<string>;
+  /** Same keys, for a CLAUDE.md that is a near-copy of the AGENTS.md beside it. */
+  nearCopies: Set<string>;
+}
+
+async function checkShadowed(ctx: CheckContext, files: Files, agentsDocs: Doc[]): Promise<ShadowResult> {
+  const result: ShadowResult = { shadowed: new Set(), nearCopies: new Set() };
   // Nested AGENTS.md files with no CLAUDE.md of their own, by the CLAUDE.md above that shadows them.
   const nested = new Map<string, Pending[]>();
   for (const doc of agentsDocs) {
-    if (ctx.deadline.expired) return;
+    if (ctx.deadline.expired) return result;
     let dir = dirOf(doc.file.rel);
     if (dir === ".claude" || dir.endsWith("/.claude")) dir = dirOf(dir);
     const counting = await countingFiles(files, dir);
@@ -349,6 +374,13 @@ async function checkShadowed(ctx: CheckContext, files: Files, agentsDocs: Doc[])
     // A CLAUDE.md higher up loads every session; for a nested AGENTS.md the match is a CLAUDE.md
     // in its own folder, which Claude Code loads when it works there.
     const nearestDoc = await files.doc(nearest);
+    // A CLAUDE.md that is a near-copy of this AGENTS.md already gives Claude its content; the
+    // problem there is the two copies drifting, which checkPairs reports with the right advice.
+    if (nearestDir === dir && nearestDoc && !onlyLocal && lineSimilarity(doc.text, nearestDoc.text) > NEAR_COPY) {
+      result.nearCopies.add(`${doc.file.rel}\0${nearest}`);
+      continue;
+    }
+    result.shadowed.add(`${doc.file.rel}\0${nearest}`);
     // Claude Code memory docs: a CLAUDE.md that tells Claude in words to read AGENTS.md only works if Claude decides to open it.
     const prose = nearestDir === dir && !!nearestDoc && /\b(?:read|follow|see|refer to|consult|check)\b[^.\n]{0,40}AGENTS\.md/i.test(nearestDoc.text) ? " (mentioning AGENTS.md in a sentence does not load it)" : "";
     const fix = nearestDir === dir ? `Add the line ${importLine} to ${dp(nearest)}${prose}` : `Add a CLAUDE.md next to it with the line @AGENTS.md`;
@@ -383,6 +415,7 @@ async function checkShadowed(ctx: CheckContext, files: Files, agentsDocs: Doc[])
         : `Claude Code skips this AGENTS.md and ${others} in subfolders, because ${dp(nearest)} exists and a CLAUDE.md above them switches off its AGENTS.md fallback. Add a CLAUDE.md with the line @AGENTS.md next to each, or set Project instructions to claude-md-and-agents-md in /config`,
     );
   }
+  return result;
 }
 
 interface Variant {
@@ -518,7 +551,7 @@ function imports(a: Doc, b: Doc, files: Files): boolean {
   return false;
 }
 
-function checkPairs(ctx: CheckContext, files: Files, members: Member[], opts: DriftOptions): void {
+function checkPairs(ctx: CheckContext, files: Files, members: Member[], opts: DriftOptions, shadow: ShadowResult): void {
   const groups = new Map<string, Member[]>();
   for (const m of members) {
     const g = groups.get(m.scope) ?? [];
@@ -579,8 +612,13 @@ function checkPairs(ctx: CheckContext, files: Files, members: Member[], opts: Dr
           }
         }
 
-        // instruction-drift: mirrored files that share most rules but not all.
+        // instruction-drift: mirrored files that share most rules but not all. Not for a pair that
+        // agents-md-shadowed already reported: Claude never reads that AGENTS.md, which is the
+        // bigger problem, and its fix (import AGENTS.md) ends the drift too.
         if (!mirrored || imports(A.doc, B.doc, files) || imports(B.doc, A.doc, files)) continue;
+        const pairKey = (x: Member, y: Member): string => `${x.doc.file.rel}\0${y.doc.file.rel}`;
+        if (shadow.shadowed.has(pairKey(A, B)) || shadow.shadowed.has(pairKey(B, A))) continue;
+        const nearCopy = shadow.nearCopies.has(pairKey(A, B)) || shadow.nearCopies.has(pairKey(B, A));
         let shared = 0;
         for (const k of ra.all.keys()) if (rb.all.has(k)) shared++;
         const union = ra.all.size + rb.all.size - shared;
@@ -589,24 +627,31 @@ function checkPairs(ctx: CheckContext, files: Files, members: Member[], opts: Dr
         const diffs: Array<{ in: Member; notIn: Member; line: number; preview: string }> = [];
         for (const [k, v] of ra.all) if (!rb.all.has(k)) diffs.push({ in: A, notIn: B, line: v.line, preview: v.preview });
         for (const [k, v] of rb.all) if (!ra.all.has(k)) diffs.push({ in: B, notIn: A, line: v.line, preview: v.preview });
-        // Several sentences of one paragraph differ together: one finding per line is enough.
-        const lines = new Set<string>();
-        const unique = diffs.filter((d) => {
-          const k = `${d.in.doc.path}\0${d.line}`;
-          if (lines.has(k)) return false;
-          lines.add(k);
-          return true;
-        });
-        const listed = unique.slice(0, opts.maxPerPair);
-        listed.forEach((d, n) => {
-          const more = n === listed.length - 1 && unique.length > listed.length ? ` ${unique.length - listed.length} more lines differ between the two files and are not listed.` : "";
-          ctx.report(d.in.doc.path, {
+        // One note per file of the pair, on its first differing line, with a count and a few
+        // examples: ten near-identical notes for one drifted pair is noise. Several sentences of
+        // one paragraph differ together, so lines are counted once.
+        const claudeSide = A.tool === "claude" ? A : B.tool === "claude" ? B : null;
+        const agentsSide = A.tool === "agents" ? A : B.tool === "agents" ? B : null;
+        for (const side of [A, B]) {
+          const mine = diffs.filter((d) => d.in === side);
+          const lines = new Set<number>();
+          const unique = mine.filter((d) => (lines.has(d.line) ? false : (lines.add(d.line), true)));
+          if (!unique.length) continue;
+          const other = side === A ? B : A;
+          const examples = unique.slice(0, Math.min(3, opts.maxPerPair)).map((d) => `line ${d.line} ${quote(d.preview)}`).join("; ");
+          const more = unique.length > 3 ? ` and ${fmt(unique.length - 3)} more` : "";
+          const n = unique.length === 1 ? "1 line here is" : `${fmt(unique.length)} lines here are`;
+          const fix =
+            nearCopy && claudeSide && agentsSide
+              ? `${dp(claudeSide.doc.path)} is a near-copy of ${dp(agentsSide.doc.path)}: replace it with the single line @AGENTS.md (plus anything only Claude needs) or a symlink to AGENTS.md, so there is one file to keep up to date`
+              : "Copy them across or delete the stale copies, so every agent gets the same instructions";
+          ctx.report(side.doc.path, {
             severity: "info",
             rule: "instruction-drift",
-            message: `Only in this file, not in ${dp(d.notIn.doc.path)}, although the two files mirror each other (${pct}% of their rules match): ${quote(d.preview)}. Copy it across or delete the stale copy, so every agent gets the same instructions.${more}`,
-            line: d.line,
+            message: `${n} not in ${dp(other.doc.path)}, although the two files mirror each other (${pct}% of their rules match): ${examples}${more}. ${fix}`,
+            line: unique[0]!.line,
           });
-        });
+        }
       }
     }
   }
@@ -624,7 +669,7 @@ export function driftCheck(opts: DriftOptions = DRIFT_DEFAULTS): ProjectCheck {
       const agentsDocs = docs.filter((d) => base(d) === "AGENTS.md");
       const variantDocs = docs.filter((d) => base(d) === "AGENTS.override.md" || base(d) === "AGENTS.local.md" || /(?:^|\/)\.agents\/[^/]+\.md$/i.test(d.file.rel));
 
-      await checkShadowed(ctx, files, agentsDocs);
+      const shadow = await checkShadowed(ctx, files, agentsDocs);
 
       // Every folder that holds a steering file, and the folders above it.
       const dirs = new Set<string>([""]);
@@ -637,7 +682,7 @@ export function driftCheck(opts: DriftOptions = DRIFT_DEFAULTS): ProjectCheck {
 
       // Contradiction and drift compare files with each other: only files of this call.
       const members = docs.map(memberOf).filter((m): m is Member => m !== null);
-      if (members.length > 1) checkPairs(ctx, files, members, opts);
+      if (members.length > 1) checkPairs(ctx, files, members, opts, shadow);
     },
   };
 }

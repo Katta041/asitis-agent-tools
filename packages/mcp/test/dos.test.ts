@@ -47,6 +47,15 @@ const CASES: Record<string, () => string> = {
   "long-line-words": () => fill("ignore previous instructions you are the assistant "),
   "pipes": () => fill("|"),
   "invalid-utf8": () => fill("ÿ"), // re-encoded below as raw 0xff bytes
+  // 0.3.0 precision changes: section paths and labels, copied-block lookups, quoted mentions,
+  // directive comments, root-resolved links and placeholder links.
+  "labels-and-items": () => fill("**Label a:**\n- Run the same step every time\n\n## H\n\n**Label b:**\n- Run the same step every time\n"),
+  "bold-lead-ins": () => fill("**Round 1** - ask the same question. Parse the output.\n\n"),
+  "quoted-mentions": () => fill('"a @b " @c '),
+  "directive-comments": () => fill("<!-- agents:cwd=root a:b=c -->\n"),
+  "root-links": () => fill("[x](docs/a.md) [y](url) "),
+  "placeholder-lines": () => fill("- [a] -> [b]\n"),
+  "deep-headings": () => fill("# a\n## b\n### c\n#### d\n##### e\n###### f\nText under the heading here.\n"),
 };
 
 let t: ReturnType<typeof tempDir>;

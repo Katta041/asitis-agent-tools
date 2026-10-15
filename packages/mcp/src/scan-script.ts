@@ -46,6 +46,8 @@ export interface ScriptHit {
   endColumn: number;
   /** The whole message. File text appears only inside q() quotes, at most 80 characters in total, redacted. */
   message: string;
+  /** What was matched, for rules reported once per skill (sec-safety-off: the flag or setting, lower case). */
+  key?: string;
 }
 
 /**
@@ -277,6 +279,12 @@ function firstHost(text: string): string {
   return m ? cleanHost(m[1]!) : "";
 }
 
+/** The first http(s) URL in text, up to the next space or quote, or "". */
+function firstUrl(text: string): string {
+  const m = /\bhttps?:\/\/[^\s"'<>`|;)]{1,300}/i.exec(text.length > 4096 ? text.slice(0, 4096) : text);
+  return m ? m[0] : "";
+}
+
 function cleanHost(h: string): string {
   const at = h.lastIndexOf("@");
   let host = at >= 0 ? h.slice(at + 1) : h;
@@ -373,6 +381,39 @@ function judgeDecoded(text: string): string | null {
 // ---------------------------------------------------------------------------
 // The scan
 
+/** Regex syntax in a line: a character class escape with a quantifier, or an inline flag group. */
+const REGEX_SOURCE = /\\[sSwWdDb][+*?{]|\(\?[imsux]{1,4}\)/;
+/** Headings of a page that documents attacks rather than performing them. */
+const EXAMPLE_HEADING = /\b(?:anti-?patterns?|patterns?|examples?|attacks?|malicious|detection|detects?|indicators?|signatures?)\b/i;
+
+/**
+ * Lines of a markdown page that show code as an example: inside a fence, or holding a code span,
+ * under a heading (at any level above) that names patterns or examples. One pass over the lines.
+ */
+function exampleLines(lines: LineIndex, fence: Uint8Array): Uint8Array {
+  const out = new Uint8Array(lines.count);
+  const stack: Array<{ level: number; hit: boolean }> = [];
+  let under = false;
+  for (let i = 0; i < lines.count; i++) {
+    const len = lines.end(i) - lines.start(i);
+    if (!fence[i] && len <= 4000) {
+      const t = lines.line(i);
+      const h = /^ {0,3}(#{1,6})\s+(.{0,300})/.exec(t);
+      if (h) {
+        const level = h[1]!.length;
+        while (stack.length && stack[stack.length - 1]!.level >= level) stack.pop();
+        stack.push({ level, hit: EXAMPLE_HEADING.test(h[2]!) });
+        under = stack.some((x) => x.hit);
+        continue;
+      }
+      if (under && t.includes("`")) out[i] = 1;
+      continue;
+    }
+    if (fence[i] && under) out[i] = 1;
+  }
+  return out;
+}
+
 interface Line {
   /** 0-based physical line where the logical line starts. */
   first: number;
@@ -399,14 +440,22 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
   const hits: ScriptHit[] = [];
   const perRule = new Map<string, number>();
   const seen = new Set<string>();
+  // A reference page of a scanner or security skill lists the attacks it detects, as code under
+  // headings such as "Dangerous Code Patterns" or "Examples" (0.3.0 real-repo review: five such
+  // hits in one skill). There a hit in a code block or code span is documentation: a note.
+  const example = source === "skill-doc" ? exampleLines(lines, fence) : null;
   const add = (h: ScriptHit): void => {
     const key = `${h.ruleId}\0${h.line}`;
     if (seen.has(key)) return;
     seen.add(key);
+    if (example && example[h.line - 1] && h.severity !== "info") {
+      h = { ...h, severity: "info", message: `${h.message} (reported as a note: this is an example in a reference page under a heading about patterns or examples)` };
+    }
     const n = perRule.get(h.ruleId) ?? 0;
     perRule.set(h.ruleId, n + 1);
     if (n < MAX_HITS_PER_RULE) hits.push(h);
-    else if (n === MAX_HITS_PER_RULE) hits.push({ ...h, severity: "info", message: `More ${h.ruleId} findings in this file were not listed` });
+    // Detectors stop once a rule is capped (a hostile file must stay cheap), so the rest are not counted.
+    else if (n === MAX_HITS_PER_RULE) hits.push({ ...h, severity: "info", message: `Only the first ${MAX_HITS_PER_RULE} ${h.ruleId} findings in this file are listed, and there are more; fix those and lint again to see the rest` });
   };
   /** True once a rule has hit its cap in this file: its detectors are skipped from then on. */
   const capped = (rule: string): boolean => (perRule.get(rule) ?? 0) > MAX_HITS_PER_RULE;
@@ -483,7 +532,7 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
       const m = SAFETY_OFF.exec(scanText);
       if (m && !full("sec-safety-off", li) && (m[0] !== "--yolo" || AGENT_CLI.test(scanText)) && !classifyNegation(scanText, m.index)) {
         const Q = new Quote();
-        if (!full("sec-safety-off", li)) add({ ruleId: "sec-safety-off", severity: source === "readme" ? "info" : "warning", ...at(li, L.table ? -1 : m.index, m[0].length), message: `Turns off the agent's permission checks (${m[0]}): ${Q.take(scanText.slice(wordStart(scanText, m.index - 20)))}; with checks off, any instruction the agent reads can run commands without asking you; remove it, or run it only inside a throwaway container` });
+        if (!full("sec-safety-off", li)) add({ ruleId: "sec-safety-off", key: m[0].toLowerCase(), severity: source === "readme" ? "info" : "warning", ...at(li, L.table ? -1 : m.index, m[0].length), message: `Turns off the agent's permission checks (${m[0]}): ${Q.take(scanText.slice(wordStart(scanText, m.index - 20)))}; with checks off, any instruction the agent reads can run commands without asking you; remove it, or run it only inside a throwaway container` });
       }
     }
 
@@ -501,7 +550,7 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
             if (isMd && !L.code && !/https?:\/\/|\$\{?[A-Za-z_]/.test(dl.text)) break;
             const host = firstHost(dl.text);
             const Q = new Quote();
-            if (!full("sec-remote-exec", li)) add({ ruleId: "sec-remote-exec", severity: sev("install"), ...at(li, L.table ? -1 : dl.start, seg.start + seg.text.length - dl.start), message: `Downloads code${host ? ` from ${Q.take(host, 40)}` : ""} and pipes it straight into ${Q.take(base(interp), 20)}${dec ? " after decoding it" : ""}: ${Q.take(scanText.slice(dl.start))}; whoever controls that server decides what runs on your machine; download the file, read it, then run it, or remove the step` });
+            if (!full("sec-remote-exec", li)) add({ ruleId: "sec-remote-exec", key: firstUrl(dl.text), severity: sev("install"), ...at(li, L.table ? -1 : dl.start, seg.start + seg.text.length - dl.start), message: `Downloads code${host ? ` from ${Q.take(host, 40)}` : ""} and pipes it straight into ${Q.take(base(interp), 20)}${dec ? " after decoding it" : ""}: ${Q.take(scanText.slice(dl.start))}; whoever controls that server decides what runs on your machine; download the file, read it, then run it, or remove the step` });
           } else if (dec && !full("sec-encoded-blob", li) && !classifyNegation(scanText, dec.start)) {
             const Q = new Quote();
             if (!full("sec-encoded-blob", li)) add({ ruleId: "sec-encoded-blob", severity: sev("soft"), ...at(li, L.table ? -1 : dec.start, seg.start + seg.text.length - dec.start), message: `Decodes hidden text and pipes it into ${Q.take(base(interp), 20)}: ${Q.take(scanText.slice(Math.max(0, dec.start - 30)))}; encoding hides what runs from anyone reading the skill; replace it with the plain command so it can be reviewed` });
@@ -522,7 +571,7 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
       const Q = new Quote();
       if (kind === "download") {
         const host = firstHost(inner);
-        if (!full("sec-remote-exec", li)) add({ ruleId: "sec-remote-exec", severity: sev("install"), ...at(li, open, inner.length + 3), message: `Runs the output of a download as code${host ? ` from ${Q.take(host, 40)}` : ""}: ${Q.take(scanText.slice(Math.max(0, open - 12)))}; whoever controls that server decides what runs on your machine; download the file, read it, then run it, or remove the step` });
+        if (!full("sec-remote-exec", li)) add({ ruleId: "sec-remote-exec", key: firstUrl(inner), severity: sev("install"), ...at(li, open, inner.length + 3), message: `Runs the output of a download as code${host ? ` from ${Q.take(host, 40)}` : ""}: ${Q.take(scanText.slice(Math.max(0, open - 12)))}; whoever controls that server decides what runs on your machine; download the file, read it, then run it, or remove the step` });
       } else {
         if (!full("sec-encoded-blob", li)) add({ ruleId: "sec-encoded-blob", severity: sev("soft"), ...at(li, open, inner.length + 3), message: `Decodes hidden text and runs it as code: ${Q.take(scanText.slice(Math.max(0, open - 12)))}; encoding hides what runs from anyone reading the skill; replace it with the plain command so it can be reviewed` });
       }
@@ -585,7 +634,8 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
       });
     }
 
-    if (source === "script" && !capped("sec-script-instruction")) {
+    // A detection pattern ("ignore\\s+previous\\s+instructions" in a scanner's rule list) is not addressed to anyone.
+    if (source === "script" && !capped("sec-script-instruction") && !REGEX_SOURCE.test(s)) {
       for (const [re, label] of INSTRUCTION) {
         const m = re.exec(s);
         if (m) {

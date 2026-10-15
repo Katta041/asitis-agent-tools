@@ -1,5 +1,7 @@
 ## Catches
-A relative link whose target file does not exist, or whose `#anchor` matches no heading in the target (or in the same file for a bare `#anchor`). Anchors are compared the way GitHub builds them: lowercase, punctuation dropped, spaces to hyphens, with `-1`, `-2` suffixes for repeated headings. External URLs, `/site-absolute` paths and template placeholders such as `${GITHUB_SERVER_URL}` are not checked.
+A relative link whose target file does not exist, or whose `#anchor` matches no heading in the target (or in the same file for a bare `#anchor`). Anchors are compared the way GitHub builds them: lowercase, punctuation dropped, spaces to hyphens, with `-1`, `-2` suffixes for repeated headings. Anchors also match with emoji variation selectors (U+FE0F) removed, as VS Code and most renderers build them. External URLs, `/site-absolute` paths, template placeholders such as `${GITHUB_SERVER_URL}` and single words with no dot or slash (`[Smith et al.](url)`) are not checked, and a link into a git submodule named in `.gitmodules` counts as present, since a plain clone leaves the submodule folder empty.
+
+A path that is missing next to the file but exists from the repository root (`docs/x.md` written in `.cursor/rules/a.mdc`) is a note: an agent working from the root finds it, but editors and Markdown viewers do not.
 
 ## Bad
 ```markdown

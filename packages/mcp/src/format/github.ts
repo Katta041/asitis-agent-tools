@@ -30,13 +30,24 @@ export function escapeProperty(s: string): string {
 export interface GithubOptions {
   quiet?: boolean;
   notes?: readonly string[];
+  /**
+   * Also annotate findings of severity note. Off by default: every annotation shows up on the pull
+   * request, and notes (a hidden comment, a missing final newline) are not worth a reviewer's
+   * attention there. They still count in the summary line.
+   */
+  annotateNotes?: boolean;
 }
 
 
 export function formatGithub(report: LintReport, opts: GithubOptions = {}): string {
   const lines: string[] = [];
+  let hiddenNotes = 0;
   for (const f of report.findings) {
     if (f.suppressed) continue;
+    if (f.severity === "note" && !opts.annotateNotes) {
+      hiddenNotes++;
+      continue;
+    }
     const props = [
       `file=${escapeProperty(esc(workspacePath(report.root, f.path), 400))}`,
       `line=${f.line}`,
@@ -50,6 +61,7 @@ export function formatGithub(report: LintReport, opts: GithubOptions = {}): stri
   if (!opts.quiet) {
     for (const note of opts.notes ?? []) lines.push(`::notice::${escapeData(esc(note, 400))}`);
     lines.push(`asitis: ${summaryLine(report.summary)}`);
+    if (hiddenNotes) lines.push(`asitis: ${hiddenNotes.toLocaleString("en-US")} ${hiddenNotes === 1 ? "note is" : "notes are"} not shown as annotations; add --annotate-notes to show ${hiddenNotes === 1 ? "it" : "them"}`);
   }
   return lines.length ? `${lines.join("\n")}\n` : "";
 }

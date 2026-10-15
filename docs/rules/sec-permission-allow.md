@@ -2,7 +2,9 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| security | error | one file | no | no (security rule) |
+| security | error, varies (see below) | one file | no | no (security rule) |
+
+Severity: error for Bash or Bash(*); a warning for network tools, interpreters with a wildcard and an unscoped WebFetch.
 
 ## What it catches
 

@@ -1,5 +1,5 @@
 ## Catches
-A `SKILL.md` whose body, after the frontmatter, is over about 5,000 tokens. The Agent Skills spec recommends staying under that and moving detail into files the skill references, which load only when needed.
+A `SKILL.md` whose body, after the frontmatter, is over about 5,000 tokens. The Agent Skills spec recommends staying under that and moving detail into files the skill references, which load only when needed. Token counts are local estimates, so a body of 5,000 to 6,000 tokens is a note and the warning starts above 6,000. When the file is also over 500 lines, this one finding gives both counts instead of a second [length](length.md) finding.
 
 ## Bad
 ```markdown

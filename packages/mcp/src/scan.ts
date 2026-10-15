@@ -329,9 +329,25 @@ const INSTRUCTION_PATTERNS: Array<[RegExp, string]> = [
 /** URLs say where something lives, not what to do: "claude" in code.claude.com is not an address to Claude. */
 const URL_LIKE = /\b(?:[a-z][a-z0-9+.-]{1,31}:\/\/|www\.)[^\s<>()"']{1,2048}/gi;
 
+/**
+ * A machine-readable directive such as "agents:cwd=root" or "prettier-ignore key=value": words
+ * joined by ":" or "=" with no spaces inside them, and no sentence. Tools read these, not models.
+ */
+const DIRECTIVE_COMMENT = /^[\w.@/-]{1,60}[:=][\w.@/,:=-]{0,200}(?:\s{1,4}[\w.@/-]{1,60}[:=][\w.@/,:=-]{0,200}){0,7}$/;
+/** Words that make a directive comment ask for an action, so it is still checked as an instruction. */
+const DIRECTIVE_ACTION = /\b(?:send|upload|post|leak|share|expose|dump|email|exfiltrat\w*|run|exec\w*|eval|curl|wget|push|commit|delete|remove|ignore|disregard|forget|override|bypass|skip|disable|secrets?|tokens?|passwords?|credentials?|keys?|env)\b|\.env\b/i;
+/** Labels that only say a comment speaks to an AI; the others ask for something harmful. */
+const ADDRESS_ONLY = new Set(["addresses the AI directly", "addresses an AI assistant by name", "reads like an instruction"]);
+
 export function classifyInstruction(text: string): string | null {
   const t = (text.length > COMMENT_SLICE ? text.slice(0, COMMENT_SLICE) : text).replace(URL_LIKE, " ");
-  for (const [re, label] of INSTRUCTION_PATTERNS) if (re.test(t)) return label;
+  for (const [re, label] of INSTRUCTION_PATTERNS) {
+    if (!re.test(t)) continue;
+    // A key:value=value directive comment is written for a tool; it is flagged only when it asks
+    // for something harmful (ignore instructions, hide, run, send secrets), never just for naming the AI.
+    if (ADDRESS_ONLY.has(label) && t.trim().length <= 300 && DIRECTIVE_COMMENT.test(t.trim()) && !DIRECTIVE_ACTION.test(t)) continue;
+    return label;
+  }
   return null;
 }
 
@@ -666,6 +682,27 @@ export function importIsSurelyFile(im: ImportRef): boolean {
   return im.looksLikePath && !npmName;
 }
 
+/** Counts straight and curly double quotes from the start of a line, moving forward only, so repeated calls stay linear. */
+class QuoteCounter {
+  private line = -1;
+  private pos = 0;
+  private n = 0;
+  constructor(private readonly lines: LineIndex) {}
+  before(li: number, at: number): number {
+    const s = this.lines.text;
+    if (li !== this.line) {
+      this.line = li;
+      this.pos = this.lines.start(li);
+      this.n = 0;
+    }
+    for (; this.pos < at; this.pos++) {
+      const c = s.charCodeAt(this.pos);
+      if (c === 34 || c === 0x201c || c === 0x201d) this.n++;
+    }
+    return this.n;
+  }
+}
+
 export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLine = -1): ImportRef[] {
   const s = lines.text;
   const out: ImportRef[] = [];
@@ -688,6 +725,7 @@ export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLin
     }
     return at >= cStart && at < cEnd;
   };
+  const quotes = new QuoteCounter(lines);
   let pos = 0;
   while (out.length < CAPS.maxLinkChecks) {
     const at = s.indexOf("@", pos);
@@ -710,8 +748,12 @@ export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLin
     }
     pos = q;
     if (!raw || raw.startsWith("@") || raw.startsWith('"') || raw.startsWith("'")) continue;
+    // Inside a quotation ("Thanks @user" in a style guide) an @ is a mention, not an import:
+    // an odd number of double quotes before it on the line means it is inside one.
+    if (quotes.before(li, at) % 2 === 1) continue;
     let cut = raw.length;
-    while (cut > 0 && ".,;:!?)]*".includes(raw[cut - 1]!)) cut--; // "*" closes **bold** around an import
+    // "*" closes **bold** around an import; quotes and punctuation end a sentence around it.
+    while (cut > 0 && ".,;:!?)]*\"'\u201c\u201d\u2018\u2019".includes(raw[cut - 1]!)) cut--;
     const trimmed = raw.slice(0, cut);
     if (!trimmed) continue;
     const looksLikePath = trimmed.includes("/") || /\.[A-Za-z0-9]{1,10}$/.test(trimmed);

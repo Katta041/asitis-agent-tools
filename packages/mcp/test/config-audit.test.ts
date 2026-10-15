@@ -417,7 +417,8 @@ describe("corpus", () => {
   test("the benign corpus gives no findings and no notes", async () => {
     const sb = await Sandbox.create([path.join(CONFIG, "benign")]);
     const p = await lintProject(sb, { include: ["config"], deadline: deadline() });
-    expect(p.notes).toEqual([]);
+    // The only notice says what was read, so a clean run is visibly a run.
+    expect(p.notes).toEqual(["Config scan: 5 files read (.claude/settings.json, .mcp.json, .cursor/mcp.json, .vscode/mcp.json, .gemini/settings.json)."]);
     expect(p.findings()).toEqual([]);
     expect(p.results.map((r) => r.path)).toEqual(["CLAUDE.md"]);
   });

@@ -4,6 +4,7 @@
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
+import { lineSimilarity } from "../src/checks/drift.js";
 import { Deadline } from "../src/discover.js";
 import type { Finding } from "../src/findings.js";
 import { CAPS } from "../src/limits.js";
@@ -196,10 +197,14 @@ describe("cross-file-contradiction", () => {
 });
 
 describe("instruction-drift", () => {
-  test("mirrored files with three differing rules list exactly those three", async () => {
+  test("mirrored files with three differing rules give one note per file, on its first differing line, naming them", async () => {
     const fs = await drift("mirrored");
-    expect(short(fs)).toEqual(["AGENTS.md:8 instruction-drift", "AGENTS.md:13 instruction-drift", "GEMINI.md:12 instruction-drift"]);
+    expect(short(fs)).toEqual(["AGENTS.md:8 instruction-drift", "GEMINI.md:12 instruction-drift"]);
     expect(fs[0]!.message).toContain("70% of their rules match");
+    expect(fs[0]!.message).toMatch(/^2 lines here are not in GEMINI\.md/);
+    expect(fs[0]!.message).toContain("line 8");
+    expect(fs[0]!.message).toContain("line 13");
+    expect(fs[1]!.message).toMatch(/^1 line here is not in AGENTS\.md/);
     expect(fs.every((f) => f.severity === "note")).toBe(true);
   });
 
@@ -207,14 +212,45 @@ describe("instruction-drift", () => {
     expect(await drift("unrelated")).toEqual([]);
   });
 
-  test("at most 10 rules per pair, with a count of the rest", async () => {
+  test("many differing rules give one note per file with three examples and a count of the rest", async () => {
     const common = Array.from({ length: 30 }, (_, i) => `- Run \`make target-${i}\` before every commit.`).join("\n");
     const onlyA = Array.from({ length: 8 }, (_, i) => `- Use the alpha tool number ${i} for builds.`).join("\n");
     const onlyB = Array.from({ length: 8 }, (_, i) => `- Use the beta tool number ${i} for builds.`).join("\n");
     const root = temp({ "AGENTS.md": `${common}\n${onlyA}\n`, "GEMINI.md": `${common}\n${onlyB}\n` });
     const fs = (await lint(root)).filter((f) => f.ruleId === "instruction-drift");
-    expect(fs).toHaveLength(10);
-    expect(fs.some((f) => f.message.includes("6 more lines differ"))).toBe(true);
+    expect(fs).toHaveLength(2);
+    for (const f of fs) {
+      expect(f.message).toMatch(/^8 lines here are not in /);
+      expect(f.message).toContain("and 5 more");
+    }
+  });
+
+  test("not reported for a pair agents-md-shadowed already reports", async () => {
+    const shared = Array.from({ length: 6 }, (_, i) => `- Run \`make check-${i}\` before every commit.`).join("\n");
+    const root = temp({
+      "AGENTS.md": `${shared}\n- Use the alpha tool for builds.\n- Keep the alpha cache warm.\n`,
+      "CLAUDE.md": `${shared}\n- Use the beta tool for builds.\n${Array.from({ length: 6 }, (_, i) => `Claude-only note number ${i} about the review flow.`).join("\n\n")}\n`,
+    });
+    const fs = await lint(root);
+    expect(fs.filter((f) => f.ruleId === "agents-md-shadowed")).toHaveLength(1);
+    expect(fs.filter((f) => f.ruleId === "instruction-drift")).toEqual([]);
+  });
+
+  test("a CLAUDE.md that is a near-copy of AGENTS.md gets drift with the replace-it advice, not agents-md-shadowed", async () => {
+    const shared = Array.from({ length: 30 }, (_, i) => `- Run \`make check-${i}\` before every commit.`).join("\n");
+    const root = temp({ "AGENTS.md": `${shared}\n- Use the alpha tool for builds.\n`, "CLAUDE.md": `${shared}\n- Use the beta tool for builds.\n` });
+    const fs = await lint(root);
+    expect(fs.filter((f) => f.ruleId === "agents-md-shadowed")).toEqual([]);
+    const d = fs.filter((f) => f.ruleId === "instruction-drift");
+    expect(d).toHaveLength(2);
+    expect(d[0]!.message).toContain("CLAUDE.md is a near-copy of AGENTS.md: replace it with the single line @AGENTS.md");
+    expect(d.every((f) => f.severity === "note")).toBe(true);
+  });
+
+  test("lineSimilarity is 1 for equal files, 0 for disjoint ones and ignores blank lines", () => {
+    expect(lineSimilarity("a\nb\n", "a\n\nb")).toBe(1);
+    expect(lineSimilarity("a\nb", "c\nd")).toBe(0);
+    expect(lineSimilarity("a\nb\nc\nd", "a\nb\nc\ne")).toBe(0.75);
   });
 });
 
@@ -285,7 +321,8 @@ describe("DoS: 2,000 steering files", () => {
     expect(p.timedOut).toBe(false);
     expect(ms).toBeLessThan(CAPS.callBudgetMs);
     const fs = p.findings();
-    expect(fs.filter((f) => f.ruleId === "agents-md-shadowed")).toHaveLength(1000);
+    // Each CLAUDE.md is a near-copy of its AGENTS.md, so the pair is reported as drift, not as shadowed.
+    expect(fs.filter((f) => f.ruleId === "agents-md-shadowed")).toHaveLength(0);
     expect(fs.filter((f) => f.ruleId === "cross-file-contradiction")).toHaveLength(1000);
     expect(fs.filter((f) => f.ruleId === "instruction-drift").length).toBeGreaterThanOrEqual(1000);
   }, 120_000);

@@ -2,17 +2,19 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| budget | warning | one file | no | yes |
+| budget | warning, varies (see below) | one file | no | yes |
+
+Severity: warning above about 6,000 tokens, a note from 5,000 to 6,000.
 
 ## What it catches
 
 SKILL.md body is over about 5,000 tokens.
 
-A `SKILL.md` whose body, after the frontmatter, is over about 5,000 tokens. The Agent Skills spec recommends staying under that and moving detail into files the skill references, which load only when needed.
+A `SKILL.md` whose body, after the frontmatter, is over about 5,000 tokens. The Agent Skills spec recommends staying under that and moving detail into files the skill references, which load only when needed. Token counts are local estimates, so a body of 5,000 to 6,000 tokens is a note and the warning starts above 6,000. When the file is also over 500 lines, this one finding gives both counts instead of a second [length](length.md) finding.
 
 ## Why it matters
 
-The Agent Skills spec recommends a body under 5,000 tokens, with detail moved to files the skill links to.
+The Agent Skills spec recommends a body under 5,000 tokens, with detail moved to files the skill links to. Token counts are estimates, so a body up to 6,000 is a note. A body over 500 lines is counted in the same finding.
 
 ## Bad example
 

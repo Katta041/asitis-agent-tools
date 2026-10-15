@@ -87,8 +87,8 @@ function collect(doc: Doc, issues: readonly Issue[], safety: "safe" | "all", rul
   for (const issue of issues) {
     if (issue.suppressed) continue;
     if (rules && !rules.has(issue.rule)) continue;
-    // The "More <rule> findings in this file were not listed" line is not a finding of its own.
-    if (issue.message.startsWith(`More ${issue.rule} findings`)) continue;
+    // The note that says how many more findings of a rule were not listed is not a finding of its own.
+    if (isMoreNote(issue)) continue;
     const fixer = FIXERS[issue.rule];
     if (!fixer) continue;
     let fix: FixSuggestion | null;
@@ -403,3 +403,8 @@ export function jsonLit(s: string): string {
 
 /** The safety the registry gives a rule's fix, or false. */
 export const registeredSafety = (ruleId: string): false | FixSafety => getRule(ruleId)?.fixable ?? false;
+
+/** The note lint adds when a rule hits its per-file cap ("12 more broken-link findings in this file were not listed"). */
+export function isMoreNote(issue: { rule: string; message: string; severity: string }): boolean {
+  return issue.severity === "info" && (/^[\d,]+ more \S+ findings? in this file (?:was|were) not listed/.test(issue.message) || issue.message.startsWith(`Only the first `) && issue.message.includes(` ${issue.rule} findings in this file are listed`));
+}

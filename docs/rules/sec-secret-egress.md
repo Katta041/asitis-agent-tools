@@ -2,13 +2,15 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| security | error | one file | no | no (security rule) |
+| security | error, depends on location (see below) | one file | no | no (security rule) |
+
+Severity: error in scripts and SKILL.md; a warning in other skill markdown; a note in README.md and in examples under a patterns or examples heading.
 
 ## What it catches
 
 Reads a secret and sends data over the network in the same script or block.
 
-A script, or a fenced block in a skill's markdown, that reads a secret source (`~/.ssh`, private key files, `~/.aws/credentials` and other cloud or registry credentials, keychain commands, browser stores, crypto wallets) and, anywhere in the same script or block, sends data over the network (`curl`, `wget`, `nc`, `scp`, a Python `requests` call, a webhook URL). Weaker sources (a `.env` file, `gh auth token`, `printenv` or a dump of every environment variable, `.npmrc`) count only when the send is on the same line. Using a key with `ssh -i` does not count. Error in scripts and SKILL.md, warning in other markdown in the skill folder, note in README.md. Needs `--include skills`.
+A script, or a fenced block in a skill's markdown, that reads a secret source (`~/.ssh`, private key files, `~/.aws/credentials` and other cloud or registry credentials, keychain commands, browser stores, crypto wallets) and, anywhere in the same script or block, sends data over the network (`curl`, `wget`, `nc`, `scp`, a Python `requests` call, a webhook URL). Weaker sources (a `.env` file, `gh auth token`, `printenv` or a dump of every environment variable, `.npmrc`) count only when the send is on the same line. Using a key with `ssh -i` does not count. Error in scripts and SKILL.md, warning in other markdown in the skill folder, note in README.md and in code under a patterns or examples heading of a reference page. Needs `--include skills`.
 
 ## Why it matters
 

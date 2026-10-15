@@ -8,7 +8,7 @@
 
 A frontmatter key the reading tool ignores.
 
-A frontmatter key that the tool reading the file does not know. When the key is one or two edits from a real one (`user-invokable` for `user-invocable`) it is a warning, because it is almost always a typo that silently turns the option off. Otherwise it is a note: the key is kept but does nothing.
+A frontmatter key that the tool reading the file does not know. When the key is one or two edits from a real one (`user-invokable` for `user-invocable`) and its value is the kind the real key takes (a boolean for `user-invocable`), it is a warning, because it is almost always a typo that silently turns the option off. Otherwise it is a note: the key does nothing. In a SKILL.md the note adds that claude.ai and the Claude API reject an upload with keys outside the spec, and suggests moving your own data under `metadata:`.
 
 ## Why it matters
 

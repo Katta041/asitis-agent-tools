@@ -1,5 +1,5 @@
 ## Catches
-The same line in two files that one tool loads together at the start of a session: CLAUDE.md and a `.claude/rules/` file without `paths`, CLAUDE.md and a file it imports with `@`, two Cursor rules with `alwaysApply: true`. Files for different tools (CLAUDE.md and AGENTS.md) are never compared, because no session loads both. Only runs when the whole folder is linted.
+The same line in two files that one tool loads together at the start of a session: CLAUDE.md and a `.claude/rules/` file without `paths`, CLAUDE.md and a file it imports with `@`, two Cursor rules with `alwaysApply: true`. Files for different tools (CLAUDE.md and AGENTS.md) are never compared, because no session loads both. Boilerplate that rule files repeat by design is not compared: a line that is only bold text (`**Impact: CRITICAL**`) unless it reads as an instruction, and a line that is only a link or a "Reference: [blog](...)" pointer. Only runs when the whole folder is linted.
 
 ## Bad
 ```markdown

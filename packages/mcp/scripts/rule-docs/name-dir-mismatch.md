@@ -1,5 +1,5 @@
 ## Catches
-A `SKILL.md` whose `name` differs from the folder it sits in.
+A `SKILL.md` whose `name` differs from the folder it sits in. Only skills that sit directly in a skills folder (`.claude/skills/x/SKILL.md`, `skills/x/SKILL.md`) or at the top of the root are checked: a SKILL.md nested inside another skill's folder (the stages of a pipeline) is often prefixed on purpose, and a `template/` folder is meant to be copied and renamed. SKILL.md files under tests, fixtures or testdata folders are not checked by any skill format rule.
 
 ## Bad
 ```text

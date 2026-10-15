@@ -28,6 +28,7 @@ import type { CheckContext, ProjectCheck } from "../project.js";
 import { preview } from "../redact.js";
 import { binaryKind, scanScript, type ScriptHit, type ScriptSource } from "../scan-script.js";
 import { decode, LineIndex } from "../text.js";
+import { isOwnUrl, ownProject, type OwnProject } from "./own.js";
 
 /** Walk limits per call. */
 const MAX_DEPTH = 8;
@@ -58,12 +59,63 @@ function toIssue(h: ScriptHit): Issue {
   return { severity: h.severity, rule: h.ruleId, message: h.message, line: h.line, column: h.column, endLine: h.line, endColumn: h.endColumn };
 }
 
-/** Reports hits on a file that is not a linted markdown file. */
-function reportExtra(ctx: CheckContext, display: string, kind: "skill-script" | "markdown", text: string, hits: ScriptHit[]): void {
+/** A hit held back so that a rule reported once per skill can pick which copy to show. */
+interface Held {
+  display: string;
+  kind: "skill-script" | "markdown" | null; // null: a linted markdown file (SKILL.md)
+  lineText: (n: number) => string;
+  source: ScriptSource;
+  hit: ScriptHit;
+}
+
+/** Rules reported once per skill and matched text: the same flag in the code, a comment and the docs is one problem. */
+const ONCE_PER_SKILL = new Set(["sec-safety-off"]);
+
+/**
+ * A download piped into a shell from the project's own repository or homepage (a skill that tests
+ * the project's install script) is a warning, not an error: it is still unreviewed code at run
+ * time, but it comes from the same people as the skill. 0.3.0 real-repo review: both error hits
+ * of this kind in 71 repos were a release-test skill running its own installer.
+ */
+function ownSource(h: ScriptHit, own: OwnProject | null): ScriptHit {
+  if (!own || h.ruleId !== "sec-remote-exec" || h.severity !== "error" || !h.key || !isOwnUrl(own, h.key)) return h;
+  return { ...h, severity: "warning", message: `${h.message} (a warning, not an error: the URL is this project's own repository or site)` };
+}
+
+/** Reports hits on a file that is not a linted markdown file; rules in ONCE_PER_SKILL go to held instead. */
+function reportExtra(ctx: CheckContext, display: string, kind: "skill-script" | "markdown", text: string, hits: ScriptHit[], source: ScriptSource, held: Held[] | null, own: OwnProject | null = null): void {
   if (!hits.length) return;
   const lines = new LineIndex(text);
   const lineText = (n: number): string => (n >= 1 && n <= lines.count ? lines.line(n - 1) : "");
-  for (const h of hits) ctx.report(display, toIssue(h), { kind, lineText });
+  for (const raw of hits) {
+    const h = ownSource(raw, own);
+    if (held && h.key && ONCE_PER_SKILL.has(h.ruleId)) held.push({ display, kind, lineText, source, hit: h });
+    else ctx.report(display, toIssue(h), { kind, lineText });
+  }
+}
+
+const SOURCE_RANK: Record<ScriptSource, number> = { script: 0, "skill-md": 1, "skill-doc": 2, readme: 3 };
+const SEVERITY_RANK: Record<string, number> = { error: 0, warning: 1, info: 2 };
+
+/** One finding per rule and matched text in a skill: code before comments, scripts before SKILL.md before docs. */
+function reportHeld(ctx: CheckContext, held: Held[]): void {
+  const groups = new Map<string, Held[]>();
+  for (const h of held) {
+    const k = `${h.hit.ruleId}\0${h.hit.key}`;
+    const g = groups.get(k) ?? [];
+    g.push(h);
+    groups.set(k, g);
+  }
+  const comment = (h: Held): number => (/^\s*(?:\/\/|#|\*|\/\*|--|<!--)/.test(h.lineText(h.hit.line)) ? 1 : 0);
+  for (const g of groups.values()) {
+    g.sort((a, b) => SEVERITY_RANK[a.hit.severity]! - SEVERITY_RANK[b.hit.severity]! || comment(a) - comment(b) || SOURCE_RANK[a.source] - SOURCE_RANK[b.source]);
+    const best = g[0]!;
+    const files = new Set(g.slice(1).map((x) => x.display).filter((d) => d !== best.display));
+    const also = g.length > 1 ? ` (also on ${g.length - 1} more ${g.length - 1 === 1 ? "line" : "lines"} of this skill${files.size ? `, in ${files.size === 1 ? "1 other file" : `${files.size} other files`}` : ""})` : "";
+    const issue = toIssue({ ...best.hit, message: best.hit.message + also });
+    if (best.kind) ctx.report(best.display, issue, { kind: best.kind, lineText: best.lineText });
+    else ctx.report(best.display, issue);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +181,7 @@ function checkFrontmatter(ctx: CheckContext, doc: Doc): void {
     ctx.report(doc.path, {
       severity: "warning",
       rule: "sec-skill-allowed-tools",
-      message: `allowed-tools pre-approves ${shown} (${first.why}${broad.length > 1 ? ", and more" : ""}), so while this ${kind === "skill" ? "skill" : "command"} runs those calls go ahead without asking you; scope each entry to the commands it needs, for example Bash(git status *) or WebFetch(domain:docs.example.com)`,
+      message: `allowed-tools pre-approves ${shown} (${first.why}${broad.length > 1 ? ", and more" : ""}), so during the turn that invokes this ${kind === "skill" ? "skill" : "command"} those calls go ahead without asking you; scope each entry to the commands it needs, for example Bash(git status *) or WebFetch(domain:docs.example.com)`,
       line: fm.keyLines["allowed-tools"] ?? 1,
     });
   } else if (kind === "claude-agent" && data && data["tools"] === undefined) {
@@ -202,7 +254,7 @@ async function listSkill(ctx: CheckContext, dirRel: string, stats: Stats, skillD
 }
 
 /** Scans one file in a skill folder. */
-async function scanFile(ctx: CheckContext, rel: string, stats: Stats, skillDoc: Doc | null): Promise<void> {
+async function scanFile(ctx: CheckContext, rel: string, stats: Stats, skillDoc: Doc | null, held: Held[] | null = null, own: OwnProject | null = null): Promise<void> {
   const name = path.posix.basename(rel);
   const lower = name.toLowerCase();
   const ext = path.posix.extname(lower);
@@ -223,7 +275,7 @@ async function scanFile(ctx: CheckContext, rel: string, stats: Stats, skillDoc: 
       const source: ScriptSource = lower === "readme.md" ? "readme" : "skill-doc";
       stats.docs++;
       const hits = scanScript(doc.text, source, doc.frontmatter.present ? { skipUntilLine: doc.frontmatter.endLine } : {});
-      reportExtra(ctx, rel, "markdown", doc.text, hits);
+      reportExtra(ctx, rel, "markdown", doc.text, hits, source, held, own);
     } catch (e) {
       if (e instanceof UserError) stats.unread.push(rel);
       else throw e;
@@ -280,7 +332,7 @@ async function scanFile(ctx: CheckContext, rel: string, stats: Stats, skillDoc: 
   const firstLine = text.slice(0, Math.min(text.length, 200)).split(/\r?\n/, 1)[0] ?? "";
   const shell = SHELL_EXT.has(ext) || (shebang && /\b(?:ba|z|k|da|fi)?sh\b/.test(firstLine));
   const hits = scanScript(text, "script", { shell });
-  reportExtra(ctx, rel, "skill-script", text, hits);
+  reportExtra(ctx, rel, "skill-script", text, hits, "script", held, own);
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +349,9 @@ export const SKILLS_CHECK: ProjectCheck = {
   run: async (ctx) => {
     const stats: Stats = { folders: 0, scripts: 0, docs: 0, heads: 0, tooBig: [], refused: [], unread: [], capped: false, timedOut: false, total: 0 };
 
+    // sec-safety-off hits of each skill's SKILL.md, held until its folder is scanned.
+    const heldBySkill = new Map<Doc, Held[]>();
+    const own = await ownProject(ctx);
     // Frontmatter and bodies of skills, commands and subagents.
     for (const doc of ctx.docs) {
       const kind = doc.kind.kind;
@@ -312,7 +367,14 @@ export const SKILLS_CHECK: ProjectCheck = {
       const args = doc.frontmatter.data?.["arguments"];
       const argNames = Array.isArray(args) ? args.filter((x): x is string => typeof x === "string") : typeof args === "string" ? args.split(/\s+/).filter(Boolean) : [];
       const hits = scanScript(doc.text, "skill-md", { skipUntilLine: skip, argNames });
-      for (const h of hits) ctx.report(doc.path, toIssue(h));
+      const held: Held[] = [];
+      const lineText = (n: number): string => (n >= 1 && n <= doc.lines.count ? doc.lines.line(n - 1) : "");
+      for (const raw of hits) {
+        const h = ownSource(raw, own);
+        if (kind === "skill" && h.key && ONCE_PER_SKILL.has(h.ruleId)) held.push({ display: doc.path, kind: null, lineText, source: "skill-md", hit: h });
+        else ctx.report(doc.path, toIssue(h));
+      }
+      if (kind === "skill") heldBySkill.set(doc, held);
     }
 
     // Skill folders.
@@ -329,15 +391,20 @@ export const SKILLS_CHECK: ProjectCheck = {
       }
       stats.folders++;
       const dir = path.posix.dirname(doc.file.rel);
+      const held = heldBySkill.get(doc) ?? [];
+      heldBySkill.delete(doc);
       for (const e of await listSkill(ctx, dir, stats, skillDirs)) {
         if (stats.total >= MAX_FILES_TOTAL || ctx.deadline.expired) {
           stats.capped ||= stats.total >= MAX_FILES_TOTAL;
           stats.timedOut ||= ctx.deadline.expired;
           break;
         }
-        await scanFile(ctx, e.rel, stats, doc);
+        await scanFile(ctx, e.rel, stats, doc, held, own);
       }
+      reportHeld(ctx, held);
     }
+    // Skills whose folder was not walked (time or file limit): their SKILL.md hits still count.
+    for (const held of heldBySkill.values()) reportHeld(ctx, held);
 
     // Files the caller named (a pre-commit run passes changed scripts).
     for (const t of ctx.otherTargets) {
@@ -345,7 +412,7 @@ export const SKILLS_CHECK: ProjectCheck = {
       if (!lex || lex.root.extra) continue;
       if (!(await skillFolderOf(lex.rel, ctx))) continue;
       ctx.claim(t);
-      await scanFile(ctx, lex.rel, stats, null);
+      await scanFile(ctx, lex.rel, stats, null, null, own);
     }
 
     const scanned = stats.docs + stats.heads;

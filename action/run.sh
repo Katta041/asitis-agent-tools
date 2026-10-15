@@ -42,6 +42,8 @@ args=(lint --root "${INPUT_ROOT:-.}")
 [ -n "${INPUT_CONFIG:-}" ] && args+=(--config "$INPUT_CONFIG")
 [ -n "${INPUT_BASELINE:-}" ] && args+=(--baseline "$INPUT_BASELINE")
 [ -n "${INPUT_INCLUDE:-}" ] && args+=(--include "$INPUT_INCLUDE")
+annotate=()
+[ "$format" = github ] && [ "${INPUT_ANNOTATE_NOTES:-false}" = true ] && annotate=(--annotate-notes)
 
 paths=()
 raw="$(printf '%s' "${INPUT_PATHS:-}" | tr -d '\r')"
@@ -60,7 +62,7 @@ fi
 # with % escaped so the text stays data.
 log="$(mktemp)"
 errlog="$(mktemp)"
-node "$cli" "${args[@]}" --format "$format" --fail-on "${INPUT_FAIL_ON:-error}" ${paths[@]+"${paths[@]}"} > "$log" 2> "$errlog"
+node "$cli" "${args[@]}" --format "$format" ${annotate[@]+"${annotate[@]}"} --fail-on "${INPUT_FAIL_ON:-error}" ${paths[@]+"${paths[@]}"} > "$log" 2> "$errlog"
 code=$?
 cat "$log"
 level=notice

@@ -13,8 +13,8 @@
 //
 // final-newline. POSIX.1-2024, 3.185 "Line": a line ends with a newline; text after the last one is
 // an incomplete line (https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html,
-// read 14 October 2026). Shell appends (echo >>) join new text onto it. Reported only when the file
-// already has line breaks, so a one-line file without one is not flagged.
+// read 14 October 2026). Reported only when the file already has line breaks, so a one-line file
+// without one is not flagged. The message says only what POSIX says; no agent behaviour is claimed.
 
 import type { Doc } from "../doc.js";
 import type { Issue } from "../lint.js";
@@ -114,7 +114,7 @@ export function hygieneIssues(doc: Doc): Issue[] {
     out.push({
       severity: "info",
       rule: "final-newline",
-      message: "The file does not end with a line break, so text appended later (echo >>, some agents) joins the last line; add one",
+      message: "The last line has no line break at the end, so by the POSIX definition it is an incomplete line, and diffs show \"No newline at end of file\"; add one",
       line: doc.lines.count,
     });
   }

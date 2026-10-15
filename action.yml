@@ -27,6 +27,10 @@ inputs:
     description: What the log shows. github turns each finding into an annotation on the pull request; text and json print the report as is.
     required: false
     default: github
+  annotate-notes:
+    description: Set to true to also annotate notes when format is github. By default only errors and warnings become annotations on the pull request.
+    required: false
+    default: "false"
   include:
     description: Comma-separated opt-in scans (skills, config, config-local). Empty means markdown steering files only.
     required: false
@@ -76,6 +80,7 @@ runs:
         INPUT_ROOT: ${{ inputs.root }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
         INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_ANNOTATE_NOTES: ${{ inputs.annotate-notes }}
         INPUT_INCLUDE: ${{ inputs.include }}
         INPUT_CONFIG: ${{ inputs.config }}
         INPUT_BASELINE: ${{ inputs.baseline }}

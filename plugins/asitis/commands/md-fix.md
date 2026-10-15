@@ -15,7 +15,7 @@ If it finds nothing to fix, say so in one line and stop.
 Otherwise show the user:
 
 1. One line with the count, for example `5 fixes in 3 files: 3 safe, 2 to review.`
-2. The diff from the tool result, in a `diff` code block, as it is.
+2. The diff from the tool result, in a `diff` code block, as it is, except for whitespace-only fixes (trailing-whitespace, final-newline): their changes are invisible in a diff and a long line hides them, so leave their hunks out of the block and give the tool's one-line description instead, for example `trailing-whitespace in SKILL.md: remove 3 trailing spaces or tabs at the end of line 12; nothing else on that line changes.`
 3. Each review fix in one line with what it does and the tool's note, for example `name-dir-mismatch in .claude/skills/deploy/SKILL.md: sets name to "deploy", so the command becomes /deploy.`
 4. Anything listed under "Not fixed", in one line each.
 

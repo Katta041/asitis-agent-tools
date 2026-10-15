@@ -36,18 +36,15 @@ npx -y @asitis/mcp@0.3.0 --root /absolute/path/to/project
 - **Guard (optional):** warns before Claude rewrites a whole markdown file or strips its line endings, trailing spaces or BOM. An accident guard, not a security boundary.
 - **Read-only:** no write tool, no network code, runs under Node's permission model in the plugin.
 
+Words used below: a **steering file** is any file an AI coding agent reads as instructions (CLAUDE.md, AGENTS.md, SKILL.md, Cursor rules, Copilot instructions, GEMINI.md). An **`@import`** is a line such as `@docs/style.md` that makes Claude Code or Gemini CLI load another file. A **baseline** is a list of the findings you already have, so CI reports only new ones; each finding is matched by its **fingerprint**, a hash of the rule, the file and the line's text.
+
 ## Install
 
 Requires Node 22.13 or later on your `PATH`.
 
 ### Claude Code (plugin)
 
-```bash
-claude plugin marketplace add Katta041/asitis-agent-tools
-claude plugin install asitis@asitis
-```
-
-Inside a session, `/plugin marketplace add Katta041/asitis-agent-tools` and `/plugin install asitis@asitis` do the same. Start a new session, then run `/asitis:md-lint`, `/asitis:md-budget` or `/asitis:md-fix`.
+Run the two commands from [Try it in 30 seconds](#try-it-in-30-seconds). Inside a session, `/plugin marketplace add Katta041/asitis-agent-tools` and `/plugin install asitis@asitis` do the same. Start a new session, then run `/asitis:md-lint`, `/asitis:md-budget` or `/asitis:md-fix`.
 
 To update, run `claude plugin marketplace update asitis`, then `claude plugin update asitis@asitis`, and restart Claude Code. To remove it, run `claude plugin uninstall asitis@asitis`.
 
@@ -170,7 +167,21 @@ npx -y -p @asitis/mcp@0.3.0 asitis lint --fix-preview=safe | git apply   # apply
 npx -y -p @asitis/mcp@0.3.0 asitis budget                    # tokens each agent loads every session
 ```
 
-Formats: `text`, `json`, `sarif` (for GitHub code scanning) and `github` (pull request annotations). It never writes a file; `--fix-preview` prints a diff and you decide whether to apply it.
+Formats: `text`, `json`, `sarif` (the standard report format GitHub code scanning reads) and `github` (pull request annotations). With `github`, only errors and warnings become annotations; add `--annotate-notes` to annotate notes as well. It never writes a file; `--fix-preview` prints a diff and you decide whether to apply it. `asitis lint --help` and `asitis budget --help` list each command's options.
+
+```text
+$ npx -y -p @asitis/mcp@0.3.0 asitis lint --include skills
+.claude/skills/release/SKILL.md:4:1 warning sec-skill-allowed-tools allowed-tools pre-approves "Bash" (any shell command), so during the turn that invokes this skill those calls go ahead without asking you; scope each entry to the commands it needs, for example Bash(git status *) or WebFetch(domain:docs.example.com)
+
+CLAUDE.md:7:1 warning duplicate-rule Same rule as line 5: "Run `pnpm test` before every commit". Duplicates cost context and drift apart when one is edited; keep one
+CLAUDE.md:9:1 warning broken-link Relative link target not found: "docs/api.md". Fix the path or remove the link
+CLAUDE.md:11:1 note hidden-comment 1 comment (HTML or [//]: # style) is hidden in rendered views on line 11: "maintainer note: keep this short". It does not read like an instruction to an agent; Claude Code strips it from CLAUDE.md at session start, though its Read tool and other agents still see it, so check that it says what you expect
+
+Linted 2 files: 0 errors, 3 warnings, 1 note.
+Skill scan: 1 skill folder, 0 scripts and 0 markdown files read, 0 other files checked for executable headers (0 files in all).
+```
+
+That run exits 0: with the default `--fail-on error` only errors fail the build. Pass `--fail-on warning` to fail on warnings too.
 
 **GitHub Action.** Runs the bundled CLI with no npm install and puts findings on the pull request:
 
@@ -229,7 +240,7 @@ Put an `.asitisrc.json` at the project root. Everything is optional:
 
 A typo stops the run with the file, line and a suggestion (`.asitisrc.json line 2: unknown key "rulez" (did you mean "rules"?)`).
 
-To silence one finding, put a comment above it with the rule id and a reason: `<!-- asitis-disable-next-line duplicate-rule -- the two sections are alternatives -->`, or `asitis-disable-file` for the whole file. Security rules (hidden instructions, invisible characters, the `sec-*` rules) cannot be silenced by a comment, since a comment is exactly what an attacker would add; turn them off in `.asitisrc.json` or a baseline, where it shows in review. For an existing repo, `asitis lint --format json --write-baseline > .asitis-baseline.json` and then `--baseline .asitis-baseline.json` reports only new findings.
+To silence one finding, put a comment above it with the rule id: `<!-- asitis-disable-next-line duplicate-rule -- the two sections are alternatives -->`, or `asitis-disable-file` for the whole file. The reason after `--` is optional; when you give one it is carried into the JSON and SARIF output. The rule id is the word after the severity in each finding, and [`docs/rules/`](https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/README.md) lists them all. Security rules (hidden instructions, invisible characters, the `sec-*` rules) cannot be silenced by a comment, since a comment is exactly what an attacker would add; turn them off in `.asitisrc.json` or a baseline, where it shows in review. For an existing repo, `asitis lint --format json --write-baseline > .asitis-baseline.json` and then `--baseline .asitis-baseline.json` reports only new findings.
 
 Every rule has a page with examples: [`docs/rules/`](docs/rules/README.md).
 
@@ -263,7 +274,7 @@ Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWor
 
 - The server, the CLI and the guard hook make no network connections and contain no network code. They collect nothing and send nothing.
 - They never write, rename or delete a file, and create no temp files. Fixes come back as a diff; applying one is up to you or your assistant.
-- By default only markdown steering files and `.asitisrc.json` are read. Skill scripts are read only when you pass `include: ["skills"]` (or `--include skills`), and `.claude/settings.json`, `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` and `.gemini/settings.json` only with `include: ["config"]`. `.claude/settings.local.json` needs `config-local`. `~/.claude.json` is never read. Values from settings files are never echoed: findings name the key, and anything shaped like a secret is redacted.
+- By default only markdown steering files, `.asitisrc.json` and, when a relative link is missing, the root `.gitmodules` (to tell a submodule that is not checked out from a broken link) are read. Skill scripts are read only when you pass `include: ["skills"]` (or `--include skills`), and `.claude/settings.json`, `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` and `.gemini/settings.json` only with `include: ["config"]`, which also reads the `name`, `homepage` and `repository` of the root `package.json` and `pyproject.toml` so the project's own MCP server and install script are recognised. `.claude/settings.local.json` needs `config-local`. `~/.claude.json` is never read. Values from settings files are never echoed: findings name the key, and anything shaped like a secret is redacted.
 - The server logs one start-up line to stderr (version and root folder), never file content.
 - **What your assistant does with results is up to your assistant.** Tool results go into the model's context, so they reach whichever AI provider your assistant uses. That is your assistant's network traffic, not ours.
 

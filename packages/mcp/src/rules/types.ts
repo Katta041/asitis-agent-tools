@@ -27,6 +27,10 @@ export interface RuleMeta {
   status: RuleStatus;
   /** file: decided from one file. project: needs several files or the folder layout. */
   scope: "file" | "project";
+  /** When the severity is not always defaultSeverity, in words for the rule pages. */
+  severityVaries?: string;
+  /** location: lower in some places (a README, an example). finding: lower for milder cases. */
+  severityBy?: "location" | "finding";
 }
 
 export interface RuleInput {
@@ -39,6 +43,8 @@ export interface RuleInput {
   fixable?: false | FixSafety;
   scope?: "file" | "project";
   status?: RuleStatus;
+  severityVaries?: string;
+  severityBy?: "location" | "finding";
 }
 
 /** Fills defaults. suppressibleInline is derived from the category and cannot be set by hand. */
@@ -54,6 +60,7 @@ export function rule(r: RuleInput): RuleMeta {
     suppressibleInline: r.category !== "security",
     status: r.status ?? "active",
     scope: r.scope ?? "file",
+    ...(r.severityVaries ? { severityVaries: r.severityVaries, severityBy: r.severityBy ?? "finding" } : {}),
   };
 }
 

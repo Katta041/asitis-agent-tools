@@ -8,7 +8,7 @@
 
 Claude Code reads CLAUDE.md here and skips AGENTS.md.
 
-An `AGENTS.md` with a `CLAUDE.md` or `.claude/CLAUDE.md` in the same folder or a folder above it, where none of those files brings the AGENTS.md in (an `@` import up to four hops deep, a symlink, or an identical copy). Claude Code reads AGENTS.md only when no CLAUDE.md sits in the working directory or above it, so here it reads CLAUDE.md alone. When the only file in the way is a `CLAUDE.local.md`, the finding is `claude-local-hides-agents-md` instead. AGENTS.md files under template, example, fixture or temp folders, or inside a skill, are skipped. Linting the AGENTS.md on its own is enough; the check looks at the folders around it.
+An `AGENTS.md` with a `CLAUDE.md` or `.claude/CLAUDE.md` in the same folder or a folder above it, where none of those files brings the AGENTS.md in (an `@` import up to four hops deep, a symlink, or an identical copy). Claude Code reads AGENTS.md only when no CLAUDE.md sits in the working directory or above it, so here it reads CLAUDE.md alone. When the only file in the way is a `CLAUDE.local.md`, the finding is `claude-local-hides-agents-md` instead. AGENTS.md files under template, example, fixture or temp folders, or inside a skill, are skipped. A CLAUDE.md beside it that is a near-copy of the AGENTS.md (more than 90% of their lines match) already gives Claude that content, so "import AGENTS.md" would load it twice; that pair is reported by [instruction-drift](instruction-drift.md) instead, with the advice to replace CLAUDE.md with `@AGENTS.md` or a symlink. Linting the AGENTS.md on its own is enough; the check looks at the folders around it.
 
 ## Why it matters
 

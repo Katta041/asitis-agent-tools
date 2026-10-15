@@ -1,5 +1,5 @@
 ## Catches
-An HTML comment (`<!-- -->`) or a link-reference comment (`[//]: # (...)`) whose text reads like an instruction to an AI: it addresses an assistant by name or role, asks it to ignore earlier instructions, to hide something from the user, to act secretly, to run a command, or to send secrets somewhere. The message says which pattern matched and quotes the start. Plain comments ("TODO: update after the migration") are a note under [hidden-comment](hidden-comment.md), not this rule.
+An HTML comment (`<!-- -->`) or a link-reference comment (`[//]: # (...)`) whose text reads like an instruction to an AI: it addresses an assistant by name or role, asks it to ignore earlier instructions, to hide something from the user, to act secretly, to run a command, or to send secrets somewhere. The message says which pattern matched and quotes the start. Plain comments ("TODO: update after the migration") are a note under [hidden-comment](hidden-comment.md), not this rule, and so are machine-readable directives such as `<!-- agents:cwd=root -->` (words joined by `:` and `=` with no sentence), unless they also ask for something harmful.
 
 ## Bad
 ```markdown

@@ -18,6 +18,7 @@ All notable changes to this repository are documented here. The format follows [
 - The plugin guard lets whitespace fixes through when they cannot change how the file renders.
 
 ### Fixed
+- Precision on real repos: on 71 public repos, 59% of errors and warnings were worth fixing before these changes and 98% after, with no real finding lost. Repeated steps in parallel procedures, length warnings on skill reference files, boilerplate lines in rule files, a security skill's own pattern docs and the repository's own MCP server are no longer reported as problems; borderline cases (a CLAUDE.md just over 200 lines, a rule repeated under another heading) are notes. With `--format github`, notes are annotated only with `--annotate-notes`. Details in [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#030---2026-10-15).
 - No more `invisible-char` warnings on Persian, Hindi, Hebrew and Arabic text, emoji sequences or subdivision flags.
 - Skills in a folder symlinked into the project (`.claude/skills -> ../.agents/skills`) are reported once, not twice.
 

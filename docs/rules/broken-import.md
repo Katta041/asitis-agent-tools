@@ -8,7 +8,7 @@
 
 @import names a file that does not exist.
 
-An `@path` import in a CLAUDE.md, a `.claude/rules/` file, a GEMINI.md, or an AGENTS.md that Claude Code reads directly, where the file does not exist. The import is silent: Claude Code and Gemini CLI load what they can find and say nothing about the rest. A token that looks like an npm package (`@scope/name`, one slash, no extension) is a note with a hint, because it is far more often a package name than a file.
+An `@path` import in a CLAUDE.md, a `.claude/rules/` file, a GEMINI.md, or an AGENTS.md that Claude Code reads directly, where the file does not exist. The import is silent: Claude Code and Gemini CLI load what they can find and say nothing about the rest. A token that looks like an npm package (`@scope/name`, one slash, no extension) is a note with a hint, because it is far more often a package name than a file, and in a heading (`# @scope/name`) it is not reported at all. Closing quotes and punctuation are not part of the token, and an `@name` inside double quotes (`"Thanks @user"`) is a mention, not an import.
 
 ## Why it matters
 

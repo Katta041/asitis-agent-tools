@@ -28,9 +28,11 @@ asitis lint [paths...] [--root <dir>] [--format text|json|sarif|github]
             [--fail-on error|warning|note|never] [--config <file>]
             [--baseline <file>] [--write-baseline] [--include <list>]
             [--fix-preview[=safe]] [--max-files <n>] [--max-file-mb <n>] [--quiet]
+            [--annotate-notes]
 asitis budget [file] [--root <dir>] [--format text|json] [--max-file-mb <n>]
 asitis --version
 asitis --help
+asitis lint --help | asitis budget --help
 ```
 
 | Flag | Default | Meaning |
@@ -47,6 +49,7 @@ asitis --help
 | `--max-files <n>` | 1,000 | Most steering files linted when walking the root, 1 to 1,000 (`CAPS.walkMaxFiles`). A walk that finds more is exit 2. |
 | `--max-file-mb <n>` | 16 | Largest markdown file analysed, 1 to 64. |
 | `--quiet` | off | `text` and `github` only: no summary line, no notices. Findings are still printed. |
+| `--annotate-notes` | off | `github` only (any other format is exit 2): also annotate findings of severity note. Without it only errors and warnings become annotations; notes still count in the summary line, and one more line says how many were left out. |
 | `--allow-broad-root` | off | As in `asitis-mcp`. |
 
 `ASITIS_DEBUG=1` adds a stack trace to exit code 3. No other environment variable changes behaviour.
@@ -128,7 +131,7 @@ interface Finding {
 
 - Most rules report a line, not a span. Then `column` is 1 and `endColumn` is the line length plus 1, so the region is the whole line.
 - Order: path, line, column, severity (error, warning, note), rule id. `compareFindings` in `findings.ts`.
-- Internally `lint.ts` uses `info`; every public output says `note`.
+- Internally `lint.ts` uses `info`. The CLI formats (text, json, sarif, github) say `note`. The MCP `lint_steering` tool's structured output (`--structured`) keeps `info`, as it did in 0.2.x, so existing callers keep working; its text output says `note`.
 
 ### Fingerprints
 
@@ -288,7 +291,7 @@ One workflow command per unsuppressed finding:
 ::error file=CLAUDE.md,line=12,col=1,endLine=12,endColumn=40,title=asitis(duplicate-rule)::Same rule as line 4 ...
 ```
 
-- Command by severity: `error` is `::error`, `warning` is `::warning`, `note` is `::notice`.
+- Command by severity: `error` is `::error`, `warning` is `::warning`, `note` is `::notice`. Notes are annotated only with `--annotate-notes`: every annotation lands on the pull request, and a note (a hidden comment, a missing final newline) is not worth a reviewer's attention there. Without the flag the output ends with `asitis: N notes are not shown as annotations; add --annotate-notes to show them`.
 - Message escaping: `%` to `%25`, CR to `%0D`, LF to `%0A`.
 - Property escaping (file and title): the same, plus `:` to `%3A` and `,` to `%2C`.
 - Every annotation is exactly one output line that starts with `::`, and nothing else on stdout starts with `::`. The summary line is `asitis: Linted N files: ...` so it cannot be read as a command. Escaping CR and LF means no text from a file can start a line, so `::set-env`, `::add-mask` or a `::stop-commands::` token inside a file can never become a workflow command. WP1 must test exactly that with a fixture.
@@ -341,13 +344,14 @@ One workflow command per unsuppressed finding:
 
 ## Read classes
 
-`paths.ts` has four read classes. Markdown is the only one the server uses by default.
+`paths.ts` has five read classes. Markdown is the only one the server uses for steering files by default; `asitisrc` reads AsItIs's own config, and `gitmodules` reads one file, the root `.gitmodules`, only when a relative link is missing (to tell a submodule that is not checked out from a broken link).
 
 | Class | Policy file | Owner | Opened by |
 |---|---|---|---|
 | `markdown` | `policyRefusal` in `paths.ts` | WP0 | every tool |
 | `asitisrc` | `policy/asitisrc.ts` | WP2 | `config.ts`, `baseline.ts` |
 | `skill-script` | `policy/skill-script.ts` | WP5 | `checks/skills.ts` (include `skills`) |
-| `agent-config` | `policy/agent-config.ts` | WP6 | `checks/agent-config.ts` (include `config`) |
+| `agent-config` | `policy/agent-config.ts` | WP6 | `checks/agent-config.ts` (include `config`); also the root `package.json` and `pyproject.toml`, for the project's own name and URLs only (`checks/own.ts`) |
+| `gitmodules` | `policy/gitmodules.ts` | release | `lint.ts` (broken-link): the root `.gitmodules`, 64 KB at most, only its `path =` lines |
 
 `sandbox.openAs(readClass, path, { baseDir?, headBytes?, grants? })` applies the shared refusals (`commonRefusal`: Windows streams and devices, `.env*`, `.git`, `node_modules`), then the class policy, to the path as asked and to the real path. `headBytes` reads only the first bytes (magic-byte checks) and skips the size limit. `grants` passes the call's include values, so the agent-config policy can allow `.claude/settings.local.json` only for `config-local`. The policy stubs refuse everything until their track lands. `sandbox.listDir(path)` lists a folder without following symlinks or reading files.

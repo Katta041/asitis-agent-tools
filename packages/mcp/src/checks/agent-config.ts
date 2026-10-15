@@ -36,6 +36,7 @@ import type { Issue } from "../lint.js";
 import { UserError } from "../paths.js";
 import { AGENT_CONFIG_FILES, AGENT_CONFIG_LOCAL_FILE } from "../policy/agent-config.js";
 import type { CheckContext, ProjectCheck } from "../project.js";
+import { normName, ownProject, type OwnProject } from "./own.js";
 import { findSecrets, redact, redactValue } from "../redact.js";
 
 type Tool = "claude-settings" | "claude-local" | "claude-mcp" | "cursor" | "vscode" | "gemini";
@@ -100,6 +101,7 @@ export const AGENT_CONFIG_CHECK: ProjectCheck = {
     }
     let envFiles: string[] | null = null;
     let workspace: Set<string> | null = null;
+    const read: string[] = [];
     for (const rel of wanted) {
       if (ctx.deadline.expired) {
         ctx.note("The agent config audit stopped at the time limit; some config files were not checked.");
@@ -116,11 +118,15 @@ export const AGENT_CONFIG_CHECK: ProjectCheck = {
         }
         throw e;
       }
+      read.push(rel);
       const tool = TOOL_OF[rel.toLowerCase()]!;
       if (tool === "claude-settings" && envFiles === null) envFiles = await listEnvFiles(ctx);
       if (tool !== "claude-settings" && tool !== "claude-local" && workspace === null) workspace = await listWorkspaceDirs(ctx);
-      auditFile(ctx, rel, tool, text, envFiles ?? [], workspace ?? new Set());
+      auditFile(ctx, rel, tool, text, envFiles ?? [], workspace ?? new Set(), await ownProject(ctx));
     }
+    // Say what was read, so a clean run is visibly a run (the skill scan does the same).
+    if (read.length) ctx.note(`Config scan: ${read.length === 1 ? "1 file" : `${read.length} files`} read (${read.join(", ")}).`);
+    else if (ctx.discovered) ctx.note(`Config scan: none of ${files.join(", ")} is in this folder, so there was nothing to check.`);
   },
 };
 
@@ -468,6 +474,8 @@ interface FileCtx {
   ctx: CheckContext;
   /** Monorepo package folder names (listWorkspaceDirs). */
   workspace: ReadonlySet<string>;
+  /** The project's own names (root folder, package.json, pyproject.toml). */
+  own: OwnProject;
   rel: string;
   tool: Tool;
   root: JsonNode;
@@ -484,7 +492,7 @@ function emit(fc: FileCtx, ptr: Array<string | number>, issue: Omit<Issue, "line
   fc.ctx.report(fc.rel, full, { kind: "agent-config", lineText: (l) => fc.lines[l - 1] ?? "" });
 }
 
-function auditFile(ctx: CheckContext, rel: string, tool: Tool, text: string, envFiles: readonly string[], workspace: ReadonlySet<string>): void {
+function auditFile(ctx: CheckContext, rel: string, tool: Tool, text: string, envFiles: readonly string[], workspace: ReadonlySet<string>, own: OwnProject): void {
   const lines = text.split("\n").map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
   const lineText = (l: number): string => lines[l - 1] ?? "";
   const parsed = parseJsonMap(text, { jsonc: JSONC.has(tool) });
@@ -505,7 +513,7 @@ function auditFile(ctx: CheckContext, rel: string, tool: Tool, text: string, env
     );
     return;
   }
-  const fc: FileCtx = { ctx, workspace, rel, tool, root: parsed.root, locate: parsed.locate, lines };
+  const fc: FileCtx = { ctx, workspace, own, rel, tool, root: parsed.root, locate: parsed.locate, lines };
   if (!isObj(parsed.value)) {
     emit(fc, [], { severity: "error", rule: "config-json-invalid", message: `The file must be a JSON object ({ ... }) at the top level; ${app} ignores anything else` });
     return;
@@ -837,6 +845,9 @@ function auditLaunch(fc: FileCtx, ptr: Array<string | number>, label: string, to
     const bare = l.pkg.replace(/^@[^/]+\//, "").replace(/@[^@]*$/, "").toLowerCase();
     if (fc.workspace.has(bare)) return; // the repo's own workspace package
   }
+  // The repo's own published server (socraticode@latest in the socraticode repo): running the
+  // latest release is the point of that config. 0.3.0 real-repo review: 6 of 18 hits were this.
+  if (!GIT_SPEC.test(l.pkg) && l.ecosystem !== "docker" && fc.own.names.has(normName(l.pkg))) return;
   const fix = GIT_SPEC.test(l.pkg) ? "pin a commit or release tag at the end of the git URL (@<commit>)" : l.ecosystem === "docker" ? "pin the image by digest (image@sha256:...) or a version tag" : l.ecosystem === "python" ? "pin an exact version, such as \"package==1.2.3\"" : "pin an exact version, such as \"package@1.2.3\"";
   const latest = /@latest$/i.test(l.pkg) ? " (@latest)" : "";
   emit(fc, ptr, {

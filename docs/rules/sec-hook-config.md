@@ -2,7 +2,9 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| security | error | one file | no | no (security rule) |
+| security | error, varies (see below) | one file | no | no (security rule) |
+
+Severity: error, warning or note, by what the hook or setting does.
 
 ## What it catches
 
