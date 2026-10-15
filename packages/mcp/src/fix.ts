@@ -59,6 +59,8 @@ const MAX_DIFF_CHARS = 60_000;
 const MAX_PAIR_CHARS = 2_000;
 /** Most Edit pairs shown for one fix; a fix with more (trailing spaces on many lines) points to the diff. */
 const MAX_PAIRS = 20;
+/** Most edits in one fix. A fix with more is offered as a note only (see collect). */
+export const MAX_FIX_EDITS = 200_000;
 
 /** The path git apply needs: the real file for a symlink inside the root, null for files under a second root. */
 function patchPath(doc: Doc): string | null {
@@ -99,6 +101,9 @@ function collect(doc: Doc, issues: readonly Issue[], safety: "safe" | "all", rul
     }
     if (!fix) continue;
     if (safety === "safe" && fix.safety !== "safe") continue;
+    // One fix with a huge number of edits (trailing spaces on millions of lines) would take minutes
+    // and gigabytes to turn into a diff and JSON. Offer none; an editor does it in one command.
+    if (fix.edits.length > MAX_FIX_EDITS) fix = { ...fix, what: "", edits: [], note: `No fix: it would change ${fix.edits.length.toLocaleString("en-US")} places in this file, more than the ${MAX_FIX_EDITS.toLocaleString("en-US")} a diff here can hold. Fix it with your editor instead.` };
     if (fix.edits.length) {
       if (path === null) fix = { ...fix, what: "", edits: [], note: "No fix: the file is outside the project folder, so a diff could not name it." };
       else {

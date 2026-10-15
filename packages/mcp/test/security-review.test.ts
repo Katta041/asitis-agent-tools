@@ -477,6 +477,21 @@ describe("3e. fix diffs name the file they change", () => {
   });
 });
 
+describe("3e2. a fix with too many edits is a note, not minutes of work", () => {
+  test("trailing spaces on more than 200,000 lines: suggest_fixes answers fast with a note, and --fix-preview json does not crash", async () => {
+    const dir = project("many-edits", { "AGENTS.md": `# y\n${"a \n".repeat(200_050)}` });
+    const c = await connect([dir], { structured: false });
+    const t0 = performance.now();
+    const r = await c.call("suggest_fixes", {});
+    await c.close();
+    expect(performance.now() - t0).toBeLessThan(5000);
+    expect(r.text).toContain("No fix: it would change 200,050 lines, more than the 200,000 a diff here can hold");
+    const j = await cli(["lint", "--fix-preview", "--format", "json", "--fail-on", "never"], dir);
+    expect(j.code).toBe(0);
+    expect(JSON.parse(j.out).findings.some((f: { fix?: unknown }) => f.fix)).toBe(false);
+  });
+});
+
 describe("3f. baseline fingerprints for codex-chain-over-budget follow the chain, not the cut line", () => {
   const big = (n: number): string => Array.from({ length: n }, (_, i) => `- Rule number ${i} says to keep the build green and the tests fast.`).join("\n");
   const fp = async (dir: string): Promise<string[]> => {

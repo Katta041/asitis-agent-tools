@@ -1,13 +1,16 @@
 // trailing-whitespace (safe): delete spaces and tabs at the end of lines where they do nothing.
 // Which lines are safe is decided in hygiene.ts, which also reports the finding.
 
-import type { Fixer } from "../fix.js";
+import { MAX_FIX_EDITS, type Fixer } from "../fix.js";
 import { safeTrailingRuns } from "./hygiene.js";
-import { suggestion, textEdit } from "./util.js";
+import { noFix, suggestion, textEdit } from "./util.js";
 
 export const fixTrailingWhitespace: Fixer = (doc, issue) => {
   const runs = safeTrailingRuns(doc);
   if (!runs.length) return null;
+  // Millions of lines with trailing spaces: building that many edits takes far longer than a tool
+  // call may, and the diff would be too large to use. Say so instead (fix.ts has the same limit).
+  if (runs.length > MAX_FIX_EDITS) return noFix(doc, issue, "safe", `No fix: it would change ${runs.length.toLocaleString("en-US")} lines, more than the ${MAX_FIX_EDITS.toLocaleString("en-US")} a diff here can hold. Fix it with your editor instead.`);
   const edits = [];
   for (const r of runs) {
     const e = textEdit(doc, r.from, r.to, "");
