@@ -1,0 +1,6 @@
+---
+description: House style for TypeScript files
+alwaysApply: "yes"
+---
+
+Use two spaces for indentation.

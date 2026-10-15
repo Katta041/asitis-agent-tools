@@ -6,6 +6,7 @@ import type { Category } from "../findings.js";
 import { AGENT_CONFIG_RULES } from "./agent-config.meta.js";
 import { CORE_RULES } from "./core.meta.js";
 import { DRIFT_RULES } from "./drift.meta.js";
+import { FIX_RULES } from "./fixes.meta.js";
 import { SECURITY_RULES } from "./security.meta.js";
 import { SKILLS_RULES } from "./skills.meta.js";
 import { SPEC_RULES } from "./spec.meta.js";
@@ -21,6 +22,7 @@ export const RULE_GROUPS: ReadonlyArray<{ name: string; owner: string; rules: re
   { name: "drift", owner: "WP4", rules: DRIFT_RULES },
   { name: "skills", owner: "WP5", rules: SKILLS_RULES },
   { name: "agent-config", owner: "WP6", rules: AGENT_CONFIG_RULES },
+  { name: "fixes", owner: "WP7", rules: FIX_RULES },
   { name: "spec", owner: "unassigned", rules: SPEC_RULES },
   { name: "security", owner: "unassigned", rules: SECURITY_RULES },
 ];

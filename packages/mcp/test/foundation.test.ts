@@ -200,19 +200,18 @@ describe("redact", () => {
   });
 });
 
-describe("suggest_fixes stub", () => {
+describe("suggest_fixes registration", () => {
   let c: Connected;
   beforeAll(async () => {
     c = await connect([FIXTURE_REPO]);
   });
   afterAll(async () => c.close());
-  test("is registered, read-only, and says it is not available yet", async () => {
+  test("is registered and read-only; WP7 fills the body (test/fix.test.ts)", async () => {
     const { tools } = await c.client.listTools();
     const t = tools.find((x) => x.name === "suggest_fixes");
     expect(t?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: false });
     const r = await c.call("suggest_fixes", { path: "CLAUDE.md" });
     expect(r.isError).toBe(false);
-    expect(r.text).toMatch(/not available in this build yet/);
-    expect(r.structured).toMatchObject({ available: false, fixes: [] });
+    expect(r.structured).toMatchObject({ available: true });
   });
 });

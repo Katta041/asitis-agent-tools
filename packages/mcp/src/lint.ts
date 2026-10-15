@@ -11,6 +11,7 @@ import { extractImports, extractLinks, importIsSurelyFile, isExternalTarget, sca
 import { isSuppressionComment } from "./suppress.js";
 import { lineOfByte } from "./text.js";
 import { approxTokens } from "./tokens.js";
+import { hygieneIssues } from "./fixes/hygiene.js";
 import type { FindingFix, Suppression } from "./findings.js";
 
 export type Severity = "error" | "warning" | "info";
@@ -794,6 +795,7 @@ export async function lintDoc(doc: Doc, sandbox: Sandbox): Promise<LintResult> {
   checkFrontmatter(doc, c);
   checkLength(doc, c, tokens);
   checkProfile(doc, c);
+  c.issues.push(...hygieneIssues(doc)); // trailing-whitespace and final-newline (WP7), at most one each
   checkHidden(doc, c);
   checkRules(doc, c);
   await checkLinks(doc, sandbox, c);
