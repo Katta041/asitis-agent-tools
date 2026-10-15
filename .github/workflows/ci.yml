@@ -32,11 +32,16 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm ci --ignore-scripts
       - run: npm test
-      - name: Plugin server matches its SHA-256 pin
+      - name: Plugin server and CLI copies match their SHA-256 pins
         shell: bash
         run: |
-          expected="$(sed -n 's/^sha256 //p' plugins/asitis/server/VERSION)"
-          actual="$(node -e "process.stdout.write(require('crypto').createHash('sha256').update(require('fs').readFileSync('plugins/asitis/server/asitis-mcp.mjs')).digest('hex'))")"
-          echo "expected $expected"
-          echo "actual   $actual"
-          test "$expected" = "$actual"
+          sha() { node -e "process.stdout.write(require('crypto').createHash('sha256').update(require('fs').readFileSync(process.argv[1])).digest('hex'))" "$1"; }
+          check() {
+            echo "$2: expected $1"
+            echo "$2: actual   $(sha "$2")"
+            test "$1" = "$(sha "$2")"
+          }
+          check "$(sed -n 's/^sha256 //p' plugins/asitis/server/VERSION)" plugins/asitis/server/asitis-mcp.mjs
+          check "$(sed -n 's/^asitis.mjs sha256 //p' plugins/asitis/server/VERSION)" plugins/asitis/server/asitis.mjs
+          check "$(sed -n 's/^asitis.mjs sha256 //p' action/VERSION)" action/asitis.mjs
+          test "$(sha plugins/asitis/server/asitis.mjs)" = "$(sha action/asitis.mjs)"

@@ -5,7 +5,8 @@
   "description": "Lint CLAUDE.md, AGENTS.md, SKILL.md and Cursor rules: hidden prompt-injection comments, token budget, outline. Read-only MCP server, no network.",
   "type": "module",
   "bin": {
-    "asitis-mcp": "dist/asitis-mcp.mjs"
+    "asitis-mcp": "dist/asitis-mcp.mjs",
+    "asitis": "dist/asitis.mjs"
   },
   "files": [
     "dist/asitis-mcp.mjs",
