@@ -3,6 +3,8 @@
 // toFindings() converts at the end of lintProject. docs/cli-contract.md is the spec for this file.
 
 import { createHash } from "node:crypto";
+import path from "node:path";
+import type { Doc } from "./doc.js";
 import type { Issue, LintResult, Severity } from "./lint.js";
 import { VERSION } from "./version.js";
 
@@ -162,4 +164,13 @@ export function summarise(files: number, findings: Finding[]): LintSummary {
 
 export function buildReport(root: string, files: number, findings: Finding[]): LintReport {
   return { schemaVersion: 1, tool: { name: "asitis", version: VERSION }, root, summary: summarise(files, findings), findings };
+}
+
+/** Opt-in scans a lint call can ask for. */
+export type Include = "skills" | "config" | "config-local";
+export const INCLUDE_VALUES: readonly Include[] = ["skills", "config", "config-local"];
+
+/** The path a finding reports for a linted markdown file: root-relative, or the given path for extra roots. */
+export function findingPath(doc: Doc): string {
+  return doc.file.root.extra ? (doc.file.lexical ?? doc.file.real).split(path.sep).join("/") : doc.file.rel;
 }

@@ -134,10 +134,10 @@ describe("read classes", () => {
   });
   afterAll(() => cleanup());
 
-  test("the stub policies refuse every read by default", async () => {
+  test("the stub policies refuse every read by default; the asitisrc policy (WP2) reads config", async () => {
     await expect(sb.openAs("skill-script", ".claude/skills/demo/run.sh")).rejects.toThrow(/scanning skill scripts is not enabled/);
     await expect(sb.openAs("agent-config", ".claude/settings.json")).rejects.toThrow(/reading agent config is not enabled/);
-    await expect(sb.openAs("asitisrc", ".asitisrc.json")).rejects.toThrow(/reading it is not enabled/);
+    expect((await sb.openAs("asitisrc", ".asitisrc.json")).buf.toString()).toBe("{}\n"); // WP2: config is readable now
   });
 
   test("shared refusals run before any class policy", async () => {

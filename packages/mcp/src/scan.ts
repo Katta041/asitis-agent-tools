@@ -289,7 +289,9 @@ export class InlineCodeSpans {
     const s = this.lines.text;
     const a = this.lines.start(li);
     const e = this.lines.end(li);
-    if (s.indexOf("`", a) < 0 || s.indexOf("`", a) >= e) return [];
+    // Search this line only: indexOf from a scans to the end of the file, which made a file of
+    // many backtick-free comment lines quadratic.
+    if (!s.slice(a, e).includes("`")) return [];
     const runs: Array<[number, number]> = []; // [start, length]
     for (let i = a; i < e; ) {
       if (s.charCodeAt(i) !== 96) { i++; continue; }
