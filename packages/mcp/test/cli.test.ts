@@ -293,11 +293,11 @@ describe("json format", () => {
     expect([...b.fingerprints].sort()).toEqual(b.fingerprints);
     expect(new Set(b.fingerprints).size).toBe(b.fingerprints.length);
   });
-  test("an include value whose scan is not in this build is a notice on stderr", () => {
+  test("project notes go to stderr, so stdout stays plain JSON", () => {
     const r = cli(["lint", "--root", path.join(CLI_FIX, "clean"), "--format", "json", "--include", "skills"]);
     expect(r.code).toBe(0);
     JSON.parse(r.out);
-    expect(r.err).toMatch(/^(asitis: include "skills" is not available in this build yet[^\n]*\n)?$/);
+    expect(r.err).toBe("asitis: Skill scan: no skill folders (folders with a SKILL.md) were found among the linted files.\n");
   });
 });
 

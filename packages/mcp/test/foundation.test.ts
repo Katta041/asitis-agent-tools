@@ -46,8 +46,9 @@ describe("lintProject", () => {
     const sb = await Sandbox.create([FIXTURE_REPO]);
     const p = await lintProject(sb, { targets: ["CLAUDE.md", "scripts/setup.sh"], include: ["skills", "config-local"], deadline: deadline() });
     expect(p.include.has("config")).toBe(true); // config-local implies config
+    // The skill scan (WP5) is live: it finds no skill folder here and says so; config is still a stub.
     expect(p.notes).toEqual([
-      'include "skills" is not available in this build yet, so nothing extra was scanned.',
+      "Skill scan: 0 skill folders, 0 scripts and 0 markdown files read, 0 other files checked for executable headers (0 files in all).",
       'include "config" is not available in this build yet, so nothing extra was scanned.',
     ]);
     // The script path is not claimed by any check, so it fails as a non-markdown path does today.
@@ -134,8 +135,9 @@ describe("read classes", () => {
   });
   afterAll(() => cleanup());
 
-  test("the stub policies refuse every read by default; the asitisrc policy (WP2) reads config", async () => {
-    await expect(sb.openAs("skill-script", ".claude/skills/demo/run.sh")).rejects.toThrow(/scanning skill scripts is not enabled/);
+  test("live policies: skill-script (WP5) and asitisrc (WP2) read, agent-config still refuses", async () => {
+    // skill-script is live (WP5): a script in a skill folder opens; its own tests are in skills.test.ts.
+    expect((await sb.openAs("skill-script", ".claude/skills/demo/run.sh")).buf.toString()).toContain("echo hello");
     await expect(sb.openAs("agent-config", ".claude/settings.json")).rejects.toThrow(/reading agent config is not enabled/);
     expect((await sb.openAs("asitisrc", ".asitisrc.json")).buf.toString()).toBe("{}\n"); // WP2: config is readable now
   });
