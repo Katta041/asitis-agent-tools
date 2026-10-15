@@ -7,7 +7,7 @@ Read CONTRIBUTING.md first. Its rules are enforced by tests. In short: no write,
 ## Commands
 
 - `npm ci && npm test` at the root runs the full suite (typecheck, build and tests).
-- `npm run sync-plugin` must run from `packages/mcp`, not the root. Run it after any change to `packages/mcp/src` and commit `plugins/asitis/server/`.
+- `npm run sync-plugin` must run from `packages/mcp`, not the root. Run it after any change to `packages/mcp/src` and commit `plugins/asitis/server/` and `action/`.
 
 ## Things that have bitten us
 
