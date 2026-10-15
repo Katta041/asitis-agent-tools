@@ -182,6 +182,8 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
   const project = await lintProject(sandbox, {
     targets,
     include: a.include,
+    // The CLI honours include and extends from .asitisrc.json; the MCP server does not (cli-contract.md).
+    configInclude: true,
     deadline: new Deadline(RUN_BUDGET_MS),
     maxFiles: a.maxFiles,
     ...(configPath === undefined ? {} : { configPath }),
@@ -196,7 +198,7 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
     // leave files unlinted at random, so they exit 2. The depth limit is fixed and the same on
     // every run (big monorepos such as next.js and vscode always reach it), so it is a notice.
     const note = project.walkNote;
-    const depthOnly = project.foundCount <= a.maxFiles && /levels deep/.test(note) && !/stopped/.test(note);
+    const depthOnly = project.foundCount <= a.maxFiles && project.cut.depth && !project.cut.size && !project.cut.time;
     if (!depthOnly) {
       const why = project.foundCount > a.maxFiles ? `stopped after ${a.maxFiles.toLocaleString("en-US")} steering ${a.maxFiles === 1 ? "file" : "files"}` : note.replace(/\.$/, "").replace(/^\w/, (c) => c.toLowerCase());
       throw usage(`${why}; pass paths to lint the rest`);

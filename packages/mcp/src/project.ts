@@ -54,6 +54,8 @@ export interface ProjectResult {
   timedOut: boolean;
   /** Why the walk stopped early, or "". */
   walkNote: string;
+  /** Which limit cut the walk short, if any: folders past the depth limit, the file or entry limit, or the time limit. */
+  cut: { depth: boolean; size: boolean; time: boolean };
   /** One-line notices for the user (an include value that is not available yet, for example). */
   notes: string[];
   include: ReadonlySet<Include>;
@@ -130,11 +132,13 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
   let truncated = false;
   let foundCount = 0;
   let walkNote = "";
+  const cut = { depth: false, size: false, time: false };
   if (!targets.length) {
     const found = await walk(sandbox, { deadline });
     discovered = true;
     foundCount = found.files.length;
     walkNote = walkCutNote(found);
+    Object.assign(cut, found.cut);
     const maxFiles = opts.maxFiles ?? CAPS.lintMaxFiles;
     truncated = found.truncated || found.files.length > maxFiles;
     targets = found.files.slice(0, maxFiles).map((f) => f.abs);
@@ -227,6 +231,7 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
     truncated,
     timedOut,
     walkNote,
+    cut,
     notes,
     include,
     config,

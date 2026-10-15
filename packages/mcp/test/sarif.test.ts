@@ -145,6 +145,28 @@ describe("file URIs", () => {
   });
 });
 
+describe("--root a subfolder", () => {
+  // Code scanning resolves %SRCROOT% to the checkout, so a relative --root must be part of the uri.
+  test("uris are relative to the current folder, fingerprints are not", () => {
+    const rel = path.relative(REPO, FIXTURE_REPO).split(path.sep).join("/");
+    const sub = sarif(rel).log.runs[0]!.results;
+    const here = spawnSync(process.execPath, [CLI, "lint", "--format", "sarif"], { encoding: "utf8", cwd: FIXTURE_REPO });
+    const top = (JSON.parse(here.stdout) as { runs: Array<{ results: SarifResult[] }> }).runs[0]!.results;
+    expect(sub.length).toBe(top.length);
+    for (const [i, r] of sub.entries()) {
+      expect(r.locations[0]!.physicalLocation.artifactLocation.uri).toBe(`${rel}/${top[i]!.locations[0]!.physicalLocation.artifactLocation.uri}`);
+      expect(r.partialFingerprints).toEqual(top[i]!.partialFingerprints);
+    }
+  });
+  test("an absolute root is not prefixed, so no absolute path appears", () => {
+    const { text, log } = sarif(FIXTURE_REPO);
+    expect(text).not.toContain(REPO);
+    const uris = log.runs[0]!.results.map((r) => r.locations[0]!.physicalLocation.artifactLocation.uri);
+    expect(uris).toContain("CLAUDE.md");
+    for (const u of uris) expect(u).not.toMatch(/^(\/|[A-Za-z]:|\.\.)/);
+  });
+});
+
 describe("fingerprints", () => {
   const text = "# Rules\n\n- Always run the tests before you push a branch\n- Always run the tests before you push a branch\n\nSee [guide](docs/missing.md).\n<!-- note to self -->\n";
   test("stable across a CRLF to LF conversion", () => {

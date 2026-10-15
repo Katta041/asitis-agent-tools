@@ -172,8 +172,7 @@ describe("suppressed findings are counted and kept", () => {
     expect((rs.structured["summary"] as Record<string, unknown>)["suppressed"]).toBe(1);
   });
 
-  // formatSarif is WP1's; until it lands it returns "". Once it does, this checks the mapping.
-  test.skipIf(formatSarif(buildReport(".", 0, [])) === "")("in SARIF, as suppressions[] on the result", async () => {
+  test("in SARIF, as suppressions[] on the result", async () => {
     const { f } = await lintText(body);
     const log = JSON.parse(formatSarif(buildReport(".", 1, f)));
     const results = log.runs[0].results as Array<{ ruleId: string; suppressions?: unknown[] }>;

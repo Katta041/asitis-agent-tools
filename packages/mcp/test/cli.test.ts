@@ -301,6 +301,24 @@ describe("json format", () => {
   });
 });
 
+describe(".asitisrc.json", () => {
+  // The CLI passes configInclude, so include and extends: strict in the repo config apply here.
+  // The MCP server ignores both (config.test.ts covers that side).
+  test("include from the config runs the scan without --include", () => {
+    const dir = tmp({ "CLAUDE.md": "# A\n\nRun the tests.\n", ".asitisrc.json": '{"include": ["skills"]}' });
+    const r = cli(["lint", "--root", dir, "--format", "json"]);
+    expect(r.code).toBe(0);
+    expect(r.err).toBe("asitis: Skill scan: no skill folders (folders with a SKILL.md) were found among the linted files.\n");
+    expect(r.err).not.toContain("pass include to lint_steering");
+  });
+  test("extends strict raises a note to a warning", () => {
+    const files = { "CLAUDE.md": "# Rules\n\n<!-- a note -->\n" };
+    expect(cli(["lint", "--root", tmp(files)]).out).toMatch(/note hidden-comment/);
+    const r = cli(["lint", "--root", tmp({ ...files, ".asitisrc.json": '{"extends": "strict"}' }), "--fail-on", "never"]);
+    expect(r.out).toMatch(/warning hidden-comment/);
+  });
+});
+
 describe("--fix-preview", () => {
   test("text: prints only the diff, or a note on stderr when there is nothing to fix", () => {
     const r = cli(["lint", "--root", path.join(CLI_FIX, "clean"), "--fix-preview"]);

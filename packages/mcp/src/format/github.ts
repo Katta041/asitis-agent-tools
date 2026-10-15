@@ -10,6 +10,7 @@
 // a ::stop-commands:: token inside a steering file stays inert text in a message. Messages also go
 // through esc() first, so control and bidi characters show as \u escapes.
 
+import { workspacePath } from "./workspace.js";
 import { esc } from "../escape.js";
 import type { FindingSeverity, LintReport } from "../findings.js";
 import { summaryLine } from "./text.js";
@@ -31,15 +32,6 @@ export interface GithubOptions {
   notes?: readonly string[];
 }
 
-/**
- * Annotation file paths are relative to the workspace. When --root names a relative subfolder,
- * prefix it, so `asitis lint --root docs` annotates docs/CLAUDE.md and not CLAUDE.md.
- */
-function workspacePath(root: string, p: string): string {
-  const r = root.replace(/\/+$/, "");
-  if (r === "" || r === "." || r.startsWith("/") || /^[A-Za-z]:/.test(r) || r.startsWith("..")) return p;
-  return `${r.replace(/^\.\//, "")}/${p}`;
-}
 
 export function formatGithub(report: LintReport, opts: GithubOptions = {}): string {
   const lines: string[] = [];
