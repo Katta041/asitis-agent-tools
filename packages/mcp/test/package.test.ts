@@ -173,7 +173,7 @@ describe("Claude Code plugin", () => {
   });
   test("the plugin's own skill and commands pass lint_steering with no errors or warnings", async () => {
     const c = await connect([PLUGIN]);
-    for (const p of ["skills/markdown-byte-clean/SKILL.md", "commands/md-lint.md", "commands/md-budget.md"]) {
+    for (const p of ["skills/markdown-byte-clean/SKILL.md", "commands/md-lint.md", "commands/md-budget.md", "commands/md-fix.md"]) {
       const r = await c.call("lint_steering", { path: p });
       const issues = (r.structured["files"] as Array<{ issues: Array<{ severity: string; rule: string }> }>)[0]!.issues;
       expect(issues.filter((i) => i.severity !== "info"), p).toEqual([]);

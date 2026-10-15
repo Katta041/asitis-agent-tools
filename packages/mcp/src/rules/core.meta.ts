@@ -1,4 +1,4 @@
-// Metadata for the rules lint.ts and project.ts emit as of 0.2.5. Owner: WP0.
+// Metadata for the rules lint.ts and project.ts emit (the 0.2.5 set, plus later additions). Owner: WP0.
 
 import { rule, SRC, type RuleMeta } from "./types.js";
 

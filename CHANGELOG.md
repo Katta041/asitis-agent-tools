@@ -2,6 +2,27 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.3.0] - 2026-10-15
+
+### Added
+- `asitis` CLI in `@asitis/mcp`: `npx -y -p @asitis/mcp@0.3.0 asitis lint`. Text, JSON, SARIF and GitHub annotation output, exit codes 0 to 3, `--fail-on`, `--fix-preview` and an `asitis budget` command. Contract: [`docs/cli-contract.md`](docs/cli-contract.md).
+- GitHub Action (`Katta041/asitis-agent-tools@v0.3.0`) and a pre-commit hook (`asitis-lint`), both running the bundled CLI with no npm install. Setup for GitHub Actions, pre-commit, lefthook, husky and GitLab CI: [`docs/ci.md`](docs/ci.md).
+- `.asitisrc.json` config, inline suppression comments that need a rule id, and baselines.
+- Drift checks across AGENTS.md, CLAUDE.md, GEMINI.md, Cursor rules and Copilot instructions, including an AGENTS.md that Claude Code never reads because a CLAUDE.md shadows it.
+- Opt-in scans: skill folders (`include: ["skills"]`: scripts that download and run code, encoded payloads, credential theft, unscoped `allowed-tools`, skill arguments pasted into shell commands) and agent config (`include: ["config"]`: hooks, permissions, MCP launchers, inline secrets). Without `include` nothing beyond markdown is read, as before.
+- `suggest_fixes` tool and the `/asitis:md-fix` plugin command: fixes as a diff, applied only after you say yes.
+- A page for every rule in [`docs/rules/`](docs/rules/README.md).
+
+### Changed
+- `lint_steering` reads `.asitisrc.json` and takes `include`. A repo's config can change severities but never makes the server read more.
+- The plugin guard lets whitespace fixes through when they cannot change how the file renders.
+
+### Fixed
+- No more `invisible-char` warnings on Persian, Hindi, Hebrew and Arabic text, emoji sequences or subdivision flags.
+- Skills in a folder symlinked into the project (`.claude/skills -> ../.agents/skills`) are reported once, not twice.
+
+Details: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#030---2026-10-15) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#030---2026-10-15).
+
 ## [0.2.5] - 2026-10-14
 
 ### Changed

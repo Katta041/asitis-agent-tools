@@ -2,6 +2,17 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-10-15
+
+### Added
+- `/asitis:md-fix`: shows the fixes `suggest_fixes` finds as a diff, asks, and applies only the ones you accept, one Edit per change.
+- The `asitis` CLI is bundled next to the server (`server/asitis.mjs`, pinned in `server/VERSION`).
+
+### Changed
+- The bundled server is `@asitis/mcp` 0.3.0: drift checks, `.asitisrc.json` config and suppression comments, and the opt-in skill and agent config scans (see the `@asitis/mcp` changelog).
+- `/asitis:md-lint` says how to run the skill and config scans when you want them. They are off unless you ask.
+- The guard no longer asks before an edit that only removes trailing spaces or tabs that cannot be a hard line break, or adds a final newline. Those edits do not change how the file renders, and they are the safe fixes `/asitis:md-fix` applies. It still asks before removing a two-space line break inside a paragraph, and before any whitespace change in code blocks or frontmatter.
+
 ## [0.2.5] - 2026-10-14
 
 ### Changed

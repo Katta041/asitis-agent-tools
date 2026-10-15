@@ -1,6 +1,6 @@
 {
   "name": "@asitis/mcp",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "mcpName": "io.github.Katta041/asitis-mcp",
   "description": "Lint CLAUDE.md, AGENTS.md, SKILL.md and Cursor rules: hidden prompt-injection comments, token budget, outline. Read-only MCP server, no network.",
   "type": "module",

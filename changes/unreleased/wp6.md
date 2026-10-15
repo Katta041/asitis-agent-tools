@@ -1,7 +1,0 @@
-### Added
-- Agent config audit, opt-in with `include: ["config"]`. It reads `.claude/settings.json`, `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` and `.gemini/settings.json` at the top of the root. `.claude/settings.local.json` is read only with `config-local`. `~/.claude.json` is never read, and without `include` the server still reads no settings at all.
-- Rules `sec-hook-config` (hooks and settings commands that download and run code, call the network or install unpinned packages, or run a script from the home folder; `ANTHROPIC_BASE_URL` pointed at another host; `enableAllProjectMcpServers`; one note listing plain hooks), `sec-permission-allow` (`Bash`, `Bash(*)`, network tools, `git push`, `gh api` and interpreters with a wildcard, unscoped `WebFetch`, Gemini CLI `trust: true`), `sec-permission-mode` (`bypassPermissions`, `skipDangerousModePermissionPrompt`), `sec-no-secret-deny` (a `.env` file in the folder and no deny rule for it), `sec-mcp-launcher` (unpinned `npx`/`bunx`/`uvx`/`pnpm dlx`/git/docker launchers, skipping the repo's own workspace packages, shell wrappers that download code, plain http servers, `mcp-remote` before 0.1.16), `sec-mcp-inline-secret` (keys and tokens written in plain text) and `config-json-invalid` (with line and column).
-- `jsonmap.ts`: a JSON parser that keeps the line and column of every value, runs in one pass without recursion, and reads VS Code's JSON with comments.
-
-### Changed
-- `lint_steering` with `include: ["config"]` no longer ends with the "not available in this build yet" notice.
