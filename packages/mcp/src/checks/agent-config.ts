@@ -99,6 +99,7 @@ export const AGENT_CONFIG_CHECK: ProjectCheck = {
       }
     }
     let envFiles: string[] | null = null;
+    let workspace: Set<string> | null = null;
     for (const rel of wanted) {
       if (ctx.deadline.expired) {
         ctx.note("The agent config audit stopped at the time limit; some config files were not checked.");
@@ -117,7 +118,8 @@ export const AGENT_CONFIG_CHECK: ProjectCheck = {
       }
       const tool = TOOL_OF[rel.toLowerCase()]!;
       if (tool === "claude-settings" && envFiles === null) envFiles = await listEnvFiles(ctx);
-      auditFile(ctx, rel, tool, text, envFiles ?? []);
+      if (tool !== "claude-settings" && tool !== "claude-local" && workspace === null) workspace = await listWorkspaceDirs(ctx);
+      auditFile(ctx, rel, tool, text, envFiles ?? [], workspace ?? new Set());
     }
   },
 };
@@ -133,6 +135,24 @@ async function listEnvFiles(ctx: CheckContext): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Folder names under the usual monorepo package folders. "npx @scope/mcp-server" in a repo with
+ * packages/mcp-server runs the workspace copy from node_modules, not a floating release, so the
+ * launcher check skips it. Names only: listDir reads no file.
+ */
+async function listWorkspaceDirs(ctx: CheckContext): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (const dir of ["packages", "apps", "tools", "libs", "servers"]) {
+    try {
+      const { entries } = await ctx.sandbox.listDir(dir, ctx.sandbox.primary.real);
+      for (const e of entries) if (e.type === "dir") out.add(e.name.toLowerCase());
+    } catch {
+      // no such folder
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -189,12 +209,24 @@ const B64_TO_SHELL = new RegExp(String.raw`\bbase64\s{1,5}(?:-d|-D|--decode)\b[^
 const EVAL_B64 = /\beval\b[^\n]{0,300}\bbase64\b|\bbase64\b[^\n]{0,300}\beval\b|\bfrombase64string\b/i;
 /** A network tool as a command word: at the start, after whitespace, a pipe, ;, &, ( or a path slash. */
 const NET_TOOL = /(?:^|[\s|;&(`/])(curl|wget|nc|ncat|netcat|telnet|ssh|scp|sftp|ftp|nslookup|dig|socat)(?=\s|$)/i;
-const URL_RE = /\bhttps?:\/\/[^\s"'`<>)]{1,300}/gi;
+/**
+ * A script under the home folder: "~/.claude/hooks/x.sh" as the command, or "$HOME/.../x.py" that
+ * the command runs. A home path that is not a script (a log file) does not count.
+ */
+const HOME_SCRIPT = /(?:^|[\s"'=;&|(])((?:~|\$HOME|\$\{HOME\})\/[^\s"';&|)]{1,200}?\.(?:sh|bash|zsh|py|js|mjs|cjs|ts|rb|pl|ps1))(?=$|[\s"';&|)])/;
 
 interface ShellRisk {
   severity: "error" | "warning";
   what: string;
+  /** The what already quotes the relevant part, so the message does not quote the command again. */
+  quoted?: boolean;
+  /** What to do, when it differs from the default for the severity. */
+  advice?: string;
 }
+
+/** "(<command>)" unless the risk already quoted what matters. */
+const shown = (risk: ShellRisk, cmd: string): string => (risk.quoted ? "" : ` (${quote(cmd)})`);
+const adviceFor = (risk: ShellRisk): string => risk.advice ?? (risk.severity === "error" ? "commit the script to the repo and call that instead" : "check that this is intended");
 
 /** The most serious risk in a shell command string, or null. */
 function shellRisk(cmd: string): ShellRisk | null {
@@ -204,10 +236,10 @@ function shellRisk(cmd: string): ShellRisk | null {
   if (launch && !launch.pinned) return { severity: "warning", what: `runs ${launch.display} without a pinned version, so whatever is published next runs` };
   const net = NET_TOOL.exec(cmd);
   if (net) return { severity: "warning", what: `calls the network with ${net[1]!.toLowerCase()}` };
-  for (const m of cmd.matchAll(URL_RE)) {
-    const h = urlHost(m[0]);
-    if (h && !LOOPBACK.test(h.host)) return { severity: "warning", what: `contacts ${h.host}` };
-  }
+  // A URL on its own is not flagged: hooks print install links in messages, and that is not a
+  // network call. Only the tools above count.
+  const home = HOME_SCRIPT.exec(cmd);
+  if (home) return { severity: "warning", what: `runs ${quote(home[1]!, 50)} from the home folder, outside the repo, so reviewers cannot see what it does and it differs on each machine`, quoted: true, advice: "commit the script to the repo or move the hook to your user settings" };
   return null;
 }
 
@@ -434,6 +466,8 @@ function secretIn(value: string, keyName: string | undefined): { type: string; p
 
 interface FileCtx {
   ctx: CheckContext;
+  /** Monorepo package folder names (listWorkspaceDirs). */
+  workspace: ReadonlySet<string>;
   rel: string;
   tool: Tool;
   root: JsonNode;
@@ -450,7 +484,7 @@ function emit(fc: FileCtx, ptr: Array<string | number>, issue: Omit<Issue, "line
   fc.ctx.report(fc.rel, full, { kind: "agent-config", lineText: (l) => fc.lines[l - 1] ?? "" });
 }
 
-function auditFile(ctx: CheckContext, rel: string, tool: Tool, text: string, envFiles: readonly string[]): void {
+function auditFile(ctx: CheckContext, rel: string, tool: Tool, text: string, envFiles: readonly string[], workspace: ReadonlySet<string>): void {
   const lines = text.split("\n").map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
   const lineText = (l: number): string => lines[l - 1] ?? "";
   const parsed = parseJsonMap(text, { jsonc: JSONC.has(tool) });
@@ -471,7 +505,7 @@ function auditFile(ctx: CheckContext, rel: string, tool: Tool, text: string, env
     );
     return;
   }
-  const fc: FileCtx = { ctx, rel, tool, root: parsed.root, locate: parsed.locate, lines };
+  const fc: FileCtx = { ctx, workspace, rel, tool, root: parsed.root, locate: parsed.locate, lines };
   if (!isObj(parsed.value)) {
     emit(fc, [], { severity: "error", rule: "config-json-invalid", message: `The file must be a JSON object ({ ... }) at the top level; ${app} ignores anything else` });
     return;
@@ -552,7 +586,7 @@ function auditHooks(fc: FileCtx, doc: Obj): void {
             emit(fc, [...ptr, "command"], {
               severity: risk.severity,
               rule: "sec-hook-config",
-              message: `${esc40(event)} hook ${risk.what} (${quote(full)}); project hooks run on every developer's machine and claude -p starts them without the trust prompt, so ${risk.severity === "error" ? "commit the script to the repo and call that instead" : "check that this is intended"}`,
+              message: `${esc40(event)} hook ${risk.what}${shown(risk, full)}; project hooks run on every developer's machine and claude -p starts them without the trust prompt, so ${adviceFor(risk)}`,
             });
           } else {
             plain++;
@@ -602,13 +636,19 @@ function auditSettingsCommands(fc: FileCtx, doc: Obj): void {
     emit(fc, ptr, {
       severity: risk.severity,
       rule: "sec-hook-config",
-      message: `${ptr.join(".")} ${risk.what} (${quote(cmd)}); Claude Code runs this command itself, so ${risk.severity === "error" ? "commit the script to the repo and call that instead" : "check that this is intended"}`,
+      message: `${ptr.join(".")} ${risk.what}${shown(risk, cmd)}; Claude Code runs this command itself, so ${adviceFor(risk)}`,
     });
   }
 }
 
 /** Shell and interpreter commands that run anything they are given. */
 const INTERPRETERS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish", "pwsh", "powershell", "cmd", "python", "python3", "node", "deno", "bun", "ruby", "perl", "php", "osascript", "eval", "exec", "sudo", "env", "xargs", "npx", "bunx", "uvx", "pnpx"]);
+/** Two-word commands that send data out: push to any remote, call any GitHub API endpoint. */
+const NET_TWO: Record<string, string> = {
+  "git push": "push to any remote without asking, so injected text can send the code anywhere",
+  "gh api": "call any GitHub API endpoint without asking, writes included, so injected text can post repository data elsewhere",
+  "gh gist": "create gists without asking, so injected text can publish files",
+};
 /** Two-word commands that run any package or script they are given. */
 const RUN_ANY = new Set(["uv run", "uv tool", "npm exec", "pnpm dlx", "pnpm exec", "yarn dlx", "bun x", "poetry run", "pipx run", "deno run", "pdm run", "hatch run"]);
 /** Network and DNS tools: an allow rule for them lets injected text send data out (CVE-2025-55284). */
@@ -649,6 +689,11 @@ function auditPermissions(fc: FileCtx, doc: Obj): void {
       const after = spec.slice(first.length);
       const bin = baseName(first);
       const two = `${bin} ${(words[1] ?? "").toLowerCase()}`;
+      const netTwo = NET_TWO[two];
+      if (netTwo && /\*/.test(spec.slice(first.length))) {
+        emit(fc, ptr, { severity: "warning", rule: "sec-permission-allow", message: `${quote(r)} lets Claude ${netTwo}; allow the exact commands you need instead` }, false);
+        return;
+      }
       if (NET_TOOLS.has(bin)) {
         emit(fc, ptr, { severity: "warning", rule: "sec-permission-allow", message: `${quote(r)} lets Claude run ${bin} with any arguments without asking; injected text can use it to send files out (CVE-2025-55284 did this with ping and nslookup), so allow exact commands or use WebFetch(domain:...)` }, false);
         return;
@@ -785,6 +830,10 @@ function auditLaunch(fc: FileCtx, ptr: Array<string | number>, label: string, to
     return;
   }
   if (l.pinned) return;
+  if (l.ecosystem === "npm" && !GIT_SPEC.test(l.pkg)) {
+    const bare = l.pkg.replace(/^@[^/]+\//, "").replace(/@[^@]*$/, "").toLowerCase();
+    if (fc.workspace.has(bare)) return; // the repo's own workspace package
+  }
   const fix = GIT_SPEC.test(l.pkg) ? "pin a commit or release tag at the end of the git URL (@<commit>)" : l.ecosystem === "docker" ? "pin the image by digest (image@sha256:...) or a version tag" : l.ecosystem === "python" ? "pin an exact version, such as \"package==1.2.3\"" : "pin an exact version, such as \"package@1.2.3\"";
   const latest = /@latest$/i.test(l.pkg) ? " (@latest)" : "";
   emit(fc, ptr, {
