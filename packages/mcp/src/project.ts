@@ -30,6 +30,12 @@ export interface ProjectOptions {
   configPath?: string;
   /** --baseline: findings whose fingerprint is in this file are marked suppressed. */
   baselinePath?: string;
+  /**
+   * Honour include from the config file (extends strict counts as include skills and config).
+   * Only the CLI sets this: the user runs it on purpose. The MCP server leaves it off, so a
+   * cloned repo's config can never widen what the server reads; include comes from the call.
+   */
+  configInclude?: boolean;
   /** Files linted when walking the folder. MCP default CAPS.lintMaxFiles; the CLI passes CAPS.walkMaxFiles. */
   maxFiles?: number;
 }
@@ -111,7 +117,9 @@ const MARKDOWN_TARGET = /\.(md|mdc|markdown|mdx)$|(^|[\\/])\.(cursorrules|windsu
 export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promise<ProjectResult> {
   const { deadline } = opts;
   const config = await loadConfig(sandbox, opts.configPath === undefined ? {} : { configPath: opts.configPath });
-  const include = new Set<Include>([...(opts.include ?? []), ...(config?.include ?? [])]);
+  const include = new Set<Include>([...(opts.include ?? []), ...(opts.configInclude ? (config?.include ?? []) : [])]);
+  // Opt-ins the config asks for that this call did not grant: say so, read nothing extra.
+  const asked = opts.configInclude ? [] : (config?.include ?? []).filter((x) => !include.has(x) && !(x === "config" && include.has("config-local")));
   if (include.has("config-local")) include.add("config");
 
   let targets: string[] = [...(opts.targets ?? [])];
@@ -160,6 +168,7 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
 
   // Project checks.
   const notes: string[] = [];
+  if (asked.length) notes.push(`${config!.path} asks for the ${asked.join("/")} scan; pass include to lint_steering to run it.`);
   const lineTexts = new Map<string, LineText>();
   const claimed = new Set<string>();
   const ctx: CheckContext = {
