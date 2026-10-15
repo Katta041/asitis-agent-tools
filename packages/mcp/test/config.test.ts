@@ -209,7 +209,8 @@ describe("applying config", () => {
   test("extends strict raises notes to warnings, keeps explicit severities, and turns the sec-* scans on", async () => {
     const dir = project("strict", { "CLAUDE.md": "# Rules\n\n<!-- a note -->\n", "AGENTS.md": "# A\n\n<!-- b -->\n", ".asitisrc.json": '{"extends": "strict", "overrides": [{"files": ["AGENTS.md"], "rules": {"hidden-comment": "note"}}]}' });
     const p = await lint(dir);
-    const sev = (file: string): string | undefined => p.findings().find((f) => f.path === file)?.severity;
+    // Only hidden-comment: the drift check also reports agents-md-shadowed on AGENTS.md here.
+    const sev = (file: string): string | undefined => p.findings().find((f) => f.path === file && f.ruleId === "hidden-comment")?.severity;
     expect(sev("CLAUDE.md")).toBe("warning");
     expect(sev("AGENTS.md")).toBe("note");
     expect(p.config?.include).toEqual(["skills", "config"]);
@@ -273,7 +274,7 @@ describe("applying config", () => {
     const dir = project("mcp-same", {
       "CLAUDE.md": `# Rules\n\n${DUP}\n${DUP}\n<!-- a note -->\n`,
       "docs/AGENTS.md": `${DUP}\n${DUP}\n`,
-      ".asitisrc.json": '{"rules": {"hidden-comment": "off"}, "overrides": [{"files": ["docs/**"], "rules": {"duplicate-rule": "error"}}]}',
+      ".asitisrc.json": '{"rules": {"hidden-comment": "off", "agents-md-shadowed": "off"}, "overrides": [{"files": ["docs/**"], "rules": {"duplicate-rule": "error"}}]}',
     });
     const p = await lint(dir);
     const c = await connect([dir]);

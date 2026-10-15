@@ -469,19 +469,33 @@ function polarity(text: string, negativeContext: boolean): { neg: boolean; core:
   return null;
 }
 
-function checkRules(doc: Doc, c: Collector): void {
-  // Heuristics: duplicate rules, and "do X" against "do not X".
-  // A rule is a whole list item or a sentence of a paragraph, with wrapped lines joined
-  // first, so the continuation lines of two different sentences ("the contribution
-  // guide.") never match. Markup-only lines (`</details>`), headings, tables, comments
-  // and thematic breaks are not rules.
-  // Noise control: bold labels ("**Instructions:**") and short labels ("Code comments:")
-  // repeat by design, and a short list item repeated under another heading or parent
-  // bullet is structure ("- Quality checklist"), unless it reads as an instruction
-  // ("- Run `pnpm test` before every commit"), which is exactly what steering files repeat by mistake.
-  const seen = new Map<string, { line: number; section: number; parent: string }>();
-  const pos = new Map<string, { line: number; text: string }>();
-  const neg = new Map<string, { line: number; text: string }>();
+/** One rule candidate found by forEachRule: a list item, or one sentence of a paragraph. */
+export interface RuleUnit {
+  /** 1-based line where the rule starts. */
+  line: number;
+  /** Normalised text used to compare rules (case, markup and closing punctuation removed). */
+  norm: string;
+  /** The rule as written, for quoting in a message. */
+  preview: string;
+  /** Reads as an instruction (imperative verb, always/never/must/should, or a command). */
+  rule: boolean;
+  /** Do or do-not polarity and the action it is about, after the list-of-things-to-avoid context is applied. */
+  pol: { neg: boolean; core: string; explicit: boolean } | null;
+  section: number;
+  listItem: boolean;
+  nested: boolean;
+  /** Normalised parent bullet for nested list items, else "". */
+  parent: string;
+}
+
+/**
+ * Walks the rule candidates of a file in order. A rule is a whole list item or a sentence of a
+ * paragraph, with wrapped lines joined first, so the continuation lines of two different
+ * sentences ("the contribution guide.") never match. Markup-only lines (`</details>`), headings,
+ * tables, comments, thematic breaks, bold labels and short labels are not rules. Used by the
+ * per-file duplicate and contradiction checks and by the cross-file drift checks.
+ */
+export function forEachRule(doc: Doc, visit: (u: RuleUnit) => void): void {
   const start = doc.frontmatter.present ? doc.frontmatter.endLine + 1 : 0;
   let section = 0;
   let negSection = false;
@@ -489,7 +503,7 @@ function checkRules(doc: Doc, c: Collector): void {
   let lead = false; // the paragraph before this list introduces things to avoid ("Avoid these:")
   let block: Block | null = null;
   // Steering files repeat lines; a hostile one repeats a pair 100,000 times. Each distinct text
-  // is analysed once (bounded cache), and messages are not built once a rule is at its cap.
+  // is analysed once (bounded cache).
   type Facts = { norm: string; rule: boolean; pos: ReturnType<typeof polarity> };
   const analysed = new Map<string, Facts>();
   const analyse = (text: string): Facts => {
@@ -530,37 +544,20 @@ function checkRules(doc: Doc, c: Collector): void {
       // A sentence taken out of a longer paragraph needs four words to be a rule:
       // emphasis such as "No exceptions." or "Every single time." repeats by design.
       if (parts.length > 1 && words < 4) continue;
-      const line = lineOf(part.at);
-      const preview = rulePreview(part.text);
-      const first = seen.get(norm);
-      if (first !== undefined) {
-        // Short list items that are labels ("- Quality checklist") repeat as structure under another
-        // heading or parent bullet. A short sub-item under a different parent bullet ("Feature PRs:" /
-        // "Bugfix PRs:" each with "- Add a changelog entry") is a per-parent checklist, even when it is an instruction.
-        const myParent = b.nested ? normRule(parent) : "";
-        const structural = b.listItem && norm.length < 40 && ((!rule && (first.section !== b.section || b.nested)) || (b.nested && first.parent !== myParent));
-        if (!structural && !c.full("duplicate-rule")) {
-          // Copies under different headings are sometimes deliberate (Path A and Path B each list the step).
-          const where = first.section !== b.section ? ", under another heading" : "";
-          const unless = first.section !== b.section ? ", unless the two sections are alternatives that never apply together" : "";
-          c.add("warning", "duplicate-rule", `Same rule as line ${first.line}${where}: ${q(preview, 60)}. Duplicates cost context and drift apart when one is edited; keep one${unless}`, line);
-        }
-      } else seen.set(norm, { line, section: b.section, parent: b.listItem && b.nested ? normRule(parent) : "" });
       // Under a list of things to avoid, polarity() drops a bare imperative ("Use X") and "Prefer X"; the rest stands.
       const p0 = facts.pos;
       const pol = negativeContext && p0 && !p0.neg && (!p0.explicit || p0.core.startsWith("prefer: ")) ? null : p0;
-      if (!pol || pol.core.length < 4) continue;
-      const mine = pol.neg ? neg : pos;
-      const other = (pol.neg ? pos : neg).get(pol.core);
-      if (other !== undefined && !c.full("contradiction")) {
-        c.add(
-          "warning",
-          "contradiction",
-          `Contradicts line ${other.line}: line ${other.line} says ${q(other.text, 60)} and line ${line} says ${q(preview, 60)}. Keep the one you mean`,
-          line,
-        );
-      }
-      if (!mine.has(pol.core)) mine.set(pol.core, { line, text: preview });
+      visit({
+        line: lineOf(part.at),
+        norm,
+        preview: rulePreview(part.text),
+        rule,
+        pol,
+        section: b.section,
+        listItem: b.listItem,
+        nested: b.nested,
+        parent: b.listItem && b.nested ? normRule(parent) : "",
+      });
     }
   };
 
@@ -599,6 +596,47 @@ function checkRules(doc: Doc, c: Collector): void {
     b.text += " " + trimmed.replace(/\s+/g, " ");
   }
   flush();
+}
+
+function checkRules(doc: Doc, c: Collector): void {
+  // Heuristics: duplicate rules, and "do X" against "do not X".
+  // Noise control: bold labels ("**Instructions:**") and short labels ("Code comments:")
+  // repeat by design, and a short list item repeated under another heading or parent
+  // bullet is structure ("- Quality checklist"), unless it reads as an instruction
+  // ("- Run `pnpm test` before every commit"), which is exactly what steering files repeat by mistake.
+  // Messages are not built once a rule is at its cap.
+  const seen = new Map<string, { line: number; section: number; parent: string }>();
+  const pos = new Map<string, { line: number; text: string }>();
+  const neg = new Map<string, { line: number; text: string }>();
+  forEachRule(doc, (u) => {
+    const { norm, line, preview, rule } = u;
+    const first = seen.get(norm);
+    if (first !== undefined) {
+      // Short list items that are labels ("- Quality checklist") repeat as structure under another
+      // heading or parent bullet. A short sub-item under a different parent bullet ("Feature PRs:" /
+      // "Bugfix PRs:" each with "- Add a changelog entry") is a per-parent checklist, even when it is an instruction.
+      const structural = u.listItem && norm.length < 40 && ((!rule && (first.section !== u.section || u.nested)) || (u.nested && first.parent !== u.parent));
+      if (!structural && !c.full("duplicate-rule")) {
+        // Copies under different headings are sometimes deliberate (Path A and Path B each list the step).
+        const where = first.section !== u.section ? ", under another heading" : "";
+        const unless = first.section !== u.section ? ", unless the two sections are alternatives that never apply together" : "";
+        c.add("warning", "duplicate-rule", `Same rule as line ${first.line}${where}: ${q(preview, 60)}. Duplicates cost context and drift apart when one is edited; keep one${unless}`, line);
+      }
+    } else seen.set(norm, { line, section: u.section, parent: u.parent });
+    const pol = u.pol;
+    if (!pol || pol.core.length < 4) return;
+    const mine = pol.neg ? neg : pos;
+    const other = (pol.neg ? pos : neg).get(pol.core);
+    if (other !== undefined && !c.full("contradiction")) {
+      c.add(
+        "warning",
+        "contradiction",
+        `Contradicts line ${other.line}: line ${other.line} says ${q(other.text, 60)} and line ${line} says ${q(preview, 60)}. Keep the one you mean`,
+        line,
+      );
+    }
+    if (!mine.has(pol.core)) mine.set(pol.core, { line, text: preview });
+  });
 }
 
 /** A line that is only a bold label, such as "**Instructions to user:**" or "- __Note__". Bounded by the line cap. */

@@ -1,6 +1,6 @@
 // Vendor-spec rules from the spec-gap research (sections 2 and 2b). No track owns these in 0.3.0;
 // ids are reserved here so .asitisrc.json files and later work agree on them. agents-md-shadowed
-// is in drift.meta.ts (one id, one owner). Rules that need a new file kind use the kinds already
+// and codex-chain-over-budget are in drift.meta.ts (one id, one owner). Rules that need a new file kind use the kinds already
 // added to kinds.ts; classify() itself changes only through the WP0 owner.
 
 import { planned, SRC, type RuleMeta } from "./types.js";
@@ -37,7 +37,6 @@ export const SPEC_RULES: RuleMeta[] = [
   f("rule-paths-budget", "warning", "Rule paths expand to more than 1,000 patterns", "Claude Code caps brace expansion of paths.", SRC.memory),
   f("rule-paths-bracket", "note", "Rule paths glob has an unescaped [", "Square brackets are a character class; escape them as \\[ to match a literal bracket.", SRC.memory),
   f("codex-override-shadow", "warning", "AGENTS.override.md in the same folder hides this AGENTS.md from Codex", "Codex reads the override instead of AGENTS.md.", SRC.codexAgentsMd),
-  planned({ id: "codex-chain-over-budget", category: "budget", defaultSeverity: "warning", scope: "project", summary: "AGENTS.md files from the root down exceed Codex's 32 KiB", why: "The budget is shared root first; the file that crosses it is cut and deeper files are dropped. Same rule as codex-chain-over-cap in the F11 notes.", source: SRC.codexAgentsMd }),
   f("empty-instructions", "note", "Instruction file is empty or whitespace", "Codex skips empty files and Claude Code adds nothing.", SRC.codexAgentsMd),
   f("gemini-import-depth", "warning", "GEMINI.md import chain deeper than 5", "Gemini CLI stops importing at depth 5.", SRC.geminiMemport),
   f("gemini-import-outside", "warning", "GEMINI.md import resolves outside the project", "Gemini CLI rejects it without asking.", SRC.geminiMemport),
