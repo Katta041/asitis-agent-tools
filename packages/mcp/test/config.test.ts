@@ -29,7 +29,7 @@ function project(name: string, files: Record<string, string>): string {
   return dir;
 }
 
-async function lint(dir: string, opts: { targets?: string[]; configPath?: string } = {}): Promise<ProjectResult> {
+async function lint(dir: string, opts: { targets?: string[]; configPath?: string; trustRepoConfig?: boolean } = {}): Promise<ProjectResult> {
   const sb = await Sandbox.create([dir]);
   return lintProject(sb, { deadline: deadline(), ...opts });
 }
@@ -160,9 +160,15 @@ describe("applying config", () => {
     expect(p.findings()[0]!.severity).toBe("error");
   });
 
-  test("security rules can be turned off in config (it shows up in review)", async () => {
+  test("security rules can be turned off in a trusted config, and the finding stays as suppressed", async () => {
     const dir = project("sec-off", { "CLAUDE.md": `# Rules\n\nUse tabs${String.fromCharCode(0x200b)} here.\n`, ".asitisrc.json": '{"rules": {"invisible-char": "off"}}' });
-    expect(rules(await lint(dir), "CLAUDE.md")).toEqual([]);
+    const trusted = await lint(dir, { trustRepoConfig: true });
+    expect(trusted.findings().map((f) => [f.ruleId, f.suppressed?.kind])).toEqual([["invisible-char", "external"]]);
+    expect(trusted.hiddenNote).toMatch(/^1 security finding hidden by \.asitisrc\.json \(rules off: invisible-char\)/);
+    // Untrusted (lint_steering's default): the repo's own config cannot hide it.
+    const untrusted = await lint(dir);
+    expect(rules(untrusted, "CLAUDE.md")).toEqual(["invisible-char"]);
+    expect(untrusted.findings()[0]!.suppressed).toBeUndefined();
   });
 
   test("overrides apply by glob, in order, after rules", async () => {
@@ -276,12 +282,19 @@ describe("applying config", () => {
       "docs/AGENTS.md": `${DUP}\n${DUP}\n`,
       ".asitisrc.json": '{"rules": {"hidden-comment": "off", "agents-md-shadowed": "off"}, "overrides": [{"files": ["docs/**"], "rules": {"duplicate-rule": "error"}}]}',
     });
-    const p = await lint(dir);
     const c = await connect([dir]);
-    const r = await c.call("lint_steering", {});
-    await c.close();
+    // trustRepoConfig: hidden-comment is a security rule, which the repo's config may turn off only then.
+    const p = await lint(dir, { trustRepoConfig: true });
+    const r = await c.call("lint_steering", { trustRepoConfig: true });
     expect(r.structured["files"]).toEqual(JSON.parse(JSON.stringify(p.results)));
     expect(r.text).toMatch(/^Linted 2 files: 1 error, 1 warning, 0 notes\./);
+    // Without it the same call applies the rest of the config and still shows the hidden comment.
+    const p2 = await lint(dir);
+    const r2 = await c.call("lint_steering", {});
+    await c.close();
+    expect(r2.structured["files"]).toEqual(JSON.parse(JSON.stringify(p2.results)));
+    expect(r2.text).toMatch(/^Linted 2 files: 1 error, 1 warning, 1 note\./);
+    expect(r2.text).toContain("pass trustRepoConfig: true");
   });
 });
 

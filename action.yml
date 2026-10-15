@@ -12,11 +12,11 @@ branding:
 
 inputs:
   paths:
-    description: Files to lint, one per line or separated by spaces. Empty lints every steering file under root.
+    description: Files to lint, one per line (a path may contain spaces), or separated by spaces on one line. Empty lints every steering file under root.
     required: false
     default: ""
   root:
-    description: The one folder the linter may read. Keep it at the repository top so annotations land on the right files.
+    description: The one folder the linter may read, relative to the repository top (an absolute path inside the workspace is made relative). Keep it at the top so annotations land on the right files.
     required: false
     default: "."
   fail-on:
@@ -48,9 +48,13 @@ inputs:
     required: false
     default: asitis.sarif
   upload-sarif:
-    description: Set to true to upload the SARIF file to GitHub code scanning. The job then needs security-events write permission.
+    description: Set to true to upload the SARIF file to GitHub code scanning. Needs a public repo, or GitHub Code Security on a private one, and security-events write permission. A failed upload never hides the lint result.
     required: false
     default: "false"
+  fail-on-hidden-security:
+    description: Fail the job when the repo's .asitisrc.json (a rule turned off, a lower severity, an ignore pattern) or the baseline hides a security finding. Set to false to let them through.
+    required: false
+    default: "true"
 
 outputs:
   exit-code:
@@ -85,10 +89,15 @@ runs:
         INPUT_CONFIG: ${{ inputs.config }}
         INPUT_BASELINE: ${{ inputs.baseline }}
         INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
+        INPUT_FAIL_ON_HIDDEN_SECURITY: ${{ inputs.fail-on-hidden-security }}
       run: bash "$GITHUB_ACTION_PATH/action/run.sh"
 
+    # continue-on-error: on a private repo without GitHub Code Security the upload returns 403
+    # ("Code scanning is not enabled"). That must not turn a clean lint red, nor hide a failing one:
+    # the next step decides the job from the lint exit code alone.
     - name: Upload SARIF to code scanning
       if: inputs.upload-sarif == 'true' && steps.lint.outputs.sarif-file != ''
+      continue-on-error: true
       uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
       with:
         sarif_file: ${{ steps.lint.outputs.sarif-file }}

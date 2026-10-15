@@ -30,6 +30,11 @@ export interface WalkResult {
   /** Why the walk was cut short: folders deeper than the depth limit, or the entry, file or time limit. */
   cut: { depth: boolean; size: boolean; time: boolean };
   entriesSeen: number;
+  /**
+   * Folders that could not be listed (permission denied), root-relative POSIX ("." for the root).
+   * Their files were not searched, so a caller must say so: a partial walk must not look complete.
+   */
+  unreadable: string[];
 }
 
 export class Deadline {
@@ -45,7 +50,7 @@ export class Deadline {
 /** Lists steering files (and, with includeAll, every readable markdown file) under the roots. */
 export async function walk(sandbox: Sandbox, opts: { maxDepth?: number; includeAll?: boolean; deadline?: Deadline } = {}): Promise<WalkResult> {
   const maxDepth = Math.min(opts.maxDepth ?? CAPS.walkMaxDepth, CAPS.walkMaxDepth);
-  const out: WalkResult = { files: [], skippedSymlinks: 0, truncated: false, cut: { depth: false, size: false, time: false }, entriesSeen: 0 };
+  const out: WalkResult = { files: [], skippedSymlinks: 0, truncated: false, cut: { depth: false, size: false, time: false }, entriesSeen: 0, unreadable: [] };
   for (const root of sandbox.roots) {
     const queue: Array<{ dir: string; rel: string; depth: number }> = [{ dir: root.real, rel: "", depth: 0 }];
     const visited = new Set<string>([await fsp.realpath(root.real).catch(() => root.real)]);
@@ -55,8 +60,17 @@ export async function walk(sandbox: Sandbox, opts: { maxDepth?: number; includeA
       let entries: import("node:fs").Dirent[];
       try {
         entries = await fsp.readdir(dir, { withFileTypes: true });
-      } catch {
-        continue;
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException | null)?.code;
+        // Gone since it was listed (deleted mid-walk, or a file now): nothing to search.
+        if (code === "ENOENT" || code === "ENOTDIR") continue;
+        // Permission denied: recorded, so the lint can say which folder it could not search.
+        if (code === "EACCES" || code === "EPERM") {
+          if (out.unreadable.length < 1000) out.unreadable.push(rel || ".");
+          continue;
+        }
+        // Anything else is a bug or a broken system, not a clean folder.
+        throw e;
       }
       entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
       for (const e of entries) {

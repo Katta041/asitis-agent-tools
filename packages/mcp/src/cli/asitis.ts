@@ -9,7 +9,9 @@
 
 import path from "node:path";
 import { baselineOf } from "../baseline.js";
+import { hiddenTotal } from "../config.js";
 import { Deadline } from "../discover.js";
+import { esc } from "../escape.js";
 import { SEVERITY_RANK, buildReport, type Finding } from "../findings.js";
 import { attachFixes, fixPreview } from "../fix.js";
 import { formatGithub } from "../format/github.js";
@@ -55,6 +57,8 @@ Options for lint:
   --quiet, -q              text and github: findings only, no summary or notices
   --annotate-notes         github: also annotate notes (by default only errors and warnings are)
   --allow-broad-root       allow your home folder or the filesystem root as --root
+  --fail-on-hidden-security
+                           exit 1 when .asitisrc.json or the baseline hides or lowers a security finding
 
 Options for budget: --root, --format text|json, --max-file-mb, --allow-broad-root.
 
@@ -241,6 +245,9 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
       include: a.include,
       // The CLI honours include and extends from .asitisrc.json; the MCP server does not (cli-contract.md).
       configInclude: true,
+      // The user runs the CLI on purpose in their own repo, so its config applies to security rules
+      // too. Every security finding it hides is still counted in one line and kept in JSON and SARIF.
+      trustRepoConfig: true,
       deadline: new Deadline(RUN_BUDGET_MS),
       maxFiles: a.maxFiles,
       ...(configPath === undefined ? {} : { configPath }),
@@ -254,6 +261,10 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
 
   // A partial lint must never look like a clean one.
   if (project.timedOut) throw usage(`stopped at the ${RUN_BUDGET_MS / 60_000}-minute time limit; pass paths to lint fewer files`);
+  if (project.unreadable.length) {
+    const u = project.unreadable;
+    throw usage(`could not read the folder ${shown(u[0]!)}${u.length > 1 ? ` and ${u.length - 1} more` : ""} (permission denied), so the steering files in it were not linted; fix the permissions, or add it to ignore in .asitisrc.json`);
+  }
   const notes = [...project.notes];
   if (project.truncated) {
     // walkCutNote (project.ts) says which limit stopped the walk. The file, entry and time limits
@@ -278,8 +289,12 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
   const safety = a.fixPreview;
   if (safety && a.format !== "text" && a.format !== "github") attachFixes(project, safety);
   const findings = project.findings();
-  const report = buildReport(rootShown, project.results.length, findings);
-  const code = findings.some((f) => failsOn(f, a.failOn)) ? EXIT.findings : EXIT.ok;
+  const report = buildReport(rootShown, project.results.length, findings, project.hiddenSecurity);
+  const hiddenSec = hiddenTotal(project.hiddenSecurity);
+  const code = findings.some((f) => failsOn(f, a.failOn)) || (a.failOnHiddenSecurity && hiddenSec > 0) ? EXIT.findings : EXIT.ok;
+  // The hidden-security line is shown in every format, --quiet included: hiding a security
+  // finding is never silent.
+  const alerts = project.hiddenNote ? [project.hiddenNote + (a.failOnHiddenSecurity ? " --fail-on-hidden-security is set, so this run fails." : "")] : [];
 
   if (a.writeBaseline) {
     io.out(`${JSON.stringify(baselineOf(findings.filter((f) => !f.suppressed)), null, 2)}\n`);
@@ -294,18 +309,18 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
         else if (!a.quiet) io.err("asitis: no fixes to suggest for these findings.\n");
         return code;
       }
-      io.out(formatText(report, { quiet: a.quiet, notes }));
+      io.out(formatText(report, { quiet: a.quiet, notes, alerts }));
       break;
     case "json":
       io.out(formatJson(report));
-      for (const n of notes) io.err(`asitis: ${n}\n`);
+      for (const n of [...alerts, ...notes]) io.err(`asitis: ${esc(n, 800)}\n`);
       break;
     case "sarif":
-      io.out(formatSarif(report));
-      for (const n of notes) io.err(`asitis: ${n}\n`);
+      io.out(formatSarif(report, { alerts }));
+      for (const n of [...alerts, ...notes]) io.err(`asitis: ${esc(n, 800)}\n`);
       break;
     case "github":
-      io.out(formatGithub(report, { quiet: a.quiet, notes, annotateNotes: a.annotateNotes }));
+      io.out(formatGithub(report, { quiet: a.quiet, notes, alerts, annotateNotes: a.annotateNotes }));
       break;
   }
   return code;
@@ -328,7 +343,15 @@ async function budget(a: BudgetArgs, io: CliIO): Promise<number> {
 }
 
 /** Runs one command and returns the exit code. Never throws. */
-export async function run(argv: string[], io: CliIO = processIO()): Promise<number> {
+export async function run(argv: string[], given?: CliIO): Promise<number> {
+  let io: CliIO;
+  try {
+    io = given ?? processIO();
+  } catch {
+    // process.cwd() throws when the current folder was deleted or cannot be read.
+    process.stderr.write("asitis: the current folder was deleted or cannot be read; cd into your project folder and run asitis again\n");
+    return EXIT.usage;
+  }
   const old = nodeVersionError(io.nodeVersion);
   if (old) {
     io.err(`asitis: ${old}\n`);

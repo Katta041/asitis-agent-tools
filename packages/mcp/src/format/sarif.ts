@@ -34,11 +34,15 @@ export function toUri(p: string): string {
 function ruleDescriptor(r: RuleMeta): Record<string, unknown> {
   const properties: Record<string, unknown> = { tags: TAGS[r.category] };
   if (r.category === "security") properties["security-severity"] = SECURITY_SEVERITY[r.defaultSeverity];
+  const helpUri = `${RULE_DOCS}${encodeURIComponent(r.id)}.md`;
   return {
     id: r.id,
     shortDescription: { text: r.summary },
     fullDescription: { text: r.why },
-    helpUri: `${RULE_DOCS}${encodeURIComponent(r.id)}.md`,
+    helpUri,
+    // help: the rule page summary, shown by code scanning next to an alert (SARIF 3.49.12; the
+    // multitool's GH2012 check asks for it).
+    help: { text: `${r.summary}. ${r.why} Rule page: ${helpUri}`, markdown: `**${r.summary}.**\n\n${r.why}\n\n[Rule page](${helpUri})` },
     defaultConfiguration: { level: r.defaultSeverity },
     properties,
   };
@@ -83,7 +87,12 @@ function result(f: Finding, index: ReadonlyMap<string, number>, root: string): R
   return out;
 }
 
-export function formatSarif(report: LintReport): string {
+export interface SarifOptions {
+  /** Lines about security findings the config or baseline hid, as tool notifications. */
+  alerts?: readonly string[];
+}
+
+export function formatSarif(report: LintReport, opts: SarifOptions = {}): string {
   const rules = activeRules();
   const index = new Map(rules.map((r, i) => [r.id, i]));
   const log = {
@@ -100,7 +109,12 @@ export function formatSarif(report: LintReport): string {
           },
         },
         columnKind: "utf16CodeUnits",
-        invocations: [{ executionSuccessful: true }],
+        invocations: [
+          {
+            executionSuccessful: true,
+            ...(opts.alerts?.length ? { toolExecutionNotifications: opts.alerts.map((text) => ({ level: "warning", message: { text } })) } : {}),
+          },
+        ],
         results: report.findings.map((f) => result(f, index, report.root)),
       },
     ],

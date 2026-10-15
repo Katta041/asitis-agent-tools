@@ -281,14 +281,20 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
           .max(INCLUDE_VALUES.length)
           .optional()
           .describe("Opt-in scans beyond markdown: skills (scripts in skill folders), config (.claude/settings.json and MCP config files), config-local (also .claude/settings.local.json). Off by default"),
+        trustRepoConfig: z
+          .boolean()
+          .optional()
+          .describe("Let the repo's own .asitisrc.json turn off, lower or ignore security findings. Off by default, so a cloned repo cannot hide its own hidden instructions or risky hooks; set it only for a repo you trust"),
       },
       annotations: { title: "Lint steering files", ...READ_ONLY },
     },
-    guard(async ({ path: p, paths, include }, deadline) => {
+    guard(async ({ path: p, paths, include, trustRepoConfig }, deadline) => {
       const targets: string[] = [];
       if (p) targets.push(p);
       if (paths) targets.push(...paths);
-      const project = await lintProject(sandbox, { targets, deadline, ...(include ? { include } : {}) });
+      // A repo's config can never widen what is read (include comes from the call), and without
+      // trustRepoConfig it cannot hide a security finding either (config.ts, HiddenSecurity).
+      const project = await lintProject(sandbox, { targets, deadline, trustRepoConfig: trustRepoConfig === true, ...(include ? { include } : {}) });
       const { results, failures, discovered, foundCount, timedOut, walkNote, truncated } = project;
       // Suppressed findings (config, baseline, asitis-disable comments) are counted, not listed.
       const live = (r: LintResult): Issue[] => r.issues.filter((i) => !i.suppressed);
@@ -298,7 +304,7 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
       const warnings = count("warning");
       const notes = count("info");
       const allClean = errors + warnings + notes === 0 && !failures.length;
-      const tail = [...(suppressed ? [`${plural(suppressed, "suppressed finding")} not listed.`] : []), ...project.notes.map((t) => esc(t, 400))];
+      const tail = [...(project.hiddenNote ? [esc(project.hiddenNote, 800)] : []), ...(suppressed ? [`${plural(suppressed, "suppressed finding")} not listed.`] : []), ...project.notes.map((t) => esc(t, 400))];
       const summaryOf = (base: Record<string, unknown>): Record<string, unknown> => (suppressed ? { ...base, suppressed } : base);
       // Say exactly what was not linted and how to get it, so nobody has to guess a total.
       const cutParts: string[] = [];
@@ -368,8 +374,10 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
     },
     guard(async ({ path: p }, deadline) => {
       // A file that was not counted shows why instead of "about 0 tokens".
+      // An overflow row's path is a sentence ("At least 1,800 more imports in X"), not a file name.
+      const name = (e: BudgetEntry): string => (e.overflow ? esc(e.path, 400) : dp(e.path));
       const fmt = (e: BudgetEntry): string =>
-        e.tokens === 0 && e.note && /not counted|not listed/.test(e.note) ? `  - ${dp(e.path)}: ${esc(e.note, 400)}` : `  - ${dp(e.path)}: ${fmtTokens(e.tokens)}${e.note ? `, ${esc(e.note, 400)}` : ""}`;
+        e.tokens === 0 && e.note && /not counted|not listed/.test(e.note) ? `  - ${name(e)}: ${esc(e.note, 400)}` : `  - ${name(e)}: ${fmtTokens(e.tokens)}${e.note ? `, ${esc(e.note, 400)}` : ""}`;
       if (p) {
         const { doc, tokens, imports } = await fileBudget(sandbox, p, deadline);
         const total = tokens + imports.reduce((a, e) => a + e.tokens, 0);
@@ -476,6 +484,7 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
           }
         }
       }
+      if (found.unreadable.length) lines.push("", `Could not read ${plural(found.unreadable.length, "folder")} (permission denied), so ${found.unreadable.length === 1 ? "it was" : "they were"} not searched: ${found.unreadable.slice(0, 5).map((d) => dp(d)).join(", ")}${found.unreadable.length > 5 ? " and more" : ""}.`);
       if (found.skippedSymlinks) lines.push("", `${found.skippedSymlinks === 1 ? "1 symlink was" : `${found.skippedSymlinks} symlinks were`} not followed.`);
       if (found.truncated && walkCutNote(found)) lines.push(walkCutNote(found));
       if (found.files.length) lines.push("", "Next: lint_steering checks these files; context_budget shows what each agent loads every session.");

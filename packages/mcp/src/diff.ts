@@ -166,9 +166,12 @@ function lineAt(lines: Line[], pos: number, size: number): number {
 /**
  * a/<path> and b/<path> as git writes them: plain when the path is plain, otherwise in double
  * quotes with C escapes and octal bytes for anything outside printable ASCII (core.quotePath).
+ * A path with a space is quoted too, unlike git: in "diff --git a/x.md b/CLAUDE.md b/x.md b/CLAUDE.md"
+ * nobody can tell where the first name ends, and patch(1) cuts an unquoted name at the space.
+ * git apply reads the quoted form the same way.
  */
 export function quotePath(path: string): { a: string; b: string } {
-  const plain = /^[\x21-\x7e ]*$/.test(path) && !/["\\]/.test(path) && !/^ | $/.test(path);
+  const plain = /^[\x21-\x7e]*$/.test(path) && !/["\\]/.test(path);
   if (plain) return { a: `a/${path}`, b: `b/${path}` };
   const esc = (s: string): string => {
     let r = "";

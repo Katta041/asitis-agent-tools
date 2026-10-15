@@ -27,7 +27,9 @@ afterAll(() => t.cleanup());
 async function run(lines: string[], eol = "\n", baseline?: string): Promise<Finding[]> {
   writeFileSync(path.join(dir, "CLAUDE.md"), lines.join(eol));
   const sb = await Sandbox.create([dir]);
-  return (await lintProject(sb, { targets: ["CLAUDE.md"], deadline: deadline(), ...(baseline ? { baselinePath: baseline } : {}) })).findings();
+  // trustRepoConfig as the CLI passes it: hidden-comment is a security rule, and only a trusted
+  // run lets the baseline hide one (security-config.test.ts covers the untrusted side).
+  return (await lintProject(sb, { targets: ["CLAUDE.md"], deadline: deadline(), trustRepoConfig: true, ...(baseline ? { baselinePath: baseline } : {}) })).findings();
 }
 
 /** Lints BODY, writes its baseline to .asitis-baseline.json and returns the findings. */

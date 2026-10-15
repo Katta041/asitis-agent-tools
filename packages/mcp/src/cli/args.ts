@@ -29,6 +29,8 @@ export interface LintArgs {
   quiet: boolean;
   annotateNotes: boolean;
   allowBroadRoot: boolean;
+  /** Exit 1 when the repo's config or baseline hides or lowers a security finding. */
+  failOnHiddenSecurity: boolean;
 }
 
 export interface BudgetArgs {
@@ -127,6 +129,7 @@ export function parse(argv: string[]): Parsed {
         quiet: { type: "boolean", short: "q" },
         "annotate-notes": { type: "boolean" },
         "allow-broad-root": { type: "boolean" },
+        "fail-on-hidden-security": { type: "boolean" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
       },
@@ -161,6 +164,7 @@ export function parse(argv: string[]): Parsed {
     if (v["write-baseline"]) throw new UserError("--write-baseline only applies to asitis lint");
     if (v.quiet) throw new UserError("--quiet only applies to asitis lint");
     if (v["annotate-notes"]) throw new UserError("--annotate-notes only applies to asitis lint");
+    if (v["fail-on-hidden-security"]) throw new UserError("--fail-on-hidden-security only applies to asitis lint");
     if (rest.length > 1) throw new UserError("asitis budget takes at most one file; leave it out for the whole folder");
     return {
       command: "budget",
@@ -195,5 +199,6 @@ export function parse(argv: string[]): Parsed {
     quiet: !!v.quiet,
     annotateNotes: !!v["annotate-notes"],
     allowBroadRoot,
+    failOnHiddenSecurity: !!v["fail-on-hidden-security"],
   };
 }

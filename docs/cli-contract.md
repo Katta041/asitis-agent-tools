@@ -29,6 +29,7 @@ asitis lint [paths...] [--root <dir>] [--format text|json|sarif|github]
             [--baseline <file>] [--write-baseline] [--include <list>]
             [--fix-preview[=safe]] [--max-files <n>] [--max-file-mb <n>] [--quiet]
             [--annotate-notes]
+            [--fail-on-hidden-security]
 asitis budget [file] [--root <dir>] [--format text|json] [--max-file-mb <n>]
 asitis --version
 asitis --help
@@ -48,8 +49,9 @@ asitis lint --help | asitis budget --help
 | `--fix-preview[=safe]` | off | Attach fixes. With `text` it prints one combined unified diff that `git apply` accepts, and nothing else. With `json` each fixable finding gets `fix`; with `sarif` results get `fixes[]`; with `github` it is ignored. `=safe` limits fixes to safe ones. There is no flag that writes. |
 | `--max-files <n>` | 1,000 | Most steering files linted when walking the root, 1 to 1,000 (`CAPS.walkMaxFiles`). A walk that finds more is exit 2. |
 | `--max-file-mb <n>` | 16 | Largest markdown file analysed, 1 to 64. |
-| `--quiet` | off | `text` and `github` only: no summary line, no notices. Findings are still printed. |
+| `--quiet` | off | `text` and `github` only: no summary line, no notices. Findings are still printed, and so is the line about security findings hidden by the config or baseline. |
 | `--annotate-notes` | off | `github` only (any other format is exit 2): also annotate findings of severity note. Without it only errors and warnings become annotations; notes still count in the summary line, and one more line says how many were left out. |
+| `--fail-on-hidden-security` | off | Exit 1 when `.asitisrc.json` (rules off, a lower severity, `ignore`) or the baseline hid or lowered at least one security finding. The Action turns it on by default. |
 | `--allow-broad-root` | off | As in `asitis-mcp`. |
 
 `ASITIS_DEBUG=1` adds a stack trace to exit code 3. No other environment variable changes behaviour.
@@ -151,8 +153,9 @@ Linted 12 files: 1 error, 3 warnings, 2 notes, 4 suppressed.
 ```
 
 - One line per unsuppressed finding: `path:line:col severity rule-id message`. Control and bidi characters in path and message are escaped with `esc()` from `escape.js`, so one finding is always one line.
-- A blank line, then the summary. The summary uses the wording of the MCP tool (`Linted N files: ...`) and adds `, N suppressed` only when N is above 0. With no findings: `Linted N files: no issues found.`
+- A blank line, then the summary. The summary uses the wording of the MCP tool (`Linted N files: ...`) and adds `, N suppressed` only when N is above 0. With no findings: `Linted N files: no issues found.`, or `Linted N files: no issues found, N suppressed.`
 - Suppressed findings are not listed.
+- When `.asitisrc.json` or the baseline hid or lowered a security finding, one more line says so, even with `--quiet`: `3 security findings hidden by .asitisrc.json (rules off: hidden-instruction, invisible-char, sec-hook-config) and 1 by the baseline. Hidden ones stay in the report, marked suppressed.` JSON and SARIF print it on stderr; SARIF also carries it in `invocations[0].toolExecutionNotifications`; `--format github` prints it as a `::warning`.
 
 ## JSON format
 
@@ -163,7 +166,11 @@ interface LintReport {
   schemaVersion: 1;
   tool: { name: "asitis"; version: string };
   root: string;    // --root as given (default "."), backslashes turned into slashes; never made absolute
-  summary: { files: number; errors: number; warnings: number; notes: number; suppressed: number };
+  summary: {
+    files: number; errors: number; warnings: number; notes: number; suppressed: number;
+    // only when .asitisrc.json or the baseline hid or lowered security findings
+    hiddenSecurity?: { config: number; baseline: number; rules: string[]; ignoredFiles: string[] };
+  };
   findings: Finding[];  // suppressed ones included, marked
 }
 ```
@@ -195,7 +202,18 @@ JSON Schema (draft 2020-12), to be vendored as `packages/mcp/schema/report-1.jso
         "errors": { "type": "integer", "minimum": 0 },
         "warnings": { "type": "integer", "minimum": 0 },
         "notes": { "type": "integer", "minimum": 0 },
-        "suppressed": { "type": "integer", "minimum": 0 }
+        "suppressed": { "type": "integer", "minimum": 0 },
+        "hiddenSecurity": {
+          "type": "object",
+          "description": "Present only when the repo's .asitisrc.json or baseline hid or lowered security findings.",
+          "required": ["config", "baseline", "rules", "ignoredFiles"],
+          "properties": {
+            "config": { "type": "integer", "minimum": 0 },
+            "baseline": { "type": "integer", "minimum": 0 },
+            "rules": { "type": "array", "items": { "type": "string" } },
+            "ignoredFiles": { "type": "array", "items": { "type": "string" } }
+          }
+        }
       }
     },
     "findings": {
@@ -320,7 +338,11 @@ One workflow command per unsuppressed finding:
 - `extends`: `recommended` (default) or `strict` (notes become warnings, `sec-*` rules on).
 - Threshold options for `length`: `claudeMdLines`, `skillMdLines`, `cursorRuleLines`, `codexBytes`, `windsurfChars`, `memoryIndexLines`. Defaults stay in `limits.ts`.
 - Any unknown key, unknown rule id (not in the registry, or planned), bad severity or bad option type throws `UserError` with `file line N: problem (did you mean "x"?)`. CLI: exit 2. MCP: the tool error text.
-- In the MCP server the same file is read on every `lint_steering` call when it exists. The server never reads it for other tools. There, `include` and the extra scans that `strict` turns on are not applied (see Code path); severities, `off`, `ignore` and `overrides` are.
+- In the MCP server the same file is read on every `lint_steering` call when it exists. The server never reads it for other tools. There, `include` and the extra scans that `strict` turns on are not applied (see Code path); severities, `off`, `ignore` and `overrides` are, except on security rules (next point).
+- Security rules (category `security`) and the repo's own config. A repo you clone could ship an `.asitisrc.json` that turns off the very rules that would flag its hidden instructions. So:
+  - `lint_steering` does not let the repo's config turn off, lower or ignore a security finding unless the call passes `trustRepoConfig: true`. The findings stay as they are and one line at the end says what the config asked for. This mirrors `include`: a repo's config can neither widen what is read nor hide what is found.
+  - The CLI and the Action apply the config to security rules too, because you run them on purpose in your own repo. A security finding that `off`, `ignore` or the baseline hides stays in JSON and SARIF as a suppressed result (`kind: "external"`, with a justification), one lowered by a severity stays at its new level, and one summary line counts them all. `--fail-on-hidden-security` (on by default in the Action) exits 1 when that count is above 0.
+  - An `ignore` pattern never drops the security findings of a file it matches: they are kept (suppressed, with the CLI) and the line names the file.
 - `strict` also shows two inventory notes that are off by default because they fire on most repos: plain hooks in `.claude/settings.json` (`sec-hook-config`) and subagents without a `tools` list (`sec-skill-allowed-tools`).
 
 ## Suppression
@@ -331,12 +353,13 @@ One workflow command per unsuppressed finding:
 ```
 
 - A rule id is required; there is no "disable everything".
-- Rules with `suppressibleInline: false` in the registry (every `security` category rule: `hidden-*`, `invisible-char`, `bidi-control`, `unclosed-comment`, `unsafe-path`, `sec-*`, `secret-in-steering` and the rest) are not suppressed by a comment. The comment gets `suppression-not-allowed` (warning). They can be turned off in `.asitisrc.json` or the baseline only, because both show up in review.
+- Rules with `suppressibleInline: false` in the registry (every `security` category rule: `hidden-*`, `invisible-char`, `bidi-control`, `unclosed-comment`, `unsafe-path`, `sec-*`, `secret-in-steering` and the rest) are not suppressed by a comment. The comment gets `suppression-not-allowed` (warning). They can be turned off in `.asitisrc.json` or the baseline only, because both show up in review, and even then only where the repo's config is trusted (see Config).
 - An unknown id gives `unknown-suppression` (warning); a comment that suppressed nothing gives `unused-suppression` (note).
 - Suppressed findings are counted in every summary and kept, marked, in JSON and SARIF.
 
 ## MCP side
 
+- `lint_steering` takes `trustRepoConfig?: boolean` (default false): see Config for what it changes.
 - `lint_steering` takes `include?: ("skills" | "config" | "config-local")[]`. Without it nothing beyond markdown is read, as in 0.2.5. With a value whose scan is not available yet, the result ends with a notice line and nothing extra is read.
 - `lint_steering` text leaves suppressed findings out of the listing and says `N suppressed findings not listed.` at the end. `structuredContent.summary.suppressed` appears only when it is above 0, so 0.2.5 output stays byte-identical.
 - `suggest_fixes {path?, paths?, rules?, safety?: "safe" | "all"}` is registered against `suggestFixes()` in `fix.ts`. WP7 owns its body and wording and never edits `server.ts`.

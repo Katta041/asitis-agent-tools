@@ -38,23 +38,58 @@ case "$format" in
   *) fail 2 "format must be github, text or json, not \"$format\"." ;;
 esac
 
-args=(lint --root "${INPUT_ROOT:-.}")
+# root: annotation and SARIF paths are relative to the checkout, so an absolute root inside
+# GITHUB_WORKSPACE is turned into the same folder written relative to it.
+root="${INPUT_ROOT:-.}"
+ws="${GITHUB_WORKSPACE:-}"
+if [ -n "$ws" ] && [[ "$root" == /* ]]; then
+  ws="${ws%/}"
+  if [ "$root" = "$ws" ]; then
+    root="."
+  elif [[ "$root" == "$ws"/* ]]; then
+    root="${root#"$ws"/}"
+  fi
+fi
+
+args=(lint --root "$root")
 [ -n "${INPUT_CONFIG:-}" ] && args+=(--config "$INPUT_CONFIG")
 [ -n "${INPUT_BASELINE:-}" ] && args+=(--baseline "$INPUT_BASELINE")
 [ -n "${INPUT_INCLUDE:-}" ] && args+=(--include "$INPUT_INCLUDE")
 annotate=()
 [ "$format" = github ] && [ "${INPUT_ANNOTATE_NOTES:-false}" = true ] && annotate=(--annotate-notes)
+# fail-on-hidden-security (default true): the lint pass exits 1 when .asitisrc.json or the baseline
+# hides or lowers a security finding. Only the lint pass gets it; the SARIF pass uses --fail-on never.
+hidden=()
+case "${INPUT_FAIL_ON_HIDDEN_SECURITY:-true}" in
+  true) hidden=(--fail-on-hidden-security) ;;
+  false) ;;
+  *) fail 2 "fail-on-hidden-security must be true or false, not \"${INPUT_FAIL_ON_HIDDEN_SECURITY}\"." ;;
+esac
 
+# paths: one per line whenever the input has a line break (a YAML block always ends in one), so a
+# path with spaces works on its own line. A single line is one path when that file exists, and
+# otherwise a list separated by spaces. No $(...) here: it would strip the final line break.
 paths=()
-raw="$(printf '%s' "${INPUT_PATHS:-}" | tr -d '\r')"
+raw="${INPUT_PATHS:-}"
+raw="${raw//$'\r'/}"
+trim() {
+  local t="$1"
+  t="${t#"${t%%[![:space:]]*}"}"
+  t="${t%"${t##*[![:space:]]}"}"
+  printf '%s' "$t"
+}
 if [[ "$raw" == *$'\n'* ]]; then
-  while IFS= read -r line; do
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="$(trim "$line")"
     [ -n "$line" ] && paths+=("$line")
   done <<< "$raw"
-elif [ -n "$raw" ]; then
-  read -r -a paths <<< "$raw"
+elif [ -n "$(trim "$raw")" ]; then
+  one="$(trim "$raw")"
+  if [ -e "$one" ]; then
+    paths=("$one")
+  else
+    read -r -a paths <<< "$raw"
+  fi
 fi
 
 # 3. The lint pass. Its stdout goes to the log, where --format github lines become annotations.
@@ -62,7 +97,7 @@ fi
 # with % escaped so the text stays data.
 log="$(mktemp)"
 errlog="$(mktemp)"
-node "$cli" "${args[@]}" --format "$format" ${annotate[@]+"${annotate[@]}"} --fail-on "${INPUT_FAIL_ON:-error}" ${paths[@]+"${paths[@]}"} > "$log" 2> "$errlog"
+node "$cli" "${args[@]}" --format "$format" ${annotate[@]+"${annotate[@]}"} --fail-on "${INPUT_FAIL_ON:-error}" ${hidden[@]+"${hidden[@]}"} ${paths[@]+"${paths[@]}"} > "$log" 2> "$errlog"
 code=$?
 cat "$log"
 level=notice

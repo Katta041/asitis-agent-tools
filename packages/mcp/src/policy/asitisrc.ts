@@ -29,7 +29,10 @@ export const ASITISRC_POLICY: ReadPolicy = {
   refusal: (relPosix) => {
     const b = base(relPosix);
     if (!b.endsWith(".json")) return `${relPosix} is not a .json file; AsItIs config and baseline files are JSON only`;
-    if (NOT_OURS.has(b) || /credential|secret|token/.test(b)) return `${relPosix} is not an AsItIs config or baseline file; this server does not read it as one`;
+    // .claude.json is Claude Code's own state (sign-in, per-project history): never read, also when
+    // a symlink with another name points at it (the policy sees the real path too).
+    if (b === ".claude.json" || b.startsWith(".claude.json.")) return `${relPosix} is Claude Code's own state file; AsItIs never reads it`;
+    if (NOT_OURS.has(b) || /credential|secret|token/.test(b)) return `${relPosix} is not an AsItIs config or baseline file; AsItIs does not read it as one`;
     return null;
   },
 };

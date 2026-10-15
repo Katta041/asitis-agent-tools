@@ -60,6 +60,38 @@
         "suppressed": {
           "type": "integer",
           "minimum": 0
+        },
+        "hiddenSecurity": {
+          "type": "object",
+          "description": "Present only when the repo's .asitisrc.json or baseline hid or lowered security findings.",
+          "required": [
+            "config",
+            "baseline",
+            "rules",
+            "ignoredFiles"
+          ],
+          "properties": {
+            "config": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "baseline": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "ignoredFiles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },

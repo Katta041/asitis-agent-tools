@@ -36,6 +36,8 @@ export interface GithubOptions {
    * attention there. They still count in the summary line.
    */
   annotateNotes?: boolean;
+  /** Shown as ::warning even with quiet: security findings the config or baseline hid. */
+  alerts?: readonly string[];
 }
 
 
@@ -58,6 +60,7 @@ export function formatGithub(report: LintReport, opts: GithubOptions = {}): stri
     ].join(",");
     lines.push(`::${COMMAND[f.severity]} ${props}::${escapeData(esc(f.message, 1000))}`);
   }
+  for (const a of opts.alerts ?? []) lines.push(`::warning title=${escapeProperty("asitis: security findings hidden")}::${escapeData(esc(a, 800))}`);
   if (!opts.quiet) {
     for (const note of opts.notes ?? []) lines.push(`::notice::${escapeData(esc(note, 400))}`);
     lines.push(`asitis: ${summaryLine(report.summary)}`);

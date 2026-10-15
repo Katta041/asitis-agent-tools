@@ -8,7 +8,9 @@
 //   thresholds, asitis-disable comments (suppress.ts), rule severity and "off" (preset, then rules,
 //   then each matching override in order), and last the baseline.
 // - A rule that is "off" is removed. Suppressed findings stay, marked, so every summary counts them.
-// - Security rules can be turned off here (it shows up in review), never by a comment.
+// - Security rules are never turned off by a comment. The repo's config and baseline apply to them
+//   only with trust (the CLI, or lint_steering with trustRepoConfig), and even then each hidden
+//   security finding stays in JSON and SARIF as suppressed and is counted in one summary line.
 //
 // Why it is validated strictly: in agnix issue 1152 (read 14 October 2026,
 // https://github.com/agent-sh/agnix/issues/1152) one misspelled key made agnix drop the whole
@@ -17,7 +19,7 @@
 
 import type { Doc } from "./doc.js";
 import { q } from "./escape.js";
-import { INCLUDE_VALUES, findingPath, fingerprint, normaliseLineText, type FindingSource, type Include, type LineText } from "./findings.js";
+import { INCLUDE_VALUES, findingPath, fingerprint, fingerprintTextOf, normaliseLineText, type FindingSource, type Include, type LineText } from "./findings.js";
 import { VENDOR } from "./limits.js";
 import type { Issue, LintResult, Severity } from "./lint.js";
 import { UserError, type Sandbox } from "./paths.js";
@@ -69,6 +71,11 @@ export interface ConfigRun {
   docs: Doc[];
   include: ReadonlySet<Include>;
   baselinePath?: string;
+  /**
+   * Apply the repo's .asitisrc.json and baseline to security rules too. The CLI sets it (the user
+   * runs it on purpose); lint_steering sets it only when the call passes trustRepoConfig.
+   */
+  trustRepoConfig?: boolean;
   /** Line text for result files that are not linted markdown (scripts, JSON configs), for fingerprints. */
   lineTexts?: ReadonlyMap<string, LineText>;
 }
@@ -220,7 +227,9 @@ const quoteKey = (k: string): string => q(k, 60);
 
 /** A config value for a message: short plain values (a word, a number, a glob) as they are, anything else redacted. */
 export function showValue(n: JsonNode): string {
-  if (n.type === "string") return /^[A-Za-z0-9 ._*?/-]{1,24}$/.test(n.value) && !findSecrets(n.value).length ? JSON.stringify(n.value) : `"${redactValue(n.value)}"`;
+  // A word, or a short value with digits ("300"), is shown so the user sees the typo. Anything longer
+  // with digits could be a password pasted into the wrong file, so only its length is shown.
+  if (n.type === "string") return (/^[A-Za-z ._*?/-]{1,24}$/.test(n.value) || /^[A-Za-z0-9 ._*?/-]{1,7}$/.test(n.value)) && !findSecrets(n.value).length ? JSON.stringify(n.value) : `"${redactValue(n.value)}"`;
   if (n.type === "number" || n.type === "boolean") return String(n.value);
   return n.type === "null" ? "null" : `an ${n.type}`.replace("an array", "a list");
 }
@@ -580,18 +589,67 @@ function applyThresholds(doc: Doc, issues: Issue[], o: LengthOptions): Issue[] {
   return kept;
 }
 
-/** Applies config, inline suppressions and the baseline to the results of one lintProject call. */
-export async function applyConfig(config: LoadedConfig | null, run: ConfigRun): Promise<void> {
+/**
+ * Security findings that the repo's own .asitisrc.json or baseline would hide. With trust (the
+ * CLI and the Action, run on purpose in the user's own repo) they are hidden but counted, marked
+ * suppressed with kind "external", and summed up in one line. Without trust (lint_steering, unless
+ * the call passes trustRepoConfig) the config is not applied to security rules at all and the
+ * counts say what it asked for. Either way nothing about a security finding disappears silently.
+ */
+export interface HiddenSecurity {
+  /** True when the repo's config was applied to security rules. */
+  trusted: boolean;
+  /** Turned off in rules or overrides. */
+  off: number;
+  offRules: string[];
+  /** Lowered to a less severe level. */
+  lowered: number;
+  loweredRules: string[];
+  /** In files that match an ignore pattern. */
+  ignored: number;
+  ignoredFiles: string[];
+  /** Listed in the baseline file. */
+  baseline: number;
+}
+
+export const emptyHidden = (trusted: boolean): HiddenSecurity => ({ trusted, off: 0, offRules: [], lowered: 0, loweredRules: [], ignored: 0, ignoredFiles: [], baseline: 0 });
+
+export const hiddenTotal = (h: HiddenSecurity): number => h.off + h.lowered + h.ignored + h.baseline;
+
+const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
+const isSecurity = (id: string): boolean => getRule(id)?.category === "security";
+const addOnce = (list: string[], v: string): void => {
+  if (!list.includes(v)) list.push(v);
+};
+
+/**
+ * Applies config, inline suppressions and the baseline to the results of one lintProject call.
+ * Returns what happened to security findings; see HiddenSecurity.
+ */
+export async function applyConfig(config: LoadedConfig | null, run: ConfigRun): Promise<HiddenSecurity> {
   const { results, docs } = run;
+  const trusted = run.trustRepoConfig === true;
+  const hidden = emptyHidden(trusted);
+  const cfgName = config?.path ?? CONFIG_FILE;
   // 1. ignore: drop the files, for named paths too (a pre-commit run passes ignored files as well).
+  // A file with security findings is never dropped silently: with trust its security findings stay
+  // in the report as suppressed, without trust they stay as they are. Either way the rest go.
   if (config?.ignore.length) {
     for (let k = results.length - 1; k >= 0; k--) {
       const doc = k < docs.length ? docs[k] : undefined;
-      const rel = relOf(results[k]!, doc);
-      if (rel !== null && matchesAny(config.ignore, rel)) {
+      const r = results[k]!;
+      const rel = relOf(r, doc);
+      if (rel === null || !matchesAny(config.ignore, rel)) continue;
+      const sec = r.issues.filter((i) => isSecurity(i.rule) && !i.suppressed && !i.strictOnly);
+      if (!sec.length) {
         results.splice(k, 1);
         if (doc) docs.splice(k, 1);
+        continue;
       }
+      r.issues = sec;
+      hidden.ignored += sec.length;
+      addOnce(hidden.ignoredFiles, r.path);
+      if (trusted) for (const i of sec) i.suppressed = { kind: "external", justification: `the file matches an ignore pattern in ${cfgName}` };
     }
   }
   const strict = config?.extends === "strict";
@@ -612,12 +670,29 @@ export async function applyConfig(config: LoadedConfig | null, run: ConfigRun): 
     }
     // 4. severity and off. Explicit settings win; strict raises notes to warnings for the rest.
     if (config) {
-      r.issues = r.issues.filter((i) => !off(i.rule));
+      const kept: Issue[] = [];
       for (const i of r.issues) {
+        const sec = isSecurity(i.rule) && !i.suppressed;
+        if (off(i.rule)) {
+          if (!sec) continue;
+          hidden.off++;
+          addOnce(hidden.offRules, i.rule);
+          if (trusted) i.suppressed = { kind: "external", justification: `${i.rule} is turned off in ${cfgName}` };
+          kept.push(i);
+          continue;
+        }
         const s = settings.get(i.rule)?.severity;
-        if (s && s !== "off") i.severity = issueSeverity(s);
-        else if (strict && i.severity === "info") i.severity = "warning";
+        if (s && s !== "off") {
+          const to = issueSeverity(s);
+          if (sec && SEVERITY_ORDER[to] > SEVERITY_ORDER[i.severity]) {
+            hidden.lowered++;
+            addOnce(hidden.loweredRules, i.rule);
+            if (trusted) i.severity = to;
+          } else i.severity = to;
+        } else if (strict && i.severity === "info") i.severity = "warning";
+        kept.push(i);
       }
+      r.issues = kept;
     }
   });
   // 5. baseline: fingerprints exactly as findings() computes them.
@@ -628,25 +703,58 @@ export async function applyConfig(config: LoadedConfig | null, run: ConfigRun): 
       if (doc) return { result, path: findingPath(doc), lineText: (line) => (line >= 1 && line <= doc.lines.count ? doc.lines.line(line - 1) : "") };
       return { result, path: result.path, lineText: run.lineTexts?.get(result.path) ?? (() => "") };
     });
-    markBaselined(sources, baseline);
+    hidden.baseline += markBaselined(sources, baseline, trusted);
   }
+  hidden.offRules.sort();
+  hidden.loweredRules.sort();
+  return hidden;
+}
+
+/**
+ * The one line that says what happened to security findings, or null when nothing did. With
+ * trust: "3 security findings hidden by .asitisrc.json (rules off: a, b) and 1 by the baseline."
+ * Without: they are shown, and the line says how to apply the repo's config to them.
+ */
+export function hiddenSecurityNote(h: HiddenSecurity, configName: string, baselineName = "the baseline"): string | null {
+  const total = hiddenTotal(h);
+  if (!total) return null;
+  const count = (x: number): string => `${x.toLocaleString("en-US")} security ${x === 1 ? "finding" : "findings"}`;
+  const why: string[] = [];
+  if (h.offRules.length) why.push(`rules off: ${h.offRules.join(", ")}`);
+  if (h.loweredRules.length) why.push(`lowered: ${h.loweredRules.join(", ")}`);
+  if (h.ignoredFiles.length) why.push(`ignored ${h.ignoredFiles.length === 1 ? "file" : "files"}: ${h.ignoredFiles.slice(0, 5).map((f) => q(f, 120)).join(", ")}${h.ignoredFiles.length > 5 ? ` and ${h.ignoredFiles.length - 5} more` : ""}`);
+  const byConfig = h.off + h.lowered + h.ignored;
+  if (h.trusted) {
+    const parts: string[] = [];
+    if (byConfig) parts.push(`${count(byConfig)} ${h.lowered ? (h.lowered === byConfig ? "lowered" : "hidden or lowered") : "hidden"} by ${configName} (${why.join("; ")})`);
+    if (h.baseline) parts.push(byConfig ? `${h.baseline.toLocaleString("en-US")} by ${baselineName}` : `${count(h.baseline)} hidden by ${baselineName}`);
+    return `${parts.join(" and ")}.${h.off + h.ignored + h.baseline ? " Hidden ones stay in the report, marked suppressed." : ""}`;
+  }
+  return `${count(total)} shown although ${configName} turns them off, lowers them or ignores their files (${why.join("; ")}). A repo's own config cannot hide security findings from this tool; pass trustRepoConfig: true to apply it to them.`;
 }
 
 /**
  * Marks issues whose fingerprint is in the baseline. Issues are ordered and counted exactly as
  * toFindings() in findings.ts does, so the fingerprint here is the one the report will show.
  */
-function markBaselined(sources: FindingSource[], baseline: ReadonlySet<string>): void {
-  if (!baseline.size) return;
+function markBaselined(sources: FindingSource[], baseline: ReadonlySet<string>, trusted: boolean): number {
+  let hiddenSecurity = 0;
+  if (!baseline.size) return 0;
   for (const s of sources) {
     const order = [...s.result.issues].sort((a, b) => a.line - b.line || (a.column ?? 1) - (b.column ?? 1));
     const seen = new Map<string, number>();
     for (const i of order) {
-      const text = s.lineText(i.line);
+      const text = fingerprintTextOf(i, s.lineText);
       const key = `${i.rule}\0${normaliseLineText(text)}`;
       const occurrence = seen.get(key) ?? 0;
       seen.set(key, occurrence + 1);
-      if (!i.suppressed && baseline.has(fingerprint(i.rule, s.path, text, occurrence))) i.suppressed = { kind: "external", justification: "listed in the baseline file" };
+      if (i.suppressed || !baseline.has(fingerprint(i.rule, s.path, text, occurrence))) continue;
+      if (isSecurity(i.rule)) {
+        hiddenSecurity++;
+        if (!trusted) continue;
+      }
+      i.suppressed = { kind: "external", justification: "listed in the baseline file" };
     }
   }
+  return hiddenSecurity;
 }

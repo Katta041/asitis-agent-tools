@@ -5,7 +5,7 @@
 
 import path from "node:path";
 import { PROJECT_CHECKS } from "./checks/index.js";
-import { applyConfig, loadConfig, type LoadedConfig } from "./config.js";
+import { applyConfig, hiddenSecurityNote, loadConfig, matchesAny, type HiddenSecurity, type LoadedConfig } from "./config.js";
 import { analyse, type Doc } from "./doc.js";
 import { Deadline, walk, type WalkResult } from "./discover.js";
 import { dp } from "./escape.js";
@@ -15,6 +15,7 @@ import { CAPS } from "./limits.js";
 import { lintDoc, readsAsRule, type Issue, type LintResult } from "./lint.js";
 import { UserError, type Sandbox } from "./paths.js";
 import { categoryOf } from "./rules/registry.js";
+import { redact } from "./redact.js";
 import { extractImports } from "./scan.js";
 
 /** Opt-in scans. config-local also reads .claude/settings.local.json and implies config. */
@@ -38,6 +39,12 @@ export interface ProjectOptions {
    * cloned repo's config can never widen what the server reads; include comes from the call.
    */
   configInclude?: boolean;
+  /**
+   * Apply the repo's .asitisrc.json and baseline to security rules as well. The CLI sets it; the MCP
+   * server only when the call passes trustRepoConfig. Without it a cloned repo's own config cannot
+   * turn off, lower, ignore or baseline a security finding (config.ts, HiddenSecurity).
+   */
+  trustRepoConfig?: boolean;
   /** Files linted when walking the folder. MCP default CAPS.lintMaxFiles; the CLI passes CAPS.walkMaxFiles. */
   maxFiles?: number;
 }
@@ -58,8 +65,14 @@ export interface ProjectResult {
   cut: { depth: boolean; size: boolean; time: boolean };
   /** One-line notices for the user (an include value that is not available yet, for example). */
   notes: string[];
+  /** Folders the walk could not list (permission denied) and no ignore pattern covers, root-relative. */
+  unreadable: string[];
   include: ReadonlySet<Include>;
   config: LoadedConfig | null;
+  /** What the repo's config and baseline did to security findings (see config.ts). */
+  hiddenSecurity: HiddenSecurity;
+  /** One line about hiddenSecurity, or null. Every output shows it: it is never folded into notes, so --quiet keeps it too. */
+  hiddenNote: string | null;
   /** Findings for the CLI formats, with fingerprints, sorted. Computed on first call. */
   findings(): Finding[];
 }
@@ -133,8 +146,11 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
   let foundCount = 0;
   let walkNote = "";
   const cut = { depth: false, size: false, time: false };
+  let unreadable: string[] = [];
   if (!targets.length) {
     const found = await walk(sandbox, { deadline });
+    // A folder an ignore pattern covers was not wanted anyway.
+    unreadable = found.unreadable.filter((d) => !(config?.ignore.length && d !== "." && matchesAny(config.ignore, d)));
     discovered = true;
     foundCount = found.files.length;
     walkNote = walkCutNote(found);
@@ -177,7 +193,7 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
       results.push(result);
     } catch (e) {
       if (single) throw e;
-      failures.push({ path: sandbox.display(t), error: e instanceof UserError ? e.message : String(e) });
+      failures.push({ path: sandbox.display(t), error: failureText(e, t, sandbox.display(t)) });
     }
   }
   if (docs.length > 1) dropSymlinkCopies(docs, results);
@@ -185,6 +201,10 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
 
   // Project checks.
   const notes: string[] = [];
+  if (unreadable.length) {
+    const shown = unreadable.slice(0, 5).map((d) => dp(d)).join(", ");
+    notes.push(`Could not read ${unreadable.length === 1 ? "1 folder" : `${unreadable.length} folders`} (permission denied), so the steering files in ${unreadable.length === 1 ? "it were" : "them were"} not linted: ${shown}${unreadable.length > 5 ? ` and ${unreadable.length - 5} more` : ""}. Fix the permissions, or add the folder to ignore in .asitisrc.json.`);
+  }
   if (asked.length) notes.push(`${config!.path} asks for the ${asked.join("/")} scan; pass include to lint_steering to run it.`);
   const lineTexts = new Map<string, LineText>();
   const claimed = new Set<string>();
@@ -226,11 +246,18 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
     try {
       await sandbox.open(t); // gives the same refusal a markdown-only lint gives
     } catch (e) {
-      failures.push({ path: sandbox.display(t), error: e instanceof UserError ? e.message : String(e) });
+      failures.push({ path: sandbox.display(t), error: failureText(e, t, sandbox.display(t)) });
     }
   }
 
-  await applyConfig(config, { sandbox, results, docs, include, lineTexts, ...(opts.baselinePath === undefined ? {} : { baselinePath: opts.baselinePath }) });
+  const hiddenSecurity = await applyConfig(config, { sandbox, results, docs, include, lineTexts, trustRepoConfig: opts.trustRepoConfig === true, ...(opts.baselinePath === undefined ? {} : { baselinePath: opts.baselinePath }) });
+  // Second net for secrets: every message and notice goes through redact() once more, whichever
+  // check wrote it. Quotes are already redacted where they are made (q() in escape.ts, preview()
+  // in redact.ts); this catches a value a check put into a message some other way.
+  for (const r of results) for (const i of r.issues) i.message = redact(i.message);
+  for (let k = 0; k < notes.length; k++) notes[k] = redact(notes[k]!);
+  for (const f of failures) f.error = redact(f.error);
+  const hiddenNote = hiddenSecurityNote(hiddenSecurity, config?.path ?? ".asitisrc.json");
 
   let cached: Finding[] | null = null;
   return {
@@ -244,10 +271,22 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
     walkNote,
     cut,
     notes,
+    unreadable,
     include,
     config,
+    hiddenSecurity,
+    hiddenNote,
     findings: () => (cached ??= buildFindings(results, docs, lineTexts)),
   };
+}
+
+/**
+ * Why a file could not be linted, naming it the way the report does. Walk targets are absolute, and
+ * the read errors quote the path they were given, so the absolute path is swapped for the display one.
+ */
+function failureText(e: unknown, target: string, display: string): string {
+  const msg = e instanceof UserError ? e.message : String(e);
+  return path.isAbsolute(target) ? msg.split(target).join(display) : msg;
 }
 
 /** Root-relative POSIX path for a finding; files under a second root keep their absolute path. */

@@ -52,7 +52,17 @@ jobs:
           sarif-file: ""
 ```
 
-Findings appear as annotations on the pull request. [action/README.md](../action/README.md) covers every input, the outputs and the code scanning upload.
+Findings appear as annotations on the pull request. GitHub shows at most 10 annotations of each type per step; the step log and the SARIF file have every finding. [action/README.md](../action/README.md) covers every input, the outputs and the code scanning upload.
+
+Give `root` as a path relative to the repository top. The Action turns an absolute path inside the workspace into a relative one, because annotation and SARIF paths are read relative to the checkout.
+
+### Code scanning
+
+The SARIF upload needs code scanning on the repo: every public repo has it, a private one needs GitHub Code Security. Without it the upload gets a 403 ("Code scanning is not enabled"). The Action runs the upload with `continue-on-error`, so the job result always comes from the lint, never from the upload. On a private repo give the job `actions: read` as well as `security-events: write`; the full workflow is in [action/README.md](../action/README.md#with-code-scanning).
+
+### Security findings hidden by the config or baseline
+
+`fail-on-hidden-security` is on by default. The job fails when the repo's `.asitisrc.json` (a security rule turned off or lowered, or an `ignore` pattern over a file with security findings) or the baseline hides a security finding, so a pull request cannot get a hidden instruction past CI by also editing the config or the baseline. Each hidden finding stays in the SARIF and JSON as a suppressed result with a justification, and the log has one line that counts them. The CLI does the same with `--fail-on-hidden-security`; without the flag it still prints the line. [action/README.md](../action/README.md#security-findings-the-config-or-baseline-hides) explains why this checks the result rather than the diff.
 
 ## pre-commit
 
@@ -80,31 +90,37 @@ The hook uses `language: script` and the file's `#!/usr/bin/env node` line. pre-
 To try the hook without installing it:
 
 ```
-pre-commit try-repo https://github.com/Katta041/asitis-agent-tools asitis-lint --all-files
+pre-commit try-repo https://github.com/Katta041/asitis-agent-tools asitis-lint --ref v0.3.0 --all-files
 ```
 
 ### lefthook and husky
 
-These run the npm package instead of the bundled file. `{staged_files}` in lefthook and `git diff --cached` in husky pass only what you are committing. The `--diff-filter=ACM` keeps deleted files out.
+These run the npm package instead of the bundled file. `{staged_files}` in lefthook and `git diff --cached` in husky pass only what you are committing. Both lists below match the same files as the pre-commit hook's `files:` pattern.
 
-lefthook (`lefthook.yml`):
+lefthook (`lefthook.yml`). `glob_matcher: doublestar` matters: with lefthook's default matcher `**/CLAUDE.md` needs at least one folder, so a `CLAUDE.md` at the repo root would never be linted.
 
 ```yaml
+glob_matcher: doublestar
 pre-commit:
   commands:
     asitis:
-      glob: "{**/CLAUDE.md,**/AGENTS.md,**/GEMINI.md,**/SKILL.md,**/.cursor/rules/*.mdc,**/.claude/**/*.md,.github/copilot-instructions.md}"
+      glob: "{**/CLAUDE.md,**/CLAUDE.local.md,**/AGENTS.md,**/GEMINI.md,**/SKILL.md,**/MEMORY.md,**/.cursorrules,**/.windsurfrules,**/.clinerules,**/.claude/agents/**/*.md,**/.claude/commands/**/*.md,**/.claude/rules/**/*.md,**/.cursor/rules/**/*.mdc,**/.windsurf/rules/**/*.md,**/.clinerules/**/*.md,.github/copilot-instructions.md,**/.github/agents/**/*.md,**/*.instructions.md,**/*.prompt.md,**/*.agent.md,**/*.chatmode.md,memory/*.md}"
       run: npx -y -p @asitis/mcp@0.3.0 asitis lint {staged_files}
 ```
 
-husky (`.husky/pre-commit`):
+husky (`.husky/pre-commit`). `--diff-filter=ACMR` keeps added, copied, modified and renamed files and leaves deleted ones out. `-z` with `xargs -0 -r` keeps a file name with spaces in one piece and runs nothing when no steering file is staged.
 
 ```sh
-files=$(git diff --cached --name-only --diff-filter=ACM -- '*CLAUDE.md' '*AGENTS.md' '*GEMINI.md' '*SKILL.md' '*.mdc' '.claude/*.md')
-[ -z "$files" ] || npx -y -p @asitis/mcp@0.3.0 asitis lint $files
+git diff --cached --name-only --diff-filter=ACMR -z -- \
+  ':(glob)**/CLAUDE.md' ':(glob)**/CLAUDE.local.md' ':(glob)**/AGENTS.md' ':(glob)**/GEMINI.md' \
+  ':(glob)**/SKILL.md' ':(glob)**/MEMORY.md' ':(glob)**/.cursorrules' ':(glob)**/.windsurfrules' \
+  ':(glob)**/.clinerules' ':(glob)**/.claude/agents/**/*.md' ':(glob)**/.claude/commands/**/*.md' \
+  ':(glob)**/.claude/rules/**/*.md' ':(glob)**/.cursor/rules/**/*.mdc' ':(glob)**/.windsurf/rules/**/*.md' \
+  ':(glob)**/.clinerules/**/*.md' ':(glob).github/copilot-instructions.md' ':(glob)**/.github/agents/**/*.md' \
+  ':(glob)**/*.instructions.md' ':(glob)**/*.prompt.md' ':(glob)**/*.agent.md' ':(glob)**/*.chatmode.md' \
+  ':(glob)memory/*.md' \
+  | xargs -0 -r npx -y -p @asitis/mcp@0.3.0 asitis lint
 ```
-
-The husky line splits on spaces, so a steering file with a space in its name breaks it.
 
 ## GitLab CI
 

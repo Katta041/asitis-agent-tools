@@ -69,6 +69,11 @@ export interface LintSummary {
   warnings: number;
   notes: number;
   suppressed: number;
+  /**
+   * Present only when the repo's .asitisrc.json or baseline hid or lowered security findings:
+   * how many, and by what. Those findings are also in findings[], marked suppressed (or lowered).
+   */
+  hiddenSecurity?: { config: number; baseline: number; rules: string[]; ignoredFiles: string[] };
 }
 
 /** The JSON report. schemaVersion stays 1 for all of 0.x; fields are only ever added. */
@@ -95,6 +100,11 @@ export function normaliseLineText(text: string): string {
  */
 export function fingerprint(ruleId: string, path: string, lineText: string, occurrence: number): string {
   return createHash("sha256").update(`${ruleId}\0${path}\0${normaliseLineText(lineText)}\0${occurrence}`).digest("hex");
+}
+
+/** The text a finding's fingerprint is computed from: its fingerprintText, or the text of its line. */
+export function fingerprintTextOf(i: Pick<Issue, "line" | "fingerprintText">, lineText: LineText): string {
+  return i.fingerprintText ?? lineText(i.line);
 }
 
 /** Sort order for every format: path, then line, then column, then severity, then rule id. */
@@ -124,16 +134,17 @@ export function toFindings(sources: FindingSource[], category: (ruleId: string) 
     const ordered = [...s.result.issues].sort((a, b) => a.line - b.line || (a.column ?? 1) - (b.column ?? 1));
     for (const i of ordered) {
       const text = s.lineText(i.line);
-      const key = `${i.rule}\0${normaliseLineText(text)}`;
+      const fpText = fingerprintTextOf(i, s.lineText);
+      const key = `${i.rule}\0${normaliseLineText(fpText)}`;
       const occurrence = seen.get(key) ?? 0;
       seen.set(key, occurrence + 1);
-      out.push(issueToFinding(i, s.path, text, occurrence, category(i.rule)));
+      out.push(issueToFinding(i, s.path, text, fpText, occurrence, category(i.rule)));
     }
   }
   return out.sort(compareFindings);
 }
 
-function issueToFinding(i: Issue, path: string, text: string, occurrence: number, category: Category): Finding {
+function issueToFinding(i: Issue, path: string, text: string, fpText: string, occurrence: number, category: Category): Finding {
   const f: Finding = {
     ruleId: i.rule,
     severity: toFindingSeverity(i.severity),
@@ -144,7 +155,7 @@ function issueToFinding(i: Issue, path: string, text: string, occurrence: number
     endLine: i.endLine ?? i.line,
     endColumn: i.endColumn ?? text.length + 1,
     message: i.message,
-    fingerprint: fingerprint(i.rule, path, text, occurrence),
+    fingerprint: fingerprint(i.rule, path, fpText, occurrence),
   };
   if (i.suppressed) f.suppressed = i.suppressed;
   if (i.fix) f.fix = i.fix;
@@ -162,8 +173,23 @@ export function summarise(files: number, findings: Finding[]): LintSummary {
   return s;
 }
 
-export function buildReport(root: string, files: number, findings: Finding[]): LintReport {
-  return { schemaVersion: 1, tool: { name: "asitis", version: VERSION }, root, summary: summarise(files, findings), findings };
+/** The parts of config.ts HiddenSecurity the report shows. */
+export interface HiddenCounts {
+  off: number;
+  lowered: number;
+  ignored: number;
+  baseline: number;
+  offRules: string[];
+  loweredRules: string[];
+  ignoredFiles: string[];
+}
+
+export function buildReport(root: string, files: number, findings: Finding[], hidden?: HiddenCounts): LintReport {
+  const summary = summarise(files, findings);
+  if (hidden && hidden.off + hidden.lowered + hidden.ignored + hidden.baseline > 0) {
+    summary.hiddenSecurity = { config: hidden.off + hidden.lowered + hidden.ignored, baseline: hidden.baseline, rules: [...new Set([...hidden.offRules, ...hidden.loweredRules])].sort(), ignoredFiles: hidden.ignoredFiles };
+  }
+  return { schemaVersion: 1, tool: { name: "asitis", version: VERSION }, root, summary, findings };
 }
 
 /** Opt-in scans a lint call can ask for. */
