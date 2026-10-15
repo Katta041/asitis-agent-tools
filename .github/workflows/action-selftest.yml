@@ -2,8 +2,8 @@ name: action-selftest
 
 # Runs action.yml from this checkout against test-fixtures/ci/clean and test-fixtures/ci/dirty,
 # checks the Node message on a runner without setup-node, and runs the pre-commit hook.
-# The expected counts below are what test-fixtures/ci/dirty produces: 2 errors and 3 warnings
-# for the whole folder, 1 error and 3 warnings for dirty/CLAUDE.md alone. Update both places
+# The expected counts below are what test-fixtures/ci/dirty produces: 3 errors and 2 warnings
+# for the whole folder, 2 errors and 2 warnings for dirty/CLAUDE.md alone. Update both places
 # together if the fixture or the rules change.
 
 on:
@@ -80,14 +80,14 @@ jobs:
           echo "outcome=$OUTCOME exit-code=$CODE errors=$ERRORS warnings=$WARNINGS sarif=$SARIF"
           test "$OUTCOME" = "failure"
           test "$CODE" = "1"
-          test "$ERRORS" = "2"
-          test "$WARNINGS" = "3"
+          test "$ERRORS" = "3"
+          test "$WARNINGS" = "2"
           test "$SARIF" = "out/dirty.sarif"
           # Annotation lines: exactly one per finding, and text from the file never starts a command.
           node action/asitis.mjs lint --root test-fixtures/ci/dirty --format github > dirty.log || true
           test "$(grep -c '^::' dirty.log)" = "5"
-          test "$(grep -c '^::error ' dirty.log)" = "2"
-          test "$(grep -c '^::warning ' dirty.log)" = "3"
+          test "$(grep -c '^::error ' dirty.log)" = "3"
+          test "$(grep -c '^::warning ' dirty.log)" = "2"
           if grep -E '^::(set-env|add-mask|stop-commands)' dirty.log; then exit 1; fi
           node -e '
             const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
@@ -127,8 +127,8 @@ jobs:
         run: |
           echo "exit-code=$CODE errors=$ERRORS warnings=$WARNINGS sarif=$SARIF"
           test "$CODE" = "0"
-          test "$ERRORS" = "1"
-          test "$WARNINGS" = "3"
+          test "$ERRORS" = "2"
+          test "$WARNINGS" = "2"
           test -z "$SARIF"
 
       - name: Run the action with a path that does not exist

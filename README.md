@@ -181,7 +181,7 @@ Linted 2 files: 0 errors, 3 warnings, 1 note.
 Skill scan: 1 skill folder, 0 scripts and 0 markdown files read, 0 other files checked for executable headers (0 files in all).
 ```
 
-That run exits 0: with the default `--fail-on error` only errors fail the build. Pass `--fail-on warning` to fail on warnings too.
+That run exits 0: with the default `--fail-on error` only errors fail the build. Planted invisible or bidirectional characters, and hidden comments that tell the agent to ignore instructions, hide something, run a command or reach for secrets, are errors, so they fail the build by default. Pass `--fail-on warning` to fail on warnings too.
 
 **GitHub Action.** Runs the bundled CLI with no npm install and puts findings on the pull request:
 

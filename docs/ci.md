@@ -78,7 +78,7 @@ repos:
 
 Then `pre-commit install`. On each commit the hook gets the staged steering files (CLAUDE.md, AGENTS.md, SKILL.md, `.cursor/rules/*.mdc` and the other kinds the linter knows) and nothing else, so a commit that only touches code or docs skips it. It runs the bundled CLI with your own `node`, which must be 22.13 or later.
 
-To block on warnings too, which catches hidden instructions in HTML comments:
+Dangerous hidden content (invisible characters, and hidden comments that ask the agent to ignore instructions, hide something, run a command or touch secrets) is an error, so the default blocks it. To block on warnings too, including hidden comments that only address the agent:
 
 ```yaml
       - id: asitis-lint

@@ -2,7 +2,7 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| security | warning | one file | review | no (security rule) |
+| security | error | one file | review | no (security rule) |
 
 ## What it catches
 

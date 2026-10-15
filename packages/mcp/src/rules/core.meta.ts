@@ -6,10 +6,10 @@ import { rule, SRC, type RuleMeta } from "./types.js";
  * Severity of dangerous hidden content: invisible-char, bidi-control, and hidden-instruction when
  * the comment asks to ignore other instructions, hide something from the user, act covertly, run a
  * command or reach for secrets (DANGEROUS_HIDDEN_LABELS in lint.ts). Hidden comments that only
- * address the AI stay warnings whatever this says. The owner has not decided yet whether these
- * should be errors by default; to make them errors, change "warning" to "error" on the next line.
+ * address the AI stay warnings whatever this says. These are errors by default so the default
+ * --fail-on error blocks them in CI; a planted instruction should never pass a green build.
  */
-export const DANGEROUS_HIDDEN_SEVERITY: "warning" | "error" = "warning";
+export const DANGEROUS_HIDDEN_SEVERITY: "warning" | "error" = "error";
 
 export const CORE_RULES: RuleMeta[] = [
   // Frontmatter (frontmatter.ts reports these, lint.ts sets the severity)

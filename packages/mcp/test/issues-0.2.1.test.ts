@@ -141,7 +141,7 @@ describe("#2 hidden-instruction needs an instruction, not a product name", () =>
   });
 
   test("comments addressed to the assistant still warn, including the existing cases", async () => {
-    expect(linesOf(await lint("addressed/AGENTS.md"), "hidden-instruction")).toEqual([3, 5, 7, 9, 11, 13]);
+    expect(linesOf(await lint("addressed/AGENTS.md"), "hidden-instruction").sort((a, b) => a - b)).toEqual([3, 5, 7, 9, 11, 13]);
   });
 
   test.each([

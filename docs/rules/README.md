@@ -64,9 +64,9 @@ Content a reviewer does not see but an agent does, and other signs of a steering
 
 | Rule | Severity | What it catches |
 |---|---|---|
-| [invisible-char](invisible-char.md) | warning | Invisible Unicode characters |
-| [bidi-control](bidi-control.md) | warning | Bidirectional control characters |
-| [hidden-instruction](hidden-instruction.md) | warning | Hidden comment that reads like an instruction to the agent |
+| [invisible-char](invisible-char.md) | error | Invisible Unicode characters |
+| [bidi-control](bidi-control.md) | error | Bidirectional control characters |
+| [hidden-instruction](hidden-instruction.md) | error | Hidden comment that reads like an instruction to the agent |
 | [hidden-comment](hidden-comment.md) | note | Comments hidden in rendered views |
 | [hidden-styled-text](hidden-styled-text.md) | warning | Inline style or the hidden attribute hides text |
 | [unclosed-comment](unclosed-comment.md) | warning | HTML comment never closes |

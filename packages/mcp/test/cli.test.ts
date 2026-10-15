@@ -120,11 +120,11 @@ describe("exit codes", () => {
 });
 
 describe("--fail-on", () => {
-  // injection/ has warnings only; note-only/ has one note.
+  // injection/ has one error (its hidden "ignore the rules above" comment) and warnings; note-only/ has one note.
   const warnings = path.join(CLI_FIX, "injection");
   const notes = path.join(CLI_FIX, "note-only");
   test.each([
-    ["error", warnings, 0],
+    ["error", warnings, 1],
     ["warning", warnings, 1],
     ["note", warnings, 1],
     ["never", warnings, 0],

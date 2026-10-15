@@ -268,10 +268,10 @@ describe.skipIf(!bash)("action/run.sh", () => {
       const sarif = path.join(dir, "nested", "dirty.sarif");
       const r = runAction({ INPUT_ROOT: "test-fixtures/ci/dirty", INPUT_SARIF_FILE: sarif });
       expect(r.code, r.stdout).toBe(0); // the step itself passes; action.yml's last step fails on exit-code
-      expect(r.outputs).toMatchObject({ "exit-code": "1", errors: "2", warnings: "3", notes: "0", "sarif-file": sarif });
+      expect(r.outputs).toMatchObject({ "exit-code": "1", errors: "3", warnings: "2", notes: "0", "sarif-file": sarif });
       const annotations = r.stdout.split("\n").filter((l) => l.startsWith("::"));
       expect(annotations).toHaveLength(5);
-      expect(annotations.filter((l) => l.startsWith("::error "))).toHaveLength(2);
+      expect(annotations.filter((l) => l.startsWith("::error "))).toHaveLength(3);
       expect(annotations.some((l) => /^::(set-env|add-mask|stop-commands)/.test(l))).toBe(false);
       const log = JSON.parse(readFileSync(sarif, "utf8")) as { version: string; runs: Array<{ results: unknown[] }> };
       expect(log.version).toBe("2.1.0");
@@ -283,7 +283,7 @@ describe.skipIf(!bash)("action/run.sh", () => {
 
   test("named paths, one per line, with fail-on never", () => {
     const r = runAction({ INPUT_PATHS: "test-fixtures/ci/dirty/CLAUDE.md\n  test-fixtures/ci/clean/CLAUDE.md  \n", INPUT_FAIL_ON: "never", INPUT_FORMAT: "text" });
-    expect(r.outputs).toMatchObject({ "exit-code": "0", errors: "1", warnings: "3" });
+    expect(r.outputs).toMatchObject({ "exit-code": "0", errors: "2", warnings: "2" });
     expect(r.stdout).toContain("test-fixtures/ci/dirty/CLAUDE.md:2:1 error frontmatter-not-line-1");
   });
 
