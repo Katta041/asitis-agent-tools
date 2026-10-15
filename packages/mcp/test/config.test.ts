@@ -213,7 +213,55 @@ describe("applying config", () => {
     expect(sev("CLAUDE.md")).toBe("warning");
     expect(sev("AGENTS.md")).toBe("note");
     expect(p.config?.include).toEqual(["skills", "config"]);
+  });
+
+  test("the CLI path (configInclude) honours include and strict from the config", async () => {
+    const dir = project("cli-include", { "CLAUDE.md": "# A\n", ".asitisrc.json": '{"extends": "strict"}' });
+    const sb = await Sandbox.create([dir]);
+    const p = await lintProject(sb, { deadline: deadline(), configInclude: true });
     expect([...p.include].sort()).toEqual(["config", "skills"]);
+    expect(p.notes.some((x) => x.includes("asks for"))).toBe(false);
+    const dir2 = project("cli-include-key", { "CLAUDE.md": "# A\n", ".asitisrc.json": '{"include": ["config-local"]}' });
+    const p2 = await lintProject(await Sandbox.create([dir2]), { deadline: deadline(), configInclude: true });
+    expect([...p2.include].sort()).toEqual(["config", "config-local"]);
+  });
+
+  describe("a repo's config never widens what the MCP server reads", () => {
+    test.each([
+      ["strict", '{"extends": "strict"}', "skills/config"],
+      ["include", '{"include": ["config"]}', "config"],
+      ["include config-local", '{"include": ["skills", "config-local"]}', "skills/config-local"],
+    ])("%s: nothing extra is read, and the result says how to opt in", async (name, cfg, scans) => {
+      const dir = project(`mcp-include-${name.replace(/\W+/g, "-")}`, { "CLAUDE.md": "# A\n", ".asitisrc.json": cfg });
+      const p = await lint(dir);
+      expect([...p.include]).toEqual([]);
+      const note = `.asitisrc.json asks for the ${scans} scan; pass include to lint_steering to run it.`;
+      expect(p.notes).toEqual([note]);
+      const c = await connect([dir], { structured: false });
+      const r = await c.call("lint_steering", {});
+      await c.close();
+      expect(r.isError).toBe(false);
+      expect(r.text).toContain(note);
+      expect(r.text).not.toContain("not available in this build yet");
+    });
+
+    test("include from the call is honoured; only what the config adds beyond it is noted", async () => {
+      const dir = project("mcp-include-call", { "CLAUDE.md": "# A\n", ".asitisrc.json": '{"extends": "strict"}' });
+      const sb = await Sandbox.create([dir]);
+      const p = await lintProject(sb, { deadline: deadline(), include: ["skills"] });
+      expect([...p.include]).toEqual(["skills"]);
+      expect(p.notes.filter((x) => x.includes("asks for"))).toEqual([".asitisrc.json asks for the config scan; pass include to lint_steering to run it."]);
+      const all = await lintProject(sb, { deadline: deadline(), include: ["skills", "config-local"] });
+      expect(all.notes.filter((x) => x.includes("asks for"))).toEqual([]);
+    });
+
+    test("strict still raises notes to warnings in lint_steering", async () => {
+      const dir = project("mcp-strict-sev", { "CLAUDE.md": "# Rules\n\n<!-- a note -->\n", ".asitisrc.json": '{"extends": "strict"}' });
+      const c = await connect([dir], { structured: false });
+      const r = await c.call("lint_steering", {});
+      await c.close();
+      expect(r.text.split("\n")[0]).toBe("Linted 1 file: 0 errors, 1 warning, 0 notes.");
+    });
   });
 
   test("recommended is the default and changes nothing", async () => {

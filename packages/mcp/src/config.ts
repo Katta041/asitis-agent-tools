@@ -408,6 +408,7 @@ export function validateConfig(root: JsonNode, file: string): LoadedConfig {
     }
   }
   // strict turns the sec-* rules on: they live in the skills and config scans, which are opt-in.
+  // Only the CLI honours this (lintProject configInclude); lint_steering takes include from the call.
   if (cfg.extends === "strict") cfg.include = [...new Set<Include>([...(cfg.include ?? []), "skills", "config"])];
   return cfg;
 }
