@@ -13,7 +13,7 @@ Types named here live in `packages/mcp/src/findings.ts` and `packages/mcp/src/pr
 - `asitis-mcp` does not get a `lint` subcommand. It treats positionals as root folders and that stays.
 - The bundle follows the server's rules: no write, exec or network code, no `child_process`, `net`, `http`, `https`, `http2`, `dns`, `tls`, `dgram`, `worker_threads` or `cluster`. It may import the Node modules the server bundle already imports (`node:fs`, `node:path`, `node:crypto`, `node:os`, `node:util`, `node:process`) and nothing else. Output goes to stdout and stderr only; files come from shell redirects.
 
-### `@asitis/cli` (planned for WP9, not part of 0.3.0 builds)
+### `@asitis/cli` (not in 0.3.0; planned for 0.3.x)
 
 A thin package so `npm search` finds the linter under its own name:
 
@@ -27,7 +27,8 @@ A thin package so `npm search` finds the linter under its own name:
 asitis lint [paths...] [--root <dir>] [--format text|json|sarif|github]
             [--fail-on error|warning|note|never] [--config <file>]
             [--baseline <file>] [--write-baseline] [--include <list>]
-            [--fix-preview[=safe]] [--max-file-mb <n>] [--quiet]
+            [--fix-preview[=safe]] [--max-files <n>] [--max-file-mb <n>] [--quiet]
+asitis budget [file] [--root <dir>] [--format text|json] [--max-file-mb <n>]
 asitis --version
 asitis --help
 ```
@@ -43,6 +44,7 @@ asitis --help
 | `--write-baseline` | off | Print a baseline for the current findings instead of the report. Needs `--format json`; any other format is exit 2. |
 | `--include <list>` | none | Comma-separated opt-in scans: `skills`, `config`, `config-local` (implies `config`). Unknown values are exit 2. Merged with `include` from the config file. |
 | `--fix-preview[=safe]` | off | Attach fixes. With `text` it prints one combined unified diff that `git apply` accepts, and nothing else. With `json` each fixable finding gets `fix`; with `sarif` results get `fixes[]`; with `github` it is ignored. `=safe` limits fixes to safe ones. There is no flag that writes. |
+| `--max-files <n>` | 1,000 | Most steering files linted when walking the root, 1 to 1,000 (`CAPS.walkMaxFiles`). A walk that finds more is exit 2. |
 | `--max-file-mb <n>` | 16 | Largest markdown file analysed, 1 to 64. |
 | `--quiet` | off | `text` and `github` only: no summary line, no notices. Findings are still printed. |
 | `--allow-broad-root` | off | As in `asitis-mcp`. |
@@ -74,7 +76,9 @@ asitis: stopped after 1,000 steering files; pass paths to lint the rest
 
 In code: `UserError` (from `paths.ts`) becomes exit 2 with its message; any other exception becomes exit 3. A file that was found by the walk but could not be read is a line on stderr (`asitis: <path>: not linted (<reason>)`) and does not change the exit code. A path the user named that cannot be read is exit 2.
 
-The CLI runs with a deadline of 5 minutes (`new Deadline(300_000)`). If `project.timedOut` or `project.truncated` is true, the exit code is 2 with the "stopped after" line, because a partial lint must never look like a clean one.
+The CLI runs with a deadline of 5 minutes (`new Deadline(300_000)`). If `project.timedOut` is true, or the walk was cut by the file, entry or time limit, the exit code is 2 with the "stopped after" line, because a partial lint must never look like a clean one.
+
+The depth limit is the exception. Folders more than `CAPS.walkMaxDepth` levels deep are skipped the same way on every run (big monorepos such as next.js and vscode always reach it), so a walk cut only by depth is a notice, not exit 2: `Folders more than N levels deep were not searched; pass their files as paths to lint them.` The CLI decides this from `project.cut` (`{ depth, size, time }`), never by matching the text of `walkNote`.
 
 ## Code path
 
@@ -83,8 +87,9 @@ const sandbox = await Sandbox.create([root], { allowBroadRoot, maxFileBytes });
 const project = await lintProject(sandbox, {
   targets,                    // [] for the whole folder
   include,                    // from --include
+  configInclude: true,        // CLI only: include and extends from .asitisrc.json apply
   deadline: new Deadline(300_000),
-  maxFiles: CAPS.walkMaxFiles,
+  maxFiles,                   // --max-files, default CAPS.walkMaxFiles
   configPath, baselinePath,   // only when given
 });
 if (fixPreview && format !== "text") attachFixes(project, safety);  // fix.ts, before findings()
@@ -93,6 +98,12 @@ const report = buildReport(rootAsGiven, project.results.length, findings);
 ```
 
 For `--fix-preview` with `text`, print `fixPreview(project, safety)` from `fix.ts` instead of the report.
+
+`configInclude: true` is what makes `include` and `extends: strict` in `.asitisrc.json` widen what the CLI reads. The MCP server never passes it: there a repo's config can change severities and turn rules off, but it cannot make the server read skill scripts or settings files. If the config asks for a scan the call did not, `lint_steering` says so in a note (`.asitisrc.json asks for the config scan; pass include to lint_steering to run it.`) and reads nothing extra.
+
+## Budget
+
+`asitis budget [file]` prints what each agent loads at the start of every session, the same report as the MCP `context_budget` tool: per agent (Claude Code, Codex, Gemini CLI, Cursor, Copilot) a total and one line per file, largest agent first. With a file, it counts that file and its imports only. `--format json` prints the structured report. Token counts are local estimates. It exits 0 when the count ran, and 2 for the usual user errors; it has no `--fail-on`. A walk cut short prints the reason on stderr (`asitis: <reason>; the totals above may be low`).
 
 `project.notes` are one-line notices (for example an `include` value that is not available yet). Print them to stderr for `json` and `sarif`, after the summary for `text`, and as `::notice::` lines for `github`.
 
@@ -255,14 +266,14 @@ SARIF 2.1.0, one run, `JSON.stringify(log, null, 2) + "\n"`.
   - `id`
   - `shortDescription.text`: `summary`
   - `fullDescription.text`: `why`
-  - `helpUri`: `https://asitis.app/rules/<id>`
+  - `helpUri`: `https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/<id>.md`, the page `gen-rule-docs.mjs` writes (`RULE_DOCS` in `format/sarif.ts`, `SITE` in the generator; a test keeps them equal)
   - `defaultConfiguration.level`: `defaultSeverity` (`error`, `warning`, `note` map one to one)
   - `properties.tags`: by category. `security` gives `["security"]`, `format` gives `["steering"]`, `budget` gives `["budget"]`, `drift` gives `["drift"]`, `config` gives `["steering"]`.
   - `properties["security-severity"]` for security rules only, so GitHub ranks them: `"8.0"` for error, `"5.0"` for warning, `"2.0"` for note.
 - `runs[0].columnKind`: `"utf16CodeUnits"`. No `originalUriBaseIds` entry, so no absolute path ever appears in the file.
 - Each finding is one result:
   - `ruleId`, `ruleIndex` (index into `rules[]`), `level` (the finding's severity), `message.text`.
-  - `locations[0].physicalLocation.artifactLocation`: `uri` is the finding path with each segment percent-encoded by `encodeURIComponent` and joined with `/` (spaces, `#`, `%` and non-ASCII are encoded), `uriBaseId: "%SRCROOT%"`.
+  - `locations[0].physicalLocation.artifactLocation`: `uri` is the finding path with each segment percent-encoded by `encodeURIComponent` and joined with `/` (spaces, `#`, `%` and non-ASCII are encoded), `uriBaseId: "%SRCROOT%"`. GitHub code scanning reads `%SRCROOT%` as the checkout, so when `--root` is a relative subfolder the path is prefixed with it (`--root docs` gives `docs/CLAUDE.md`), as the github format does (`workspacePath` in `format/workspace.ts`). An absolute root or one starting with `..` is not prefixed. Fingerprints always use the root-relative path, so they do not change with `--root`.
   - `region`: `startLine`, `startColumn`, `endLine`, `endColumn` from the finding.
   - `partialFingerprints: { "asitis/v1": fingerprint }`.
   - `suppressions`: present only for suppressed findings, `[{ kind, justification? }]`. Suppressed results stay in the file.
@@ -306,7 +317,8 @@ One workflow command per unsuppressed finding:
 - `extends`: `recommended` (default) or `strict` (notes become warnings, `sec-*` rules on).
 - Threshold options for `length`: `claudeMdLines`, `skillMdLines`, `cursorRuleLines`, `codexBytes`, `windsurfChars`, `memoryIndexLines`. Defaults stay in `limits.ts`.
 - Any unknown key, unknown rule id (not in the registry, or planned), bad severity or bad option type throws `UserError` with `file line N: problem (did you mean "x"?)`. CLI: exit 2. MCP: the tool error text.
-- In the MCP server the same file is read on every `lint_steering` call when it exists. The server never reads it for other tools.
+- In the MCP server the same file is read on every `lint_steering` call when it exists. The server never reads it for other tools. There, `include` and the extra scans that `strict` turns on are not applied (see Code path); severities, `off`, `ignore` and `overrides` are.
+- `strict` also shows two inventory notes that are off by default because they fire on most repos: plain hooks in `.claude/settings.json` (`sec-hook-config`) and subagents without a `tools` list (`sec-skill-allowed-tools`).
 
 ## Suppression
 

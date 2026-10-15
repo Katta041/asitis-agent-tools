@@ -36,7 +36,8 @@ export const SPEC_RULES: RuleMeta[] = [
   f("claude-local-misplaced", "warning", "CLAUDE.local.md inside .claude/", "Only ./CLAUDE.local.md is a documented location; this file is not loaded.", SRC.memory),
   f("rule-paths-budget", "warning", "Rule paths expand to more than 1,000 patterns", "Claude Code caps brace expansion of paths.", SRC.memory),
   f("rule-paths-bracket", "note", "Rule paths glob has an unescaped [", "Square brackets are a character class; escape them as \\[ to match a literal bracket.", SRC.memory),
-  f("codex-override-shadow", "warning", "AGENTS.override.md in the same folder hides this AGENTS.md from Codex", "Codex reads the override instead of AGENTS.md.", SRC.codexAgentsMd),
+  // codex-override-shadow was reserved here and retired in 0.3.0: agents-md-unread-variant (drift)
+  // already reports an AGENTS.override.md that hides its AGENTS.md from Codex.
   f("empty-instructions", "note", "Instruction file is empty or whitespace", "Codex skips empty files and Claude Code adds nothing.", SRC.codexAgentsMd),
   f("gemini-import-depth", "warning", "GEMINI.md import chain deeper than 5", "Gemini CLI stops importing at depth 5.", SRC.geminiMemport),
   f("gemini-import-outside", "warning", "GEMINI.md import resolves outside the project", "Gemini CLI rejects it without asking.", SRC.geminiMemport),

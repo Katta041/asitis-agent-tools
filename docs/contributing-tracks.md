@@ -15,9 +15,9 @@ Only the owner edits a file. Every file below exists already, as a stub where th
 | WP4 drift | `src/checks/drift.ts`, `src/rules/drift.meta.ts` |
 | WP5 skill scan | `src/checks/skills.ts`, `src/scan-script.ts`, `src/policy/skill-script.ts`, `src/rules/skills.meta.ts` |
 | WP6 agent config audit | `src/checks/agent-config.ts`, `src/jsonmap.ts`, `src/policy/agent-config.ts`, `src/rules/agent-config.meta.ts` |
-| WP7 fixes | `src/fix.ts`, `src/diff.ts`, `src/fixes/` |
-| WP8 rule docs | `scripts/gen-rule-docs.mjs`, `/docs/rules/` |
-| WP9 integration and release | version files, READMEs, the CHANGELOGs, plugin commands, `/packages/cli/` |
+| WP7 fixes | `src/fix.ts`, `src/diff.ts`, `src/fixes/`, `src/rules/fixes.meta.ts` |
+| WP8 rule docs | `scripts/gen-rule-docs.mjs`, `scripts/rule-docs/` (the hand-written fragments), `/docs/rules/` (generated) |
+| WP9 integration and release | version files, READMEs, the CHANGELOGs, plugin commands and hooks (`/plugins/asitis/commands/`, `/plugins/asitis/hooks/`), `/packages/cli/` (not created in 0.3.0) |
 
 Each track also owns its own tests (`test/<track>.test.ts`, plus any `test/<track>-*.test.ts`) and fixtures under `/test-fixtures/<track-name>/`.
 
@@ -46,6 +46,8 @@ Drift, skills and agent-config checks run inside `lintProject` (`project.ts`), a
 - `report(path, issue, file?)`: add a finding. For a file that is not linted markdown, pass `file: { kind: "skill-script" | "agent-config", lineText }` so fingerprints work.
 - `note(text)`: a one-line notice for the user.
 
+An issue can carry `strictOnly: true`. `applyConfig` drops it unless the config says `extends: strict`. Use it for inventory notes that are true but fire on most repos (a plain hook, a subagent with no tools list), so the default output stays quiet.
+
 Set `ready: true` on your check when it works. While it is `false`, asking for its include value prints "not available in this build yet" and reads nothing.
 
 ## Reading files
@@ -67,6 +69,10 @@ Messages never echo secrets or config values: quote file text only through `prev
 ## Changelog
 
 Do not edit `CHANGELOG.md`. Write `changes/unreleased/<track>.md` (for example `changes/unreleased/wp4.md`) with Keep a Changelog sections (`### Added`, `### Changed`, `### Fixed`). WP9 merges them.
+
+## Retired ids
+
+A planned id that turns out to duplicate another rule is removed from its meta file with a comment saying which rule covers it. `codex-override-shadow` was retired in 0.3.0 this way: `agents-md-unread-variant` reports an `AGENTS.override.md` that hides its `AGENTS.md` from Codex.
 
 ## Merging
 
