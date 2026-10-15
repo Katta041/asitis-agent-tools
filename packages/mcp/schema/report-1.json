@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asitis.app/schema/report-1.json",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "tool",
+    "root",
+    "summary",
+    "findings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "tool": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "const": "asitis"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "root": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "files",
+        "errors",
+        "warnings",
+        "notes",
+        "suppressed"
+      ],
+      "properties": {
+        "files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "notes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "suppressed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "ruleId",
+          "severity",
+          "category",
+          "path",
+          "line",
+          "column",
+          "endLine",
+          "endColumn",
+          "message",
+          "fingerprint"
+        ],
+        "properties": {
+          "ruleId": {
+            "type": "string",
+            "pattern": "^[a-z][A-Za-z0-9-]*$"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "note"
+            ]
+          },
+          "category": {
+            "enum": [
+              "format",
+              "budget",
+              "security",
+              "drift",
+              "config"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "endLine": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "endColumn": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "message": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "suppressed": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "inSource",
+                  "external"
+                ]
+              },
+              "justification": {
+                "type": "string"
+              }
+            }
+          },
+          "fix": {
+            "type": "object",
+            "required": [
+              "safety",
+              "diff",
+              "edits"
+            ],
+            "properties": {
+              "safety": {
+                "enum": [
+                  "safe",
+                  "review"
+                ]
+              },
+              "diff": {
+                "type": "string"
+              },
+              "edits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "startByte",
+                    "endByte",
+                    "replacement"
+                  ],
+                  "properties": {
+                    "startByte": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "endByte": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "replacement": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
