@@ -349,7 +349,7 @@ export const SKILLS_CHECK: ProjectCheck = {
     }
 
     const scanned = stats.docs + stats.heads;
-    if (!stats.folders && !ctx.otherTargets.length) ctx.note("Skill scan: no skill folders (folders with a SKILL.md) were found among the linted files.");
+    if (!stats.folders) ctx.note("Skill scan: no skill folders (folders with a SKILL.md) were found among the linted files.");
     else ctx.note(`Skill scan: ${plural(stats.folders, "skill folder")}, ${plural(stats.scripts, "script")} and ${plural(stats.docs, "markdown file")} read, ${plural(Math.max(0, stats.heads - stats.scripts), "other file")} checked for executable headers (${plural(scanned, "file")} in all).`);
     if (stats.tooBig.length) ctx.note(listNote("Not scanned, over the 1 MB limit for skill files", stats.tooBig));
     if (stats.refused.length) ctx.note(listNote("Not read, a symlink that leaves the project or a refused path", stats.refused));

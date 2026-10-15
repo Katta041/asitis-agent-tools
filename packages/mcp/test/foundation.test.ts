@@ -48,7 +48,7 @@ describe("lintProject", () => {
     expect(p.include.has("config")).toBe(true); // config-local implies config
     // Both opt-in scans are live: skills (WP5) and config (WP6). The skill scan finds no skill folder and says so.
     expect(p.notes).toEqual([
-      "Skill scan: 0 skill folders, 0 scripts and 0 markdown files read, 0 other files checked for executable headers (0 files in all).",
+      "Skill scan: no skill folders (folders with a SKILL.md) were found among the linted files.",
     ]);
     // The script path is not claimed by any check, so it fails as a non-markdown path does today.
     expect(p.failures.map((x) => x.path)).toEqual(["scripts/setup.sh"]);
