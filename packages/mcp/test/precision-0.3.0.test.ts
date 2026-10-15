@@ -293,7 +293,9 @@ describe("broken-link", () => {
     expect(b[0]!.message).toContain("exists from the repository root");
   });
   test("an anchor that differs only by an emoji variation selector matches", async () => {
-    const fs = await lint(project({ "CLAUDE.md": "# Guide\n\nSee [step 3](#step-3-confirm-).\n\n## Step 3: Confirm ⚠️\n\nConfirm it.\n" }));
+    // A warning sign and U+FE0F, built from code points so this file stays free of emoji.
+    const sign = String.fromCodePoint(0x26a0, 0xfe0f);
+    const fs = await lint(project({ "CLAUDE.md": `# Guide\n\nSee [step 3](#step-3-confirm-).\n\n## Step 3: Confirm ${sign}\n\nConfirm it.\n` }));
     expect(of(fs, "broken-link")).toEqual([]);
   });
   test("kept: a missing file and a missing anchor are warnings", async () => {
