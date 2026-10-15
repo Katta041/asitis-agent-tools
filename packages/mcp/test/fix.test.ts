@@ -183,14 +183,21 @@ describe.each(Object.entries(VARIANTS))("fixture variant %s", (variant, transfor
 });
 
 describe("what is never fixed", () => {
-  test("ZWJ in an emoji, ZWNJ in Persian, RLM in Hebrew, ZWJ in Hindi and a flag's tag characters get no fix", async () => {
+  test("ZWJ in an emoji, ZWNJ in Persian, RLM in Hebrew, ZWJ in Hindi and a flag's tag characters: no finding, so no fix", async () => {
+    // Lint and the fixer share InvisibleKeep (scan.ts), so what the fixer keeps is never reported.
+    expect((await findings(copyWith(KEEP))).filter((f) => f.rule === "invisible-char" || f.rule === "bidi-control")).toEqual([]);
     const r = await suggest(copyWith(KEEP));
     expect(r.fixes).toEqual([]);
     expect(r.diff).toBe("");
-    const notes = r.notFixed.map((n) => n.note).join("\n");
-    expect(notes).toMatch(/ZERO WIDTH NON-JOINER stays because it sits between letters/);
-    expect(notes).toMatch(/RIGHT-TO-LEFT MARK stays because the line has right-to-left text/);
-    expect(notes).toMatch(/TAG CHARACTER.*part of a flag emoji/);
+    expect(r.notFixed).toEqual([]);
+  });
+
+  test("a ZWSP on a line with Persian: the ZWSP goes, the note says why the ZWNJ stays", async () => {
+    const dir = copyWith(KEEP, () => Buffer.from("# x\n\n- Persian: \u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645\u200b ok\n"));
+    const r = await suggest(dir, { safety: "safe" });
+    expect(r.fixes.map((f) => f.ruleId)).toEqual(["invisible-char"]);
+    gitApply(dir, r.diff);
+    expect(readFileSync(path.join(dir, "CLAUDE.md"), "utf8")).toBe("# x\n\n- Persian: \u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 ok\n");
   });
 
   test("an emoji ZWJ next to a removable ZWSP: the ZWSP goes, the emoji stays byte for byte", async () => {

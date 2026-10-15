@@ -2,7 +2,7 @@
 // policy, redaction and the 80-character quote limit, the defanged malicious corpus and the benign
 // corpus. Hostile strings use example.invalid hosts and echo hello payloads; key shapes and binaries
 // are built here from parts, never stored whole.
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { allowedToolEntries, broadGrant } from "../src/checks/skills.js";
@@ -409,11 +409,22 @@ describe("commands and subagents", () => {
     const r = await lintSkills(t.dir);
     const got = r.findings.filter((f) => f.ruleId.startsWith("sec-")).map((f) => `${f.path} ${f.severity} ${f.ruleId}`).sort();
     expect(got).toEqual([
-      ".claude/agents/open.md note sec-skill-allowed-tools",
       ".claude/agents/scoped.md warning sec-safety-off",
       ".claude/commands/blame.md warning sec-skill-allowed-tools",
       ".claude/commands/blame.md warning sec-skill-arg-injection",
     ]);
+  });
+
+  test("the no-tools-list note on a subagent shows only with extends: strict", async () => {
+    writeFileSync(path.join(t.dir, ".asitisrc.json"), '{"extends": "strict"}\n');
+    try {
+      const r = await lintSkills(t.dir);
+      const open = r.findings.filter((f) => f.path === ".claude/agents/open.md" && f.ruleId === "sec-skill-allowed-tools");
+      expect(open.map((f) => f.severity)).toEqual(["warning"]);
+      expect(open[0]!.message).toMatch(/^No tools list, so this subagent gets every tool/);
+    } finally {
+      rmSync(path.join(t.dir, ".asitisrc.json"));
+    }
   });
 });
 

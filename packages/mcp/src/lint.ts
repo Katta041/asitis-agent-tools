@@ -29,6 +29,11 @@ export interface Issue {
   suppressed?: Suppression;
   /** Set by fix.ts when --fix-preview or suggest_fixes asks for fixes. */
   fix?: FindingFix;
+  /**
+   * An inventory note that is useful in a review but too common to show by default (a plain hook,
+   * a subagent with no tools list). applyConfig drops it unless the config says extends: strict.
+   */
+  strictOnly?: boolean;
 }
 
 export interface LintResult {
@@ -84,7 +89,24 @@ async function claudeReadsAgentsMd(doc: Doc, sandbox: Sandbox): Promise<boolean>
 const SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 /** Claude API skill upload rules (platform.claude.com Agent Skills overview): no reserved words, no XML tags. */
 const RESERVED_WORDS = ["anthropic", "claude"];
-const XML_TAG = /<\/?[A-Za-z][\w.:-]{0,60}(?:\s[^<>\n]{0,200})?\/?>/;
+// The overview says only "Cannot contain XML tags" for name and description (read 15 October 2026)
+// and does not say what counts. A lone <number> or <file> is how people write a placeholder, and in
+// 66 public repos every xml-tag hit of the old pattern was one (Claude Code skills, never sent to
+// the API). So only definite markup is reported: a closing tag, a self-closing tag, or a tag with
+// an attribute. A lone placeholder the API might still reject is a known miss, noted on the rule page.
+const CLOSING_TAG = /<\/([A-Za-z][\w.:-]{0,60})\s{0,8}>/;
+const MARKUP_TAG = /<[A-Za-z][\w.:-]{0,60}(?:\s{1,8}[A-Za-z_:][\w.:-]{0,60}\s{0,8}=\s{0,8}(?:"[^"<>\n]{0,200}"|'[^'<>\n]{0,200}'|[^\s"'<>=]{1,200})){1,8}\s{0,8}\/?>|<[A-Za-z][\w.:-]{0,60}\s{0,8}\/>/;
+
+/** The first definite XML or HTML tag in a skill name or description, quoted as written, or null. */
+function xmlTag(text: string): string | null {
+  const close = CLOSING_TAG.exec(text);
+  if (close) {
+    // Quote the opening tag when there is one: "<system>" reads better than "</system>".
+    const open = new RegExp(`<${close[1]!.replace(/[.]/g, "\\.")}(?:\\s[^<>\\n]{0,200})?>`).exec(text.slice(0, close.index));
+    return open ? open[0] : close[0];
+  }
+  return MARKUP_TAG.exec(text)?.[0] ?? null;
+}
 
 /** A valid Agent Skills name close to the given one ("Claude_Deploy" -> "claude-deploy"), or null. */
 export function suggestSkillName(name: string): string | null {
@@ -186,8 +208,8 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
         if (reserved) {
           c.add("warning", "name-reserved-word", `name contains the reserved word "${reserved}". The Claude API and claude.ai reject skills whose name contains "anthropic" or "claude" (Claude Code itself accepts it)`, line("name"));
         }
-        const tag = XML_TAG.exec(n);
-        if (tag) c.add("warning", "xml-tag", `name contains an XML tag ${q(tag[0], 60)}; the Claude API and claude.ai reject XML tags in a skill name`, line("name"));
+        const tag = xmlTag(n);
+        if (tag) c.add("warning", "xml-tag", `name contains an XML tag ${q(tag, 60)}; the Claude API and claude.ai reject XML tags in a skill name`, line("name"));
       }
       const desc = data["description"];
       if (desc === undefined || desc === null || (typeof desc === "string" && desc.trim() === "")) {
@@ -198,9 +220,9 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
         if (desc.length > VENDOR.skillDescriptionMax) {
           c.add("error", "description-too-long", `description is ${desc.length.toLocaleString("en-US")} characters; the Agent Skills spec allows at most ${VENDOR.skillDescriptionMax.toLocaleString("en-US")}, so shorten it`, line("description"));
         }
-        const tag = XML_TAG.exec(desc);
+        const tag = xmlTag(desc);
         if (tag) {
-          c.add("warning", "xml-tag", `description contains an XML tag ${q(tag[0], 60)}. The Claude API and claude.ai reject XML tags in a skill description, and agents can read tags there as instructions`, line("description"));
+          c.add("warning", "xml-tag", `description contains an XML tag ${q(tag, 60)}. The Claude API and claude.ai reject XML tags in a skill description, and agents can read tags there as instructions`, line("description"));
         }
         const combined = desc.length + (str(data["when_to_use"])?.length ?? 0);
         if (combined > VENDOR.skillListingChars) {

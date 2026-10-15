@@ -138,6 +138,8 @@ function checkFrontmatter(ctx: CheckContext, doc: Doc): void {
       rule: "sec-skill-allowed-tools",
       message: "No tools list, so this subagent gets every tool the main session has, Bash and MCP tools included; list only the tools it needs in tools",
       line: 1,
+      // Most subagent files have no tools list, so this is shown only with extends: strict.
+      strictOnly: true,
     });
   }
 }

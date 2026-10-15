@@ -616,6 +616,8 @@ function auditHooks(fc: FileCtx, doc: Obj): void {
       severity: "info",
       rule: "sec-hook-config",
       message: `${plain} hook command${plain === 1 ? "" : "s"} (${events}${plainEvents.size > 4 ? ", ..." : ""}) ${plain === 1 ? "runs" : "run"} on the developer's machine; claude -p starts ${plain === 1 ? "it" : "them"} without the trust prompt, so review ${plain === 1 ? "it" : "them"} like code`,
+      // Fired on 16 of 43 repos with any hooks: an inventory, so shown only with extends: strict.
+      strictOnly: true,
     });
   }
 }

@@ -131,6 +131,108 @@ export function suspiciousSelector(s: string, i: number, cp: number): boolean {
   return !IDEOGRAPH.test(String.fromCodePoint(prev));
 }
 
+// Invisible characters that are part of the text, not hidden in it. scanInvisible does not report
+// them, and the invisible-char and bidi-control fixers (fixes/invisible.ts) never delete them; both
+// use InvisibleKeep so the two cannot disagree. Unicode 15.1, chapter 23.2 "Layout Controls",
+// https://www.unicode.org/versions/Unicode15.1.0/ch23.pdf, and UTS #51 section 2.8 "Emoji Tag
+// Sequences", https://www.unicode.org/reports/tr51/#Emoji_Tag_Sequences (both read 14 October 2026):
+// - ZERO WIDTH NON-JOINER and ZERO WIDTH JOINER between letters of a script that uses them to pick
+//   letter forms (Persian, Arabic, Hindi and other Indic scripts), or next to an emoji.
+// - LEFT-TO-RIGHT MARK, RIGHT-TO-LEFT MARK and ARABIC LETTER MARK on a line with right-to-left text,
+//   where they fix the display order of numbers and punctuation. They are not overrides.
+// - COMBINING GRAPHEME JOINER next to a combining mark (Hebrew and other pointed text).
+// - MONGOLIAN VOWEL SEPARATOR next to Mongolian letters, and the Hangul fillers next to Hangul.
+// - TAG characters that spell a subdivision flag: U+1F3F4, 2 to 7 tags from 0-9 and a-z, then
+//   CANCEL TAG (England, Scotland, Wales). Longer runs or other tags are still reported, because
+//   tag characters are how ASCII text is smuggled past a reader.
+
+const RTL = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Samaritan}\p{Script=Mandaic}\p{Script=Adlam}\p{Script=Hanifi_Rohingya}\p{Script=Yezidi}]/u;
+const SIMPLE_SCRIPT = /^[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\p{Script=Common}]$/u;
+const EMOJI_NEAR = /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}️⃣]$/u;
+const MARK = /^\p{M}$/u;
+const LETTER = /^\p{L}$/u;
+const MONGOLIAN = /^\p{Script=Mongolian}$/u;
+const HANGUL = /^\p{Script=Hangul}$/u;
+const isTag = (cp: number | undefined): boolean => cp !== undefined && cp >= 0xe0000 && cp <= 0xe007f;
+
+const charAt = (s: string, i: number): string => (i >= 0 && i < s.length ? String.fromCodePoint(s.codePointAt(i)!) : "");
+const charBefore = (s: string, i: number): string => {
+  const cp = cpBefore(s, i);
+  return cp < 0 ? "" : String.fromCodePoint(cp);
+};
+
+/**
+ * The nearest letter before (dir -1) or from (dir 1) index i, stepping over combining marks and
+ * other invisible characters, at most 8 characters away. "" when the neighbour is not a letter.
+ */
+function letterNear(s: string, i: number, dir: 1 | -1): string {
+  let p = i;
+  for (let k = 0; k < 8; k++) {
+    const ch = dir < 0 ? charBefore(s, p) : charAt(s, p);
+    if (!ch) return "";
+    if (LETTER.test(ch)) return ch;
+    const cp = ch.codePointAt(0)!;
+    if (!MARK.test(ch) && INVISIBLE_NAMES[cp] === undefined && !isVariationSelector(cp) && !isTag(cp)) return "";
+    p += dir * ch.length;
+  }
+  return "";
+}
+
+/**
+ * Decides whether an invisible character belongs to the text. Keeps per-line and per-tag-run state,
+ * so a caller that walks forward does linear work: the right-to-left test runs once per line and a
+ * run of tag characters is measured once.
+ */
+export class InvisibleKeep {
+  private rtlLine = -1;
+  private rtl = false;
+  private tagEnd = -1;
+  private tagFlag = false;
+  constructor(private readonly s: string) {}
+
+  /** Why the character at `at` stays, or "" when it is hidden text. lineStart/lineEnd bound its line. */
+  reason(at: number, cp: number, units: number, lineStart: number, lineEnd: number): string {
+    const s = this.s;
+    if (cp === 0x200c || cp === 0x200d) {
+      if (EMOJI_NEAR.test(charBefore(s, at)) || EMOJI_NEAR.test(charAt(s, at + units))) return "it is next to an emoji, where it joins an emoji sequence";
+      const before = letterNear(s, at, -1);
+      const after = letterNear(s, at + units, 1);
+      if (before && after && !(SIMPLE_SCRIPT.test(before) && SIMPLE_SCRIPT.test(after))) return "it sits between letters of a script that uses it to choose letter forms (Persian, Arabic, Hindi and others)";
+      return "";
+    }
+    if (cp === 0x200e || cp === 0x200f || cp === 0x061c) {
+      if (this.rtlLine !== lineStart) {
+        this.rtlLine = lineStart;
+        this.rtl = RTL.test(s.slice(lineStart, lineEnd));
+      }
+      return this.rtl ? "the line has right-to-left text, where it sets the display order" : "";
+    }
+    if (cp === 0x034f) return MARK.test(charBefore(s, at)) || MARK.test(charAt(s, at + units)) ? "it sits between combining marks" : "";
+    if (cp === 0x180e) return MONGOLIAN.test(charBefore(s, at)) || MONGOLIAN.test(charAt(s, at + units)) ? "it is part of Mongolian text" : "";
+    if (cp === 0x115f || cp === 0x1160 || cp === 0x3164 || cp === 0xffa0) return HANGUL.test(charBefore(s, at)) || HANGUL.test(charAt(s, at + units)) ? "it is part of Hangul text" : "";
+    if (isTag(cp)) {
+      if (at >= this.tagEnd) {
+        let a = at;
+        while (a >= 2 && isTag(s.codePointAt(a - 2))) a -= 2;
+        let e = at;
+        while (isTag(s.codePointAt(e))) e += 2;
+        this.tagEnd = e;
+        // Tags spelling the subdivision: digits and lower-case letters, then CANCEL TAG.
+        let spec = 0;
+        let ok = s.codePointAt(e - 2) === 0xe007f && cpBefore(s, a) === 0x1f3f4;
+        for (let p = a; ok && p < e - 2; p += 2) {
+          const t = s.codePointAt(p)!;
+          if (!((t >= 0xe0030 && t <= 0xe0039) || (t >= 0xe0061 && t <= 0xe007a))) ok = false;
+          spec++;
+        }
+        this.tagFlag = ok && spec >= 2 && spec <= 7;
+      }
+      return this.tagFlag ? "it is part of a flag emoji" : "";
+    }
+    return "";
+  }
+}
+
 export function scanInvisible(lines: LineIndex): { findings: InvisibleFinding[]; total: number } {
   const s = lines.text;
   const findings: InvisibleFinding[] = [];
@@ -140,6 +242,7 @@ export function scanInvisible(lines: LineIndex): { findings: InvisibleFinding[];
   let seen: Set<number> | null = null;
   let lineIdx = 0;
   let nextLineStart = lines.count > 1 ? lines.start(1) : Infinity;
+  const keep = new InvisibleKeep(s);
   for (let i = 0; i < s.length; i++) {
     while (i >= nextLineStart) {
       lineIdx++;
@@ -161,6 +264,7 @@ export function scanInvisible(lines: LineIndex): { findings: InvisibleFinding[];
     if (!name) continue;
     if (cp === 0xfeff && i === 0) continue; // a leading BOM is reported by the profile, not here
     if (cp === 0x200d && emojiJoiner(s, at)) continue;
+    if (keep.reason(at, cp, cp > 0xffff ? 2 : 1, lines.start(lineIdx), lines.end(lineIdx))) continue;
     total++;
     if (currentLine !== lineIdx) {
       if (findings.length >= CAPS.maxFindingsPerRule) continue;

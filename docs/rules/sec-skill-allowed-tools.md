@@ -12,7 +12,7 @@ A skill whose `allowed-tools` grants `Bash` with no command pattern, every tool 
 
 ## Why it matters
 
-allowed-tools lets the listed tools run without a prompt while the skill or command runs. A subagent with no tools list inherits every tool, which is a note.
+allowed-tools lets the listed tools run without a prompt while the skill or command runs. A subagent with no tools list inherits every tool; extends: strict reports that too.
 
 ## Bad example
 

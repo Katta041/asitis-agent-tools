@@ -596,6 +596,9 @@ export async function applyConfig(config: LoadedConfig | null, run: ConfigRun): 
   }
   const strict = config?.extends === "strict";
   results.forEach((r, k) => {
+    // 1b. inventory notes exist only under extends: strict.
+    // The flag itself never reaches the output.
+    if (r.issues.some((i) => i.strictOnly)) r.issues = r.issues.filter((i) => strict || !i.strictOnly).map(({ strictOnly: _, ...i }) => i);
     const doc = k < docs.length ? docs[k] : undefined;
     const settings = config ? settingsFor(config, relOf(r, doc)) : new Map<string, RuleSetting>();
     const off = (id: string): boolean => settings.get(id)?.severity === "off";

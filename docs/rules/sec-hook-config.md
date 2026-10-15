@@ -12,7 +12,7 @@ A hook in `.claude/settings.json` (or a plugin's `hooks.json`) whose command dow
 
 ## Why it matters
 
-Hooks in a committed .claude/settings.json run on every developer's machine, and a claude -p run starts them without the trust prompt (CVE-2025-59536). An ANTHROPIC_BASE_URL in project settings sends the API key to that host (CVE-2026-21852). Plain hooks are listed as a note so a reviewer knows they exist.
+Hooks in a committed .claude/settings.json run on every developer's machine, and a claude -p run starts them without the trust prompt (CVE-2025-59536). An ANTHROPIC_BASE_URL in project settings sends the API key to that host (CVE-2026-21852). With extends: strict, plain hooks are listed too, so a reviewer knows they exist.
 
 ## Bad example
 
