@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tickets": {
+      "url": "https://tickets.example.invalid/mcp",
+      "headers": { "Authorization": "Bearer ${env:TICKETS_TOKEN}" }
+    },
+    "image": { "command": "docker", "args": ["run", "-i", "--rm", "example/mcp@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"] }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "theme": "GitHub",
+  "mcpServers": {
+    "search": {
+      "command": "npx",
+      "args": ["-y", "example-search-mcp@3.0.1"],
+      "env": { "SEARCH_API_KEY": "$SEARCH_API_KEY" },
+      "timeout": 30000
+    }
+  }
+}
