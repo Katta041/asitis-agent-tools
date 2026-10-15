@@ -111,7 +111,8 @@ describe("no write, exec or network code", () => {
   test("the CLI bundle imports only the Node modules the server uses, and nothing that writes", () => {
     const b = read(CLI_BUNDLE);
     expect(b.startsWith("#!/usr/bin/env node\n")).toBe(true);
-    const mods = new Set([...b.matchAll(/(?:from\s*["']|require\(["']|import\(["'])([^"']+)["']/g)].map((m) => m[1]!));
+    // (?<![\w-]): the agent-config check has the string "--from" (npx flags), which minifies to --from","
+    const mods = new Set([...b.matchAll(/(?<![\w-])(?:from\s*["']|require\(["']|import\(["'])([^"']+)["']/g)].map((m) => m[1]!));
     const allowed = new Set(["node:fs", "node:path", "node:crypto", "node:os", "node:util", "node:process", "node:module"]);
     for (const m of mods) expect(allowed.has(m), m).toBe(true);
     for (const m of ["child_process", "net", "http", "https", "http2", "dns", "tls", "dgram", "worker_threads", "cluster"]) {

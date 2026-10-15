@@ -46,25 +46,25 @@ describe("lintProject", () => {
     const sb = await Sandbox.create([FIXTURE_REPO]);
     const p = await lintProject(sb, { targets: ["CLAUDE.md", "scripts/setup.sh"], include: ["skills", "config-local"], deadline: deadline() });
     expect(p.include.has("config")).toBe(true); // config-local implies config
-    // The skill scan (WP5) is live: it finds no skill folder here and says so; config is still a stub.
+    // Both opt-in scans are live: skills (WP5) and config (WP6). The skill scan finds no skill folder and says so.
     expect(p.notes).toEqual([
       "Skill scan: 0 skill folders, 0 scripts and 0 markdown files read, 0 other files checked for executable headers (0 files in all).",
-      'include "config" is not available in this build yet, so nothing extra was scanned.',
     ]);
     // The script path is not claimed by any check, so it fails as a non-markdown path does today.
     expect(p.failures.map((x) => x.path)).toEqual(["scripts/setup.sh"]);
     expect(p.results.map((x) => x.path)).toEqual(["CLAUDE.md"]);
   });
 
-  test("lint_steering shows the notice and accepts include; without include the text has none", async () => {
+  test("lint_steering accepts include and shows the scan note; without include the text has none", async () => {
     const c = await connect([FIXTURE_REPO], { structured: false });
-    const withInclude = await c.call("lint_steering", { path: "CLAUDE.md", include: ["config"] });
+    const withInclude = await c.call("lint_steering", { path: "CLAUDE.md", include: ["skills"] });
     const without = await c.call("lint_steering", { path: "CLAUDE.md" });
     const bad = await c.client.callTool({ name: "lint_steering", arguments: { include: ["everything"] } }).catch((e: Error) => ({ isError: true, content: [{ type: "text", text: e.message }] }));
     await c.close();
-    expect(withInclude.text).toContain('include "config" is not available in this build yet');
+    expect(withInclude.text).toContain("Skill scan: no skill folders (folders with a SKILL.md) were found among the linted files.");
     expect(withInclude.text.startsWith(without.text.split("\n")[0]!)).toBe(true);
     expect(without.text).not.toContain("include");
+    expect(without.text).not.toContain("Skill scan");
     expect(bad.isError).toBe(true);
   });
 });

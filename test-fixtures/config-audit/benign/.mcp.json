@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "files": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem@2025.8.21", "."] },
+    "local": { "command": "node", "args": ["./tools/server.js"] },
+    "dev": { "command": "npx", "args": ["tsx", "./scripts/mcp.ts"] },
+    "fetch": { "command": "uvx", "args": ["mcp-server-fetch==2025.4.7"] },
+    "gh": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server:v0.13.0"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}" }
+    },
+    "remote": {
+      "type": "http",
+      "url": "https://mcp.example.invalid/mcp",
+      "headers": { "Authorization": "Bearer ${API_TOKEN}" }
+    },
+    "proxy": { "command": "npx", "args": ["-y", "mcp-remote@0.1.29", "https://mcp.example.invalid/sse"] },
+    "devserver": { "type": "http", "url": "http://localhost:3000/mcp" }
+  }
+}

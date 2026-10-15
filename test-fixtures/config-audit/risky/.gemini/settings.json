@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "tools": { "command": "uvx", "args": ["example-tools-mcp"], "trust": true }
+  }
+}
