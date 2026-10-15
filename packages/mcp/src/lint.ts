@@ -33,6 +33,12 @@ export interface Issue {
   /** Set by fix.ts when --fix-preview or suggest_fixes asks for fixes. */
   fix?: FindingFix;
   /**
+   * What the fingerprint hashes in place of the line's text, for a finding whose line moves when
+   * the file does not really change (codex-chain-over-budget is reported on the byte where Codex
+   * cuts, which shifts with CRLF or any edit above it). findings.ts, fingerprintTextOf().
+   */
+  fingerprintText?: string;
+  /**
    * An inventory note that is useful in a review but too common to show by default (a plain hook,
    * a subagent with no tools list). applyConfig drops it unless the config says extends: strict.
    */

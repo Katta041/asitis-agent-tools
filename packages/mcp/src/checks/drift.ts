@@ -524,6 +524,9 @@ async function checkCodexChain(ctx: CheckContext, files: Files, agentsDocs: Doc[
             message: `Codex cuts this file at this line when started in this folder or below: the AGENTS.md files above it (${names}) use ${fmt(used)} of its ${fmt(budget)}-byte (32 KiB) budget, which is shared from the project root down, and this file adds ${fmt(mine.bytes)}. Shorten the chain or raise project_doc_max_bytes`,
             line: lineOfByte(mine.doc.file.buf, budget - used),
           };
+    // The line moves with CRLF and with any edit above the cut, so the baseline fingerprint hashes
+    // the chain of files instead (path and rule id are hashed anyway).
+    issue.fingerprintText = `codex chain: ${chain.map((x) => x.rel).join(" > ")}`;
     const d = mine.doc;
     const extra: ExtraFile | undefined = files.byRel.has(mine.rel) ? undefined : { kind: "agents-override", lineText: (n) => (n >= 1 && n <= d.lines.count ? d.lines.line(n - 1) : "") };
     const key = `${used >= budget ? "dropped" : "cut"}\0${chain.map((x) => x.rel).join("\0")}`;
