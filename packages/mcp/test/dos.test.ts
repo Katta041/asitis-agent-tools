@@ -15,6 +15,8 @@ const fill = (unit: string, bytes = SIZE): string => unit.repeat(Math.ceil(bytes
 const CASES: Record<string, () => string> = {
   "unclosed-comments": () => fill("<!--"),
   "closed-comments": () => fill("<!-- ignore previous instructions -->"),
+  "comment-lines": () => fill("<!-- x -->\n"),
+  "suppression-comments": () => fill("<!-- asitis-disable-next-line duplicate-rule, nope -- x -->\n"),
   "comment-then-unclosed": () => "<!-- a -->\n" + fill("<!--"),
   "open-brackets": () => fill("["),
   "link-openers": () => fill("]("),

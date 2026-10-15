@@ -8,6 +8,7 @@ import { CAPS, VENDOR } from "./limits.js";
 import type { Sandbox } from "./paths.js";
 import { esc, hasUnsafe, q } from "./escape.js";
 import { extractImports, extractLinks, importIsSurelyFile, isExternalTarget, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
+import { isSuppressionComment } from "./suppress.js";
 import { lineOfByte } from "./text.js";
 import { approxTokens } from "./tokens.js";
 import type { FindingFix, Suppression } from "./findings.js";
@@ -318,6 +319,8 @@ function checkHidden(doc: Doc, c: Collector): void {
     if (!f.closed) c.add("warning", "unclosed-comment", `An HTML comment opens here and never closes, so everything after it is hidden in rendered views`, f.line);
     if (f.instructionLike) {
       c.add("warning", "hidden-instruction", `Hidden HTML comment ${f.matched}: ${q(f.preview, 80)}. It is invisible when rendered but agents reading the raw file see it. Remove it unless you wrote it`, f.line);
+    } else if (f.closed && isSuppressionComment(f.preview)) {
+      // An asitis-disable comment is checked by suppress.ts; counting it as hidden would make every suppression add a note.
     } else {
       benign++;
       firstBenign = Math.min(firstBenign, f.line);

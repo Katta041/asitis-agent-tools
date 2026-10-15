@@ -204,7 +204,7 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
     }
   }
 
-  await applyConfig(config, { sandbox, results, docs, include, ...(opts.baselinePath === undefined ? {} : { baselinePath: opts.baselinePath }) });
+  await applyConfig(config, { sandbox, results, docs, include, lineTexts, ...(opts.baselinePath === undefined ? {} : { baselinePath: opts.baselinePath }) });
 
   let cached: Finding[] | null = null;
   return {
