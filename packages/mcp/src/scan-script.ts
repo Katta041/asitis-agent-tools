@@ -164,6 +164,12 @@ const INSTRUCTION: ReadonlyArray<[RegExp, string]> = [
 const TRIGGER = /[|`]|\$\(|<\(|curl|wget|\bi[wr][rm]\b|invoke-|download|base64|b64|atob|fromhex|unhexlify|codecs|zlib|marshal|exec|eval|compile|function|vm\.run|system|popen|subprocess|spawn|\biex\b|powershell|pwsh|unzip|\b7z\b|xattr|dangerously|bypasspermissions|yolo|approval-mode|trust-all|danger-full|autoapprove|instruction|prompt|rules|directions|guidelines|\buser\b|you\s{1,8}are|(?:ai|llm|claude|assistant|agent)\s{0,2}[:,]|\\x[0-9a-f]{2}|fromcharcode|[A-Za-z0-9+/_-]{24}/i;
 const EGRESS_TRIGGER = /ssh|id_|\.aws|gcloud|\.azure|\.kube|\.docker|credentials|netrc|\.claude|\.cursor|security\s|keychain|login data|cookies|local state|wallet|electrum|exodus|bitcoin|metamask|keystore|shadow|gnupg|password-store|\.env|printenv|\benv\b|environ|gh\s{1,4}auth|npmrc|pypirc|curl|wget|\bn(?:c|cat|etcat)\b|socat|scp|sftp|rsync|nslookup|\bdig\b|invoke-|\bi[wr][rm]\b|smtp|sendmail|aiohttp|httpx|axios|xmlhttprequest|urlopen|\/dev\/tcp|requests\.|urllib|http|fetch|webclient|gist|webhook|requestbin|pipedream|ngrok|interact\.sh|burpcollaborator|send|upload|post|exfiltrat|transmit|forward|submit/i;
 
+/** A download command that writes a file (curl -o, -O, --output, a redirect, wget, -OutFile). */
+const OUTPUT_FLAG = /\s-[a-zA-Z]{0,6}[oO]\b|--output|>|-OutFile|\bwget\b/i;
+const downloadsToFile = (t: string): boolean => DOWNLOADER.test(t) && OUTPUT_FLAG.test(t);
+/** Something an encoded run needs: a long base64 or hex run, an escape run, or a decoder word (short runs). */
+const BLOB_GATE = /[A-Za-z0-9+/_-]{24}|\\x[0-9a-fA-F]{2}|fromCharCode|base64|b64|atob|fromhex|unhexlify|xxd|certutil|uudecode|openssl/;
+
 // ---------------------------------------------------------------------------
 // Small helpers
 
@@ -402,6 +408,8 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
     if (n < MAX_HITS_PER_RULE) hits.push(h);
     else if (n === MAX_HITS_PER_RULE) hits.push({ ...h, severity: "info", message: `More ${h.ruleId} findings in this file were not listed` });
   };
+  /** True once a rule has hit its cap in this file: its detectors are skipped from then on. */
+  const capped = (rule: string): boolean => (perRule.get(rule) ?? 0) > MAX_HITS_PER_RULE;
   /** True when a hit for this rule on this 0-based line would be dropped, so its message is not built. */
   const full = (rule: string, line0: number): boolean => (perRule.get(rule) ?? 0) > MAX_HITS_PER_RULE || seen.has(`${rule}\0${line0 + 1}`);
   const lineLen = (i: number): number => lines.end(i) - lines.start(i);
@@ -463,9 +471,15 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
     const scanText = L.table ? codeSpans(s) : s;
     if (!scanText) continue;
     if (!downloads.length && !TRIGGER.test(scanText)) continue;
+    const execCapped = capped("sec-remote-exec") && capped("sec-encoded-blob");
+    if (execCapped && capped("sec-safety-off") && (source !== "script" || capped("sec-script-instruction"))) break;
+    // Cheap gates: each detector needs a character or word that most lines do not have.
+    const hasPipe = scanText.includes("|");
+    const hasParen = scanText.includes("(");
+    const hasTick = scanText.includes("`");
 
     // sec-safety-off
-    {
+    if (!capped("sec-safety-off")) {
       const m = SAFETY_OFF.exec(scanText);
       if (m && !full("sec-safety-off", li) && (m[0] !== "--yolo" || AGENT_CLI.test(scanText)) && !classifyNegation(scanText, m.index)) {
         const Q = new Quote();
@@ -474,7 +488,7 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
     }
 
     // Pipelines: download | interpreter, decode | interpreter.
-    const segs = pipeSegments(scanText);
+    const segs = hasPipe && !execCapped ? pipeSegments(scanText) : [];
     if (segs.length > 1) {
       let dl: { start: number; text: string } | null = null;
       let dec: { start: number } | null = null;
@@ -503,7 +517,7 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
     }
 
     // Command substitution: $(...), <(...), and backticks in shell, run as code.
-    if (L.code || !isMd) substitutions(scanText, L.shell, (kind, open, inner) => {
+    if ((L.code || !isMd) && !execCapped && (hasParen || (hasTick && L.shell))) substitutions(scanText, L.shell, (kind, open, inner) => {
       if (full(kind === "download" ? "sec-remote-exec" : "sec-encoded-blob", li) || classifyNegation(scanText, open)) return;
       const Q = new Quote();
       if (kind === "download") {
@@ -515,7 +529,7 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
     });
 
     // PowerShell and script-language download-and-run on one line.
-    {
+    if (!execCapped && (hasParen || /iex|invoke-|pwsh|powershell/i.test(scanText))) {
       const sink = CODE_SINK.exec(scanText);
       if (sink) {
         const rest = scanText.slice(sink.index);
@@ -546,14 +560,14 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
     }
 
     // Download to a file, then run that file within 5 lines.
-    trackDownloads(scanText, li, downloads, (d, segStart, segText) => {
+    if (!capped("sec-remote-exec") && (downloads.length || downloadsToFile(scanText))) trackDownloads(scanText, li, downloads, (d, segStart, segText) => {
       if (full("sec-remote-exec", li) || classifyNegation(scanText, segStart)) return;
       const Q = new Quote();
       if (!full("sec-remote-exec", li)) add({ ruleId: "sec-remote-exec", severity: sev("install"), ...at(li, segStart, segText.length), message: `Runs ${Q.take(d.file, 40)} right after downloading it on line ${d.line + 1}: ${Q.take(segText)}; nobody reviews the file between download and run; ship the file with the skill or check its hash first` });
     });
 
     // Password archives and quarantine removal (T10).
-    {
+    if (!capped("sec-remote-exec") && /unzip|7z|xattr/.test(scanText)) {
       const m = UNZIP_PASSWORD.exec(scanText) ?? QUARANTINE.exec(scanText);
       if (m && !classifyNegation(scanText, m.index)) {
         const Q = new Quote();
@@ -563,7 +577,7 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
     }
 
     // Encoded runs that decode to something that matters.
-    if (decodes < MAX_DECODES) {
+    if (decodes < MAX_DECODES && !capped("sec-encoded-blob") && BLOB_GATE.test(scanText)) {
       const lineDecodes = DECODER.test(scanText) || CODE_DECODE.test(scanText);
       decodes += blobs(scanText, lineDecodes, MAX_DECODES - decodes, (off, len, decoded, why) => {
         const Q = new Quote();
@@ -571,7 +585,7 @@ export function scanScript(text: string, source: ScriptSource, opts: ScanOptions
       });
     }
 
-    if (source === "script") {
+    if (source === "script" && !capped("sec-script-instruction")) {
       for (const [re, label] of INSTRUCTION) {
         const m = re.exec(s);
         if (m) {
