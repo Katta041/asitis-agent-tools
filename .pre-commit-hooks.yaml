@@ -1,0 +1,28 @@
+# pre-commit hook for AsItIs. Runs the CLI bundled in this repo (action/asitis.mjs), so nothing
+# is installed from npm. Needs Node 22.13 or later on PATH. docs/ci.md shows how to use it.
+#
+# files: the steering files classify() in packages/mcp/src/kinds.ts recognises. Plain README.md
+# and docs are left out on purpose, so a commit that only touches docs never runs the hook.
+# To fail on warnings too, set args: [--fail-on, warning] in your .pre-commit-config.yaml.
+- id: asitis-lint
+  name: asitis lint (agent steering files)
+  description: Lint CLAUDE.md, AGENTS.md, SKILL.md, Cursor rules and other agent steering files.
+  language: script
+  entry: action/asitis.mjs lint
+  args: [--fail-on, error]
+  pass_filenames: true
+  require_serial: false
+  files: |
+    (?x)(
+      (^|/)(CLAUDE\.md|CLAUDE\.local\.md|AGENTS\.md|GEMINI\.md|SKILL\.md|MEMORY\.md)$
+      |(^|/)\.(cursorrules|windsurfrules|clinerules)$
+      |(^|/)\.claude/(agents|commands|rules)/.+\.md$
+      |(^|/)\.cursor/rules/.+\.mdc$
+      |(^|/)\.windsurf/rules/.+\.md$
+      |(^|/)\.clinerules/.+\.md$
+      |^\.github/copilot-instructions\.md$
+      |(^|/)\.github/agents/.+\.md$
+      |\.(instructions|prompt|agent|chatmode)\.md$
+      |^memory/[^/]+\.md$
+    )
+  minimum_pre_commit_version: "3.0.0"

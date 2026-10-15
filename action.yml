@@ -1,0 +1,100 @@
+name: AsItIs steering file lint
+description: Lint CLAUDE.md, AGENTS.md, SKILL.md, Cursor rules and other agent steering files. Read-only, no network, nothing installed at run time.
+author: Katta041
+branding:
+  icon: check-square
+  color: green
+
+# Runs the asitis CLI bundled in this repo (action/asitis.mjs, pinned by SHA-256 in
+# action/VERSION). Needs Node 22.13 or later on the runner: add actions/setup-node first.
+# Inputs reach the script as environment variables only, never pasted into a run: block.
+# action/README.md documents every input and output; test/action.test.ts checks that.
+
+inputs:
+  paths:
+    description: Files to lint, one per line or separated by spaces. Empty lints every steering file under root.
+    required: false
+    default: ""
+  root:
+    description: The one folder the linter may read. Keep it at the repository top so annotations land on the right files.
+    required: false
+    default: "."
+  fail-on:
+    description: Lowest severity that fails the step. One of error, warning, note or never.
+    required: false
+    default: error
+  format:
+    description: What the log shows. github turns each finding into an annotation on the pull request; text and json print the report as is.
+    required: false
+    default: github
+  include:
+    description: Comma-separated opt-in scans (skills, config, config-local). Empty means markdown steering files only.
+    required: false
+    default: ""
+  config:
+    description: Config file inside root. Empty uses .asitisrc.json at the root when it exists.
+    required: false
+    default: ""
+  baseline:
+    description: Baseline file inside root. Findings listed in it are reported as suppressed and do not fail the step.
+    required: false
+    default: ""
+  sarif-file:
+    description: Where to write a SARIF 2.1.0 report for code scanning. Empty skips it.
+    required: false
+    default: asitis.sarif
+  upload-sarif:
+    description: Set to true to upload the SARIF file to GitHub code scanning. The job then needs security-events write permission.
+    required: false
+    default: "false"
+
+outputs:
+  exit-code:
+    description: Exit code of the lint run. 0 clean, 1 findings at or above fail-on, 2 a setup problem, 3 a bug in asitis.
+    value: ${{ steps.lint.outputs.exit-code }}
+  errors:
+    description: Number of errors, suppressed ones not counted.
+    value: ${{ steps.lint.outputs.errors }}
+  warnings:
+    description: Number of warnings, suppressed ones not counted.
+    value: ${{ steps.lint.outputs.warnings }}
+  notes:
+    description: Number of notes, suppressed ones not counted.
+    value: ${{ steps.lint.outputs.notes }}
+  sarif-file:
+    description: Path of the SARIF file written, or empty.
+    value: ${{ steps.lint.outputs.sarif-file }}
+
+runs:
+  using: composite
+  steps:
+    - id: lint
+      name: Lint steering files
+      shell: bash
+      env:
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_ROOT: ${{ inputs.root }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_INCLUDE: ${{ inputs.include }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
+      run: bash "$GITHUB_ACTION_PATH/action/run.sh"
+
+    - name: Upload SARIF to code scanning
+      if: inputs.upload-sarif == 'true' && steps.lint.outputs.sarif-file != ''
+      uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      with:
+        sarif_file: ${{ steps.lint.outputs.sarif-file }}
+        category: asitis
+
+    - name: Fail on findings
+      shell: bash
+      env:
+        EXIT_CODE: ${{ steps.lint.outputs.exit-code }}
+      run: |
+        if [ "$EXIT_CODE" != "0" ]; then
+          echo "asitis: findings at or above the fail-on level (exit code $EXIT_CODE)."
+          exit "$EXIT_CODE"
+        fi
