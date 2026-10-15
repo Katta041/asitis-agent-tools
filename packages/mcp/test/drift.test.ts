@@ -108,6 +108,26 @@ describe("agents-md-shadowed", () => {
     expect(fs[0]!.message).toContain("mentioning AGENTS.md in a sentence does not load it");
   });
 
+  test("many nested AGENTS.md files shadowed by one CLAUDE.md give one finding that names the rest", async () => {
+    const files: Record<string, string> = { "CLAUDE.md": "@AGENTS.md\n", "AGENTS.md": "- Run `pnpm test` before every commit.\n" };
+    for (const p of ["a", "b", "c", "d", "e"]) files[`packages/${p}/AGENTS.md`] = `- Run \`make ${p}\` here.\n`;
+    const fs = (await lint(temp(files))).filter((f) => DRIFT_IDS.has(f.ruleId));
+    expect(short(fs)).toEqual(["packages/a/AGENTS.md:1 agents-md-shadowed"]);
+    expect(fs[0]!.message).toContain("and 4 more (packages/b/AGENTS.md, packages/c/AGENTS.md and 2 others)");
+  });
+
+  test("templates, examples, fixtures and assets are material, not instructions for this repo", async () => {
+    const root = temp({
+      "CLAUDE.md": "@AGENTS.md\n",
+      "AGENTS.md": "- Run `pnpm test` before every commit.\n",
+      "templates/app/AGENTS.md": "- Run `npm test` in the new app.\n",
+      "example_projects/Weather/AGENTS.md": "- Use the weather skill.\n",
+      "internal/assets/AGENTS.md": "You are the product assistant.\n",
+      "cli/temp_e2e_test/AGENTS.md": "- Generated.\n",
+    });
+    expect((await lint(root)).filter((f) => DRIFT_IDS.has(f.ruleId))).toEqual([]);
+  });
+
   test("works when only AGENTS.md is named (pre-commit style)", async () => {
     expect(short(await drift("shadowed", ["AGENTS.md"]))).toEqual(["AGENTS.md:1 agents-md-shadowed"]);
   });
@@ -194,7 +214,7 @@ describe("instruction-drift", () => {
     const root = temp({ "AGENTS.md": `${common}\n${onlyA}\n`, "GEMINI.md": `${common}\n${onlyB}\n` });
     const fs = (await lint(root)).filter((f) => f.ruleId === "instruction-drift");
     expect(fs).toHaveLength(10);
-    expect(fs.some((f) => f.message.includes("6 more rules differ"))).toBe(true);
+    expect(fs.some((f) => f.message.includes("6 more lines differ"))).toBe(true);
   });
 });
 
@@ -209,6 +229,14 @@ describe("codex-chain-over-budget", () => {
     expect(fs[0]!.line).toBeGreaterThan(1);
     expect(fs[1]!.message).toContain("Codex never reads this file");
     expect(fs[0]!.category).toBe("budget");
+  });
+
+  test("many files cut for the same reason give one finding", async () => {
+    const files: Record<string, string> = { "AGENTS.md": big(31_000) };
+    for (const p of ["a", "b", "c", "d"]) files[`${p}/AGENTS.md`] = big(3_000);
+    const fs = (await lint(temp(files))).filter((f) => f.ruleId === "codex-chain-over-budget");
+    expect(fs.map((f) => f.path)).toEqual(["a/AGENTS.md"]);
+    expect(fs[0]!.message).toContain("also cuts 3 more");
   });
 
   test("an override replaces AGENTS.md in its folder, and an empty file uses no budget", async () => {

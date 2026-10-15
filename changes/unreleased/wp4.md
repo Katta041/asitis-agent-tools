@@ -7,7 +7,8 @@
   - `cross-file-contradiction` (warning): "do X" in one file and "do not X" in another, for files in the same folder that one agent loads together or that mirror each other for different agents. Uses the same detector as `contradiction`. Nested files that override their parents are left alone.
   - `instruction-drift` (note): two mirrored files share at least half of their rules (Jaccard) and at least three, but some rules are in only one. Up to 10 per pair.
   - `codex-chain-over-budget` (warning): Codex's 32 KiB budget is shared by every AGENTS.md (or AGENTS.override.md) from the root down; a nested file that crosses it is cut, deeper files are dropped.
-- Files inside a skill folder (a folder with SKILL.md, or below one) are skill material and are left out of these checks.
+- Files that are material rather than instructions for the repo are left out: anything in a skill folder (SKILL.md beside or above, or under `skills/<name>/`), and folders named templates, examples, example_projects, demos, starters, fixtures, testdata, assets or temp*.
+- When one cause hits more than three files (a root CLAUDE.md shadowing 60 nested AGENTS.md files, or a long root AGENTS.md cutting every package file), the check reports one finding on the first file and names the rest, instead of one per file.
 
 ### Changed
 

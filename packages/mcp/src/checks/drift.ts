@@ -23,7 +23,7 @@ import { dp, q } from "../escape.js";
 import { CAPS, VENDOR } from "../limits.js";
 import { forEachRule, type Issue } from "../lint.js";
 import type { OpenedFile, Sandbox } from "../paths.js";
-import type { CheckContext, ProjectCheck } from "../project.js";
+import type { CheckContext, ExtraFile, ProjectCheck } from "../project.js";
 import { preview } from "../redact.js";
 import { extractImports } from "../scan.js";
 import { lineOfByte } from "../text.js";
@@ -42,6 +42,23 @@ export interface DriftOptions {
 }
 
 export const DRIFT_DEFAULTS: DriftOptions = { jaccard: 0.5, minShared: 3, maxPerPair: 10 };
+
+/**
+ * Folders whose AGENTS.md or CLAUDE.md is material, not instructions for this repo: project
+ * templates copied elsewhere, example and demo apps, test fixtures, generated temp output and
+ * embedded assets (a product's own system prompt). Seen in the 0.3.0 real-repo review.
+ */
+const NOT_PROJECT_DIR = /^(?:templates?|scaffolds?|boilerplates?|starters?|examples?|example[_-]projects?|samples?|demos?|fixtures?|__fixtures__|test-fixtures|testdata|assets|tmp|temp(?:[_-][^/]*)?)$/i;
+
+/** True for a path under one of those folders, or inside a skill (skills/<name>/...), where an AGENTS.md is skill reference material. */
+function notProjectInstructions(rel: string): boolean {
+  const parts = rel.split("/").slice(0, -1);
+  for (let i = 0; i < parts.length; i++) {
+    if (NOT_PROJECT_DIR.test(parts[i]!)) return true;
+    if (parts[i] === "skills" && i + 1 < parts.length) return true;
+  }
+  return false;
+}
 
 /** Claude Code follows @imports up to four hops (memory docs, "Import additional files"). */
 const MAX_IMPORT_HOPS = 4;
@@ -279,7 +296,35 @@ async function countingFiles(files: Files, dir: string): Promise<string[]> {
   return out;
 }
 
+/**
+ * One cause often hits many files at once (a root CLAUDE.md shadowing 60 nested AGENTS.md files, or
+ * a long root AGENTS.md cutting every package file). Up to GROUP_MAX files of a group get a
+ * finding each; a larger group gets one finding, on the first file, that names the others.
+ */
+const GROUP_MAX = 3;
+
+interface Pending {
+  path: string;
+  issue: Issue;
+  extra?: ExtraFile;
+}
+
+function emitGroup(ctx: CheckContext, items: Pending[], groupMessage: (others: string) => string): void {
+  items.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  if (items.length <= GROUP_MAX) {
+    for (const it of items) ctx.report(it.path, it.issue, it.extra);
+    return;
+  }
+  const rest = items.slice(1);
+  const shown = rest.slice(0, 2).map((x) => dp(x.path)).join(", ");
+  const others = `${fmt(rest.length)} more (${shown}${rest.length > 2 ? ` and ${fmt(rest.length - 2)} ${rest.length - 2 === 1 ? "other" : "others"}` : ""})`;
+  const first = items[0]!;
+  ctx.report(first.path, { ...first.issue, message: groupMessage(others) }, first.extra);
+}
+
 async function checkShadowed(ctx: CheckContext, files: Files, agentsDocs: Doc[]): Promise<void> {
+  // Nested AGENTS.md files with no CLAUDE.md of their own, by the CLAUDE.md above that shadows them.
+  const nested = new Map<string, Pending[]>();
   for (const doc of agentsDocs) {
     if (ctx.deadline.expired) return;
     let dir = dirOf(doc.file.rel);
@@ -303,7 +348,7 @@ async function checkShadowed(ctx: CheckContext, files: Files, agentsDocs: Doc[])
     // in its own folder, which Claude Code loads when it works there.
     const nearestDoc = await files.doc(nearest);
     // Claude Code memory docs: a CLAUDE.md that tells Claude in words to read AGENTS.md only works if Claude decides to open it.
-    const prose = nearestDir === dir && !!nearestDoc && nearestDoc.text.includes("AGENTS.md") ? " (mentioning AGENTS.md in a sentence does not load it)" : "";
+    const prose = nearestDir === dir && !!nearestDoc && /\b(?:read|follow|see|refer to|consult|check)\b[^.\n]{0,40}AGENTS\.md/i.test(nearestDoc.text) ? " (mentioning AGENTS.md in a sentence does not load it)" : "";
     const fix = nearestDir === dir ? `Add the line ${importLine} to ${dp(nearest)}${prose}` : `Add a CLAUDE.md next to it with the line @AGENTS.md`;
     const issue: Issue = onlyLocal
       ? {
@@ -318,7 +363,23 @@ async function checkShadowed(ctx: CheckContext, files: Files, agentsDocs: Doc[])
           message: `Claude Code skips this AGENTS.md because ${dp(nearest)} exists, and a CLAUDE.md in this folder or above switches off its AGENTS.md fallback. ${fix}, or set Project instructions to claude-md-and-agents-md in /config`,
           line: 1,
         };
-    ctx.report(doc.path, issue);
+    if (nearestDir === dir) {
+      ctx.report(doc.path, issue);
+      continue;
+    }
+    const key = `${issue.rule}\0${nearest}`;
+    const g = nested.get(key) ?? [];
+    g.push({ path: doc.path, issue });
+    nested.set(key, g);
+  }
+  for (const [key, items] of nested) {
+    const nearest = key.slice(key.indexOf("\0") + 1);
+    const local = key.startsWith("claude-local-hides-agents-md");
+    emitGroup(ctx, items, (others) =>
+      local
+        ? `${dp(nearest)} switches off Claude Code's AGENTS.md fallback, so Claude Code skips this AGENTS.md and ${others} in subfolders for whoever has that file. Add a CLAUDE.md with the line @AGENTS.md next to each, or set Project instructions to claude-md-and-agents-md in /config`
+        : `Claude Code skips this AGENTS.md and ${others} in subfolders, because ${dp(nearest)} exists and a CLAUDE.md above them switches off its AGENTS.md fallback. Add a CLAUDE.md with the line @AGENTS.md next to each, or set Project instructions to claude-md-and-agents-md in /config`,
+    );
   }
 }
 
@@ -401,8 +462,10 @@ async function checkCodexChain(ctx: CheckContext, files: Files, agentsDocs: Doc[
     return out;
   };
   const seen = new Set<string>();
+  // Files cut or dropped for the same reason: the same files above them.
+  const groups = new Map<string, { names: string; used: number; dropped: boolean; items: Pending[] }>();
   for (const doc of agentsDocs) {
-    if (ctx.deadline.expired) return;
+    if (ctx.deadline.expired) break;
     const dir = dirOf(doc.file.rel);
     if (dir === ".claude" || dir.endsWith("/.claude")) continue; // not a Codex location
     const mine = await codexFile(files, dir);
@@ -426,8 +489,19 @@ async function checkCodexChain(ctx: CheckContext, files: Files, agentsDocs: Doc[
             message: `Codex cuts this file at this line when started in this folder or below: the AGENTS.md files above it (${names}) use ${fmt(used)} of its ${fmt(budget)}-byte (32 KiB) budget, which is shared from the project root down, and this file adds ${fmt(mine.bytes)}. Shorten the chain or raise project_doc_max_bytes`,
             line: lineOfByte(mine.doc.file.buf, budget - used),
           };
-    if (files.byRel.has(mine.rel)) ctx.report(mine.doc.path, issue);
-    else ctx.report(mine.doc.path, issue, { kind: "agents-override", lineText: (n) => (n >= 1 && n <= mine.doc!.lines.count ? mine.doc!.lines.line(n - 1) : "") });
+    const d = mine.doc;
+    const extra: ExtraFile | undefined = files.byRel.has(mine.rel) ? undefined : { kind: "agents-override", lineText: (n) => (n >= 1 && n <= d.lines.count ? d.lines.line(n - 1) : "") };
+    const key = `${used >= budget ? "dropped" : "cut"}\0${chain.map((x) => x.rel).join("\0")}`;
+    const g = groups.get(key) ?? { names, used, dropped: used >= budget, items: [] };
+    g.items.push({ path: d.path, issue, ...(extra ? { extra } : {}) });
+    groups.set(key, g);
+  }
+  for (const g of groups.values()) {
+    emitGroup(ctx, g.items, (others) =>
+      g.dropped
+        ? `Codex never reads this file or ${others} when started in their folders: the AGENTS.md files above them (${g.names}) already use ${fmt(g.used)} bytes of its ${fmt(budget)}-byte (32 KiB) budget, which is shared from the project root down. Shorten those files or raise project_doc_max_bytes`
+        : `Codex cuts this file at this line, and also cuts ${others}, when started in their folders: the AGENTS.md files above them (${g.names}) use ${fmt(g.used)} of its ${fmt(budget)}-byte (32 KiB) budget, which is shared from the project root down. Shorten those files or raise project_doc_max_bytes`,
+    );
   }
 }
 
@@ -513,9 +587,17 @@ function checkPairs(ctx: CheckContext, files: Files, members: Member[], opts: Dr
         const diffs: Array<{ in: Member; notIn: Member; line: number; preview: string }> = [];
         for (const [k, v] of ra.all) if (!rb.all.has(k)) diffs.push({ in: A, notIn: B, line: v.line, preview: v.preview });
         for (const [k, v] of rb.all) if (!ra.all.has(k)) diffs.push({ in: B, notIn: A, line: v.line, preview: v.preview });
-        const listed = diffs.slice(0, opts.maxPerPair);
+        // Several sentences of one paragraph differ together: one finding per line is enough.
+        const lines = new Set<string>();
+        const unique = diffs.filter((d) => {
+          const k = `${d.in.doc.path}\0${d.line}`;
+          if (lines.has(k)) return false;
+          lines.add(k);
+          return true;
+        });
+        const listed = unique.slice(0, opts.maxPerPair);
         listed.forEach((d, n) => {
-          const more = n === listed.length - 1 && diffs.length > listed.length ? ` ${diffs.length - listed.length} more rules differ between the two files and are not listed.` : "";
+          const more = n === listed.length - 1 && unique.length > listed.length ? ` ${unique.length - listed.length} more lines differ between the two files and are not listed.` : "";
           ctx.report(d.in.doc.path, {
             severity: "info",
             rule: "instruction-drift",
@@ -535,7 +617,7 @@ export function driftCheck(opts: DriftOptions = DRIFT_DEFAULTS): ProjectCheck {
     run: async (ctx) => {
       const files = new Files(ctx.sandbox, ctx.docs);
       const docs: Doc[] = [];
-      for (const d of ctx.docs) if (!d.file.root.extra && !(await files.inSkill(dirOf(d.file.rel)))) docs.push(d);
+      for (const d of ctx.docs) if (!d.file.root.extra && !notProjectInstructions(d.file.rel) && !(await files.inSkill(dirOf(d.file.rel)))) docs.push(d);
       const base = (d: Doc): string => d.file.rel.slice(d.file.rel.lastIndexOf("/") + 1);
       const agentsDocs = docs.filter((d) => base(d) === "AGENTS.md");
       const variantDocs = docs.filter((d) => base(d) === "AGENTS.override.md" || base(d) === "AGENTS.local.md" || /(?:^|\/)\.agents\/[^/]+\.md$/i.test(d.file.rel));
