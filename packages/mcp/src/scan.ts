@@ -53,7 +53,7 @@ export function fenceMask(lines: LineIndex, skipUntilLine = -1): Uint8Array {
 // ---------------------------------------------------------------------------
 // Invisible and format characters
 
-const INVISIBLE_NAMES: Record<number, string> = {
+export const INVISIBLE_NAMES: Record<number, string> = {
   0x00ad: "SOFT HYPHEN",
   0x034f: "COMBINING GRAPHEME JOINER",
   0x061c: "ARABIC LETTER MARK",
@@ -91,8 +91,8 @@ export interface InvisibleFinding {
   bidi: boolean;
 }
 
-const isBidi = (cp: number): boolean => (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069);
-const isVariationSelector = (cp: number): boolean => (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
+export const isBidi = (cp: number): boolean => (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069);
+export const isVariationSelector = (cp: number): boolean => (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
 const PICTOGRAPH = /^\p{Extended_Pictographic}$/u;
 const EMOJI_MODIFIER = /^\p{Emoji_Modifier}$/u;
 const IDEOGRAPH = /^\p{Ideographic}$/u;
@@ -109,7 +109,7 @@ function cpBefore(s: string, i: number): number {
 }
 
 /** A ZERO WIDTH JOINER between two emoji ("woman" + ZWJ + "laptop") is how emoji sequences are spelled, not hidden text. */
-function emojiJoiner(s: string, i: number): boolean {
+export function emojiJoiner(s: string, i: number): boolean {
   const prev = cpBefore(s, i);
   const next = s.codePointAt(i + 1) ?? -1;
   if (prev < 0 || next < 0) return false;
@@ -122,7 +122,7 @@ function emojiJoiner(s: string, i: number): boolean {
  * Variation selectors are normal after an emoji (U+FE0F) or a CJK ideograph (U+E0100 and up).
  * A run of them, or one after any other character, can carry hidden bytes ("emoji smuggling").
  */
-function suspiciousSelector(s: string, i: number, cp: number): boolean {
+export function suspiciousSelector(s: string, i: number, cp: number): boolean {
   const prev = cpBefore(s, i);
   if (prev < 0 || isVariationSelector(prev)) return true;
   const next = s.codePointAt(i + (cp > 0xffff ? 2 : 1)) ?? -1;
