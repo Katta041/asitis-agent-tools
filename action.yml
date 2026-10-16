@@ -1,5 +1,5 @@
-name: AsItIs steering file lint
-description: Lint CLAUDE.md, AGENTS.md, SKILL.md, Cursor rules and other agent steering files. Read-only, no network, nothing installed at run time.
+name: AsItIs lint for CLAUDE.md, AGENTS.md and SKILL.md
+description: Lint CLAUDE.md, AGENTS.md, SKILL.md and Cursor rules in CI. Hidden instructions, invisible characters, token budget.
 author: Katta041
 branding:
   icon: check-square

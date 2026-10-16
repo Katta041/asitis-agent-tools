@@ -58,6 +58,16 @@ describe("action.yml", () => {
     expect(existsSync(path.join(REPO, "action/asitis.mjs"))).toBe(true);
   });
 
+  // The Marketplace release form rejects a description of 125 characters or more, a missing
+  // branding block, and a name equal to a GitHub user name ("asitis" is someone else's account).
+  test("passes the GitHub Marketplace metadata checks", () => {
+    const meta = action as ActionFile & { branding?: { icon?: string; color?: string } };
+    expect(meta.description.length).toBeLessThan(125);
+    expect(meta.name.trim().toLowerCase()).not.toBe("asitis");
+    expect(meta.branding?.icon).toBeTruthy();
+    expect(["white", "black", "yellow", "blue", "green", "orange", "red", "purple", "gray-dark"]).toContain(meta.branding?.color);
+  });
+
   test("has the inputs the roadmap asks for, with their defaults", () => {
     for (const name of ["paths", "fail-on", "format", "include", "config", "baseline", "sarif-file"]) expect(Object.keys(action.inputs)).toContain(name);
     expect(action.inputs["fail-on"]?.default).toBe("error");
