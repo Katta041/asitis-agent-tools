@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asitis.app/schema/asitisrc-1.json",
+  "title": "AsItIs config (.asitisrc.json)",
+  "description": "Config for the asitis linter and the lint_steering tool. Rule ids are listed at https://github.com/Katta041/asitis-agent-tools/tree/main/docs/rules. asitis itself checks rule ids against the rules of the installed version.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "extends": {
+      "description": "recommended (the default) or strict: notes become warnings and the skills and config scans run, so the sec-* rules in them are on.",
+      "enum": ["recommended", "strict"]
+    },
+    "rules": { "$ref": "#/$defs/rules" },
+    "ignore": {
+      "description": "Files not linted. Globs relative to the project folder: ** any folders, * and ? inside one name. A pattern without a slash matches at any depth; a pattern that matches a folder matches everything in it.",
+      "$ref": "#/$defs/globs"
+    },
+    "overrides": {
+      "description": "Rule settings for some files. Later entries win over earlier ones and over rules.",
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["files"],
+        "properties": {
+          "files": { "$ref": "#/$defs/globs", "minItems": 1 },
+          "rules": { "$ref": "#/$defs/rules" }
+        }
+      }
+    },
+    "include": {
+      "description": "Opt-in scans beyond markdown, merged with --include.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["skills", "config", "config-local"] }
+    }
+  },
+  "$defs": {
+    "severity": { "enum": ["error", "warning", "note", "off"] },
+    "globs": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500, "pattern": "^[^!\\\\]" }
+    },
+    "lengthOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "claudeMdLines": { "$ref": "#/$defs/threshold", "description": "CLAUDE.md lines. Default 200 (Claude Code memory docs)." },
+        "skillMdLines": { "$ref": "#/$defs/threshold", "description": "SKILL.md lines. Default 500 (Claude Code skills docs)." },
+        "cursorRuleLines": { "$ref": "#/$defs/threshold", "description": "Cursor rule lines. Default 500 (Cursor rules docs)." },
+        "codexBytes": { "$ref": "#/$defs/threshold", "description": "AGENTS.md bytes. Default 32768 (Codex project_doc_max_bytes)." },
+        "windsurfChars": { "$ref": "#/$defs/threshold", "description": "Windsurf rule characters. Default 12000 (Windsurf memories docs)." },
+        "memoryIndexLines": { "$ref": "#/$defs/threshold", "description": "MEMORY.md lines. Default 200 (Claude Code memory docs)." }
+      }
+    },
+    "threshold": { "type": "integer", "minimum": 1, "maximum": 100000000 },
+    "rules": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][A-Za-z0-9-]*$" },
+      "properties": {
+        "length": {
+          "oneOf": [
+            { "$ref": "#/$defs/severity" },
+            { "type": "array", "prefixItems": [{ "$ref": "#/$defs/severity" }, { "$ref": "#/$defs/lengthOptions" }], "minItems": 1, "maxItems": 2 }
+          ]
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/$defs/severity" },
+          { "type": "array", "prefixItems": [{ "$ref": "#/$defs/severity" }], "minItems": 1, "maxItems": 1 }
+        ]
+      }
+    }
+  }
+}

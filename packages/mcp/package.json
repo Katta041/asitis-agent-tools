@@ -1,14 +1,16 @@
 {
   "name": "@asitis/mcp",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "mcpName": "io.github.Katta041/asitis-mcp",
   "description": "Lint CLAUDE.md, AGENTS.md, SKILL.md and Cursor rules: hidden prompt-injection comments, token budget, outline. Read-only MCP server, no network.",
   "type": "module",
   "bin": {
-    "asitis-mcp": "dist/asitis-mcp.mjs"
+    "asitis-mcp": "dist/asitis-mcp.mjs",
+    "asitis": "dist/asitis.mjs"
   },
   "files": [
     "dist/asitis-mcp.mjs",
+    "dist/asitis.mjs",
     "dist/THIRD_PARTY_NOTICES.md",
     "README.md",
     "CHANGELOG.md",
@@ -61,6 +63,7 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
     "@types/node": "26.6.3",
+    "ajv": "8.20.0",
     "esbuild": "0.28.2",
     "typescript": "7.0.2",
     "vitest": "5.0.3",

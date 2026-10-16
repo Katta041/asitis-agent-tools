@@ -1,0 +1,14 @@
+{
+  // Ask for the key once; VS Code stores it.
+  "inputs": [
+    { "type": "promptString", "id": "api-key", "description": "API key", "password": true }
+  ],
+  "servers": {
+    "docs": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "example-docs-mcp==1.2.0", "example-docs-mcp"],
+      "env": { "API_KEY": "${input:api-key}" },
+    },
+  },
+}

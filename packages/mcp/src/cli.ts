@@ -14,14 +14,17 @@ Usage: asitis-mcp --root <folder> [--root <folder>...] [options]
   (with npx: npx -y @asitis/mcp@${VERSION} --root <folder>)
 
   --root <folder>      Folder the server may read (repeatable). Default: the current folder.
-  --no-footer          Hide the asitis.app line (shown once per session, on the first result).
+  --footer             Add one line linking to asitis.app to the first result of the session. Off by default.
+  --structured         Also return each result as JSON (structuredContent), for scripts. Off by default,
+                       because some clients then show the model only the JSON.
   --max-file-mb <n>    Largest file to analyse, in MB (default 16, max 64).
   --allow-broad-root   Allow your home folder or the filesystem root as the root.
   --version            Print the version.
   --help               Print this help.
 
-Environment: ASITIS_MCP_ROOT (folders separated by "${path.delimiter}"), ASITIS_MCP_FOOTER=0 to hide that line.
-Tools: read_markdown, outline, lint_steering, context_budget, find_steering_files. No writes, no network.
+Environment: ASITIS_MCP_ROOT (folders separated by "${path.delimiter}"), ASITIS_MCP_FOOTER=1 to add that line,
+ASITIS_MCP_STRUCTURED=1 for --structured.
+Tools: read_markdown, outline, lint_steering, context_budget, find_steering_files, suggest_fixes. No writes, no network.
 Docs: https://github.com/Katta041/asitis-agent-tools/tree/main/packages/mcp`;
 
 function fail(message: string): never {
@@ -30,17 +33,34 @@ function fail(message: string): never {
 }
 
 const off = (v: string | undefined): boolean => v !== undefined && ["0", "false", "off", "no"].includes(v.trim().toLowerCase());
+const on = (v: string | undefined): boolean => v !== undefined && ["1", "true", "on", "yes"].includes(v.trim().toLowerCase());
+
+/** `--footer` alone turns the footer on; `--footer false` and `--footer=0` still parse as before 0.2.5. */
+function normaliseFooterFlag(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a !== "--footer") { out.push(a); continue; }
+    const next = argv[i + 1];
+    if (next !== undefined && (on(next) || off(next))) {
+      out.push(`--footer=${next}`);
+      i++;
+    } else out.push("--footer=1");
+  }
+  return out;
+}
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   let parsed;
   try {
     parsed = parseArgs({
-      args: argv,
+      args: normaliseFooterFlag(argv),
       allowPositionals: true,
       options: {
         root: { type: "string", multiple: true },
         "no-footer": { type: "boolean" },
         footer: { type: "string" },
+        structured: { type: "boolean" },
         "max-file-mb": { type: "string" },
         "allow-broad-root": { type: "boolean" },
         version: { type: "boolean" },
@@ -73,7 +93,8 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     if (!Number.isFinite(mb) || mb <= 0 || mb > 64) fail("--max-file-mb must be a number between 1 and 64.");
     maxFileBytes = Math.floor(mb * 1024 * 1024);
   }
-  const footer = !(values["no-footer"] || off(values.footer) || off(process.env["ASITIS_MCP_FOOTER"]));
+  // The asitis.app line is opt-in: --footer or ASITIS_MCP_FOOTER=1. --no-footer is still accepted (it is the default).
+  const footer = !values["no-footer"] && (values.footer !== undefined ? on(values.footer) : on(process.env["ASITIS_MCP_FOOTER"]));
 
   let sandbox: Sandbox;
   try {
@@ -85,8 +106,24 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   if (process.stdin.isTTY) {
     process.stderr.write("asitis-mcp speaks MCP (JSON-RPC) on stdin and stdout. Add it to your MCP client instead of running it by hand; see --help.\n");
   }
-  const server = createServer(sandbox, { footer });
-  await server.connect(new StdioServerTransport());
+  const structured = !!values.structured || on(process.env["ASITIS_MCP_STRUCTURED"]);
+  const server = createServer(sandbox, { footer, structured });
+  const transport = new StdioServerTransport();
+  // Messages the SDK cannot parse get no response from it. Answer them as JSON-RPC says
+  // (-32700 for bad JSON, -32600 for a message that is not a JSON-RPC request), with id null.
+  // A message over the SDK's 10 MB read buffer closes the connection: say why and exit non-zero.
+  transport.onerror = (err: Error) => {
+    const reply = (code: number, message: string): void => {
+      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code, message } }) + "\n");
+    };
+    if (err instanceof SyntaxError) reply(-32700, "Parse error: the message is not valid JSON.");
+    else if (Array.isArray((err as { issues?: unknown }).issues)) reply(-32600, "Invalid Request: the message is not a JSON-RPC 2.0 request, notification or response (batches are not supported).");
+    else if (/ReadBuffer exceeded/.test(err.message)) {
+      process.stderr.write("asitis-mcp: received a message larger than 10 MB; closing the connection.\n");
+      process.exitCode = 1;
+    }
+  };
+  await server.connect(transport);
   process.stderr.write(`asitis-mcp ${VERSION} ready: read-only, ${sandbox.roots.length} root folder(s): ${sandbox.roots.map((r) => r.real).join(", ")}\n`);
 }
 

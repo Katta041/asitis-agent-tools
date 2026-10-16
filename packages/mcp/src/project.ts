@@ -1,0 +1,412 @@
+// Project-level linting, shared by the lint_steering tool and the asitis CLI. Owner: WP0.
+// Order: load config, walk or take the given paths, lint each markdown file, cross-file checks,
+// the project checks registered in checks/index.ts, then applyConfig (config.ts). Findings for the
+// CLI formats are built last, sorted by path, line and severity.
+
+import path from "node:path";
+import { PROJECT_CHECKS } from "./checks/index.js";
+import { applyConfig, hiddenSecurityNote, loadConfig, matchesAny, type HiddenSecurity, type LoadedConfig } from "./config.js";
+import { analyse, type Doc } from "./doc.js";
+import { Deadline, walk, type WalkResult } from "./discover.js";
+import { dp } from "./escape.js";
+import { findingPath, toFindings, type Finding, type FindingSource, type LineText } from "./findings.js";
+import { TOOL_NAME, type Kind } from "./kinds.js";
+import { CAPS } from "./limits.js";
+import { lintDoc, readsAsRule, type Issue, type LintResult } from "./lint.js";
+import { UserError, type Sandbox } from "./paths.js";
+import { categoryOf } from "./rules/registry.js";
+import { redact } from "./redact.js";
+import { extractImports } from "./scan.js";
+
+/** Opt-in scans. config-local also reads .claude/settings.local.json and implies config. */
+// Include, INCLUDE_VALUES and findingPath live in findings.ts so config.ts can use them without an
+// import cycle back into this file. Re-exported here for the callers that already import them.
+export { INCLUDE_VALUES, findingPath, type Include } from "./findings.js";
+import type { Include } from "./findings.js";
+
+export interface ProjectOptions {
+  /** Files to lint. Empty or missing: every steering file under the root (up to CAPS.lintMaxFiles). */
+  targets?: string[];
+  include?: readonly Include[];
+  deadline: Deadline;
+  /** --config: a config file other than <root>/.asitisrc.json. */
+  configPath?: string;
+  /** --baseline: findings whose fingerprint is in this file are marked suppressed. */
+  baselinePath?: string;
+  /**
+   * Honour include from the config file (extends strict counts as include skills and config).
+   * Only the CLI sets this: the user runs it on purpose. The MCP server leaves it off, so a
+   * cloned repo's config can never widen what the server reads; include comes from the call.
+   */
+  configInclude?: boolean;
+  /**
+   * Apply the repo's .asitisrc.json and baseline to security rules as well. The CLI sets it; the MCP
+   * server only when the call passes trustRepoConfig. Without it a cloned repo's own config cannot
+   * turn off, lower, ignore or baseline a security finding (config.ts, HiddenSecurity).
+   */
+  trustRepoConfig?: boolean;
+  /** Files linted when walking the folder. MCP default CAPS.lintMaxFiles; the CLI passes CAPS.walkMaxFiles. */
+  maxFiles?: number;
+}
+
+export interface ProjectResult {
+  /** One per linted file: markdown files first (in lint order), then files added by project checks. */
+  results: LintResult[];
+  /** The markdown files, parallel to the first docs.length entries of results. */
+  docs: Doc[];
+  failures: Array<{ path: string; error: string }>;
+  discovered: boolean;
+  foundCount: number;
+  truncated: boolean;
+  timedOut: boolean;
+  /** Why the walk stopped early, or "". */
+  walkNote: string;
+  /** Which limit cut the walk short, if any: folders past the depth limit, the file or entry limit, or the time limit. */
+  cut: { depth: boolean; size: boolean; time: boolean };
+  /** One-line notices for the user (an include value that is not available yet, for example). */
+  notes: string[];
+  /** Folders the walk could not list (permission denied) and no ignore pattern covers, root-relative. */
+  unreadable: string[];
+  include: ReadonlySet<Include>;
+  config: LoadedConfig | null;
+  /** What the repo's config and baseline did to security findings (see config.ts). */
+  hiddenSecurity: HiddenSecurity;
+  /** One line about hiddenSecurity, or null. Every output shows it: it is never folded into notes, so --quiet keeps it too. */
+  hiddenNote: string | null;
+  /** Findings for the CLI formats, with fingerprints, sorted. Computed on first call. */
+  findings(): Finding[];
+}
+
+/** A file a project check reports on that is not a linted markdown file (a script, a JSON config). */
+export interface ExtraFile {
+  kind: Kind;
+  /** Text of a 1-based line, for fingerprints and default columns. */
+  lineText?: LineText;
+}
+
+export interface CheckContext {
+  sandbox: Sandbox;
+  docs: readonly Doc[];
+  results: readonly LintResult[];
+  include: ReadonlySet<Include>;
+  deadline: Deadline;
+  /** True when the whole folder was walked, false when the caller named files. */
+  discovered: boolean;
+  /**
+   * Targets the caller named that are not markdown (a pre-commit run passes changed scripts).
+   * Only set when include is not empty. A check that handles one calls claim(); the rest are
+   * reported as not linted.
+   */
+  otherTargets: readonly string[];
+  claim(target: string): void;
+  /** Adds a finding to a file. path is the display path (sandbox.display). New files get a result of their own. */
+  report(path: string, issue: Issue, file?: ExtraFile): void;
+  /** A one-line notice shown after the findings. */
+  note(text: string): void;
+}
+
+export interface ProjectCheck {
+  /** Matches the meta file and the owner track: drift, skills, agent-config. */
+  id: string;
+  /** Runs only when this include value was given. Undefined: runs on every project lint. */
+  include?: Include;
+  /** False while the check is a stub. Asking for its include then gives a "not available" notice. */
+  ready: boolean;
+  run(ctx: CheckContext): Promise<void>;
+}
+
+/** Why a folder walk stopped early, in one sentence, or "" when it did not. */
+export function walkCutNote(found: Pick<WalkResult, "truncated" | "cut">): string {
+  if (!found.truncated) return "";
+  const parts: string[] = [];
+  if (found.cut.size) parts.push(`the search stopped after ${n(CAPS.walkMaxFiles)} steering files or ${n(CAPS.walkMaxEntries)} folder entries`);
+  if (found.cut.time) parts.push("the search stopped at the time limit");
+  if (found.cut.depth) parts.push(`folders more than ${CAPS.walkMaxDepth} levels deep were not searched`);
+  if (!parts.length) return "";
+  const t = parts.join("; ");
+  return `${t.charAt(0).toUpperCase()}${t.slice(1)}.`;
+}
+
+const n = (x: number): string => x.toLocaleString("en-US");
+
+const MARKDOWN_TARGET = /\.(md|mdc|markdown|mdx)$|(^|[\\/])\.(cursorrules|windsurfrules|clinerules)$/i;
+
+export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promise<ProjectResult> {
+  const { deadline } = opts;
+  const config = await loadConfig(sandbox, opts.configPath === undefined ? {} : { configPath: opts.configPath });
+  const include = new Set<Include>([...(opts.include ?? []), ...(opts.configInclude ? (config?.include ?? []) : [])]);
+  // Opt-ins the config asks for that this call did not grant: say so, read nothing extra.
+  const asked = opts.configInclude ? [] : (config?.include ?? []).filter((x) => !include.has(x) && !(x === "config" && include.has("config-local")));
+  if (include.has("config-local")) include.add("config");
+
+  let targets: string[] = [...(opts.targets ?? [])];
+  const otherTargets: string[] = [];
+  let discovered = false;
+  let truncated = false;
+  let foundCount = 0;
+  let walkNote = "";
+  const cut = { depth: false, size: false, time: false };
+  let unreadable: string[] = [];
+  if (!targets.length) {
+    const found = await walk(sandbox, { deadline });
+    // A folder an ignore pattern covers was not wanted anyway.
+    unreadable = found.unreadable.filter((d) => !(config?.ignore.length && d !== "." && matchesAny(config.ignore, d)));
+    discovered = true;
+    foundCount = found.files.length;
+    walkNote = walkCutNote(found);
+    Object.assign(cut, found.cut);
+    const maxFiles = opts.maxFiles ?? CAPS.lintMaxFiles;
+    truncated = found.truncated || found.files.length > maxFiles;
+    targets = found.files.slice(0, maxFiles).map((f) => f.abs);
+  } else if (include.size) {
+    // With an opt-in scan, non-markdown paths go to the project checks instead of failing here.
+    otherTargets.push(...targets.filter((t) => !MARKDOWN_TARGET.test(t)));
+    targets = targets.filter((t) => MARKDOWN_TARGET.test(t));
+  }
+  const single = !discovered && targets.length === 1 && !otherTargets.length;
+
+  let timedOut = false;
+  const results: LintResult[] = [];
+  const failures: Array<{ path: string; error: string }> = [];
+  const docs: Doc[] = [];
+  // A folder symlinked into the tree (.claude/skills -> ../.agents/skills, as in next.js) makes the
+  // walk find each file twice. Lint it once, under the path found first. Two names for one file in
+  // the same folder (CLAUDE.md -> AGENTS.md) are both linted: they are read as different kinds.
+  const seenReal = new Map<string, boolean>(); // real path -> reached through a symlinked folder
+  for (const t of targets) {
+    if (deadline.expired) {
+      truncated = true;
+      timedOut = true;
+      break;
+    }
+    try {
+      const f = await sandbox.open(t);
+      if (discovered) {
+        const viaFolderLink = path.dirname(f.real) !== path.dirname(t);
+        const prior = seenReal.get(f.real);
+        if (prior !== undefined && (prior || viaFolderLink)) continue;
+        if (prior === undefined) seenReal.set(f.real, viaFolderLink);
+      }
+      const doc = analyse(f, sandbox.displayFile(f));
+      const result = await lintDoc(doc, sandbox);
+      docs.push(doc);
+      results.push(result);
+    } catch (e) {
+      if (single) throw e;
+      failures.push({ path: sandbox.display(t), error: failureText(e, t, sandbox.display(t)) });
+    }
+  }
+  if (docs.length > 1) dropSymlinkCopies(docs, results);
+  if (docs.length > 1) crossFileChecks(docs, results);
+
+  // Project checks.
+  const notes: string[] = [];
+  if (unreadable.length) {
+    const shown = unreadable.slice(0, 5).map((d) => dp(d)).join(", ");
+    notes.push(`Could not read ${unreadable.length === 1 ? "1 folder" : `${unreadable.length} folders`} (permission denied), so the steering files in ${unreadable.length === 1 ? "it were" : "them were"} not linted: ${shown}${unreadable.length > 5 ? ` and ${unreadable.length - 5} more` : ""}. Fix the permissions, or add the folder to ignore in .asitisrc.json.`);
+  }
+  if (asked.length) notes.push(`${config!.path} asks for the ${asked.join("/")} scan; pass include to lint_steering to run it.`);
+  const lineTexts = new Map<string, LineText>();
+  const claimed = new Set<string>();
+  const ctx: CheckContext = {
+    sandbox,
+    docs,
+    results,
+    include,
+    deadline,
+    discovered,
+    otherTargets,
+    claim: (t) => void claimed.add(t),
+    report: (p, issue, file) => {
+      let r = results.find((x) => x.path === p);
+      if (!r) {
+        r = { path: p, kind: file?.kind ?? "markdown", load: "other", tokens: 0, issues: [] };
+        results.push(r);
+        if (file?.lineText) lineTexts.set(p, file.lineText);
+      }
+      r.issues.push(issue);
+    },
+    note: (text) => void notes.push(text),
+  };
+  for (const check of PROJECT_CHECKS) {
+    if (check.include && !include.has(check.include)) continue;
+    if (!check.ready) {
+      if (check.include) notes.push(`include "${check.include}" is not available in this build yet, so nothing extra was scanned.`);
+      continue;
+    }
+    if (deadline.expired) {
+      timedOut = true;
+      truncated = true;
+      break;
+    }
+    await check.run(ctx);
+  }
+  for (const t of otherTargets) {
+    if (claimed.has(t)) continue;
+    try {
+      await sandbox.open(t); // gives the same refusal a markdown-only lint gives
+    } catch (e) {
+      failures.push({ path: sandbox.display(t), error: failureText(e, t, sandbox.display(t)) });
+    }
+  }
+
+  const hiddenSecurity = await applyConfig(config, { sandbox, results, docs, include, lineTexts, trustRepoConfig: opts.trustRepoConfig === true, ...(opts.baselinePath === undefined ? {} : { baselinePath: opts.baselinePath }) });
+  // Second net for secrets: every message and notice goes through redact() once more, whichever
+  // check wrote it. Quotes are already redacted where they are made (q() in escape.ts, preview()
+  // in redact.ts); this catches a value a check put into a message some other way.
+  for (const r of results) for (const i of r.issues) i.message = redact(i.message);
+  for (let k = 0; k < notes.length; k++) notes[k] = redact(notes[k]!);
+  for (const f of failures) f.error = redact(f.error);
+  const hiddenNote = hiddenSecurityNote(hiddenSecurity, config?.path ?? ".asitisrc.json");
+
+  let cached: Finding[] | null = null;
+  return {
+    results,
+    docs,
+    failures,
+    discovered,
+    foundCount,
+    truncated,
+    timedOut,
+    walkNote,
+    cut,
+    notes,
+    unreadable,
+    include,
+    config,
+    hiddenSecurity,
+    hiddenNote,
+    findings: () => (cached ??= buildFindings(results, docs, lineTexts)),
+  };
+}
+
+/**
+ * Why a file could not be linted, naming it the way the report does. Walk targets are absolute, and
+ * the read errors quote the path they were given, so the absolute path is swapped for the display one.
+ */
+function failureText(e: unknown, target: string, display: string): string {
+  const msg = e instanceof UserError ? e.message : String(e);
+  return path.isAbsolute(target) ? msg.split(target).join(display) : msg;
+}
+
+/** Root-relative POSIX path for a finding; files under a second root keep their absolute path. */
+function buildFindings(results: LintResult[], docs: Doc[], lineTexts: Map<string, LineText>): Finding[] {
+  const sources: FindingSource[] = results.map((result, i) => {
+    const doc = i < docs.length ? docs[i]! : undefined;
+    if (doc) {
+      const lineText: LineText = (line) => (line >= 1 && line <= doc.lines.count ? doc.lines.line(line - 1) : "");
+      return { result, path: findingPath(doc), lineText };
+    }
+    return { result, path: result.path, lineText: lineTexts.get(result.path) ?? (() => "") };
+  });
+  return toFindings(sources, categoryOf);
+}
+
+/** The tool that loads this file at the start of every session from the project root, or null. */
+function sessionTool(d: Doc): string | null {
+  if (d.kind.load !== "every-session") return null;
+  switch (d.kind.kind) {
+    case "claude-md":
+    case "claude-rule":
+      return "claude-code";
+    case "gemini-md":
+      return "gemini-cli";
+    case "cursor-rule":
+    case "cursor-legacy":
+      return "cursor";
+    case "windsurf-rule":
+      return "windsurf";
+    case "cline-rule":
+      return "cline";
+    case "copilot-instructions":
+      return "copilot";
+    default:
+      return null; // AGENTS.md is the only file Codex loads at the root
+  }
+}
+
+/**
+ * CLAUDE.md as a symlink to AGENTS.md is linted under both names, since the two names are read as
+ * different kinds (imports, length limits). Findings that are the same under both names (a broken
+ * link on line 5) are kept only on the file the link points to, so one problem is listed once.
+ */
+function dropSymlinkCopies(docs: Doc[], results: LintResult[]): void {
+  const byReal = new Map<string, number[]>();
+  docs.forEach((d, i) => {
+    const g = byReal.get(d.file.real) ?? [];
+    g.push(i);
+    byReal.set(d.file.real, g);
+  });
+  for (const group of byReal.values()) {
+    if (group.length < 2) continue;
+    // The file itself is the one not reached through a link; fall back to the first.
+    const target = group.find((i) => !docs[i]!.file.linkTarget) ?? group[0]!;
+    const seen = new Set(results[target]!.issues.map((x) => `${x.rule}\0${x.line}\0${x.message}`));
+    for (const i of group) {
+      if (i === target) continue;
+      const r = results[i]!;
+      r.issues = r.issues.filter((x) => !seen.has(`${x.rule}\0${x.line}\0${x.message}`));
+    }
+  }
+}
+
+/** A line that is only bold text, as in "**Impact: CRITICAL**" or "__Note__:". */
+const BOLD_ONLY = /^(?:\*\*[^*]{1,200}\*\*|__[^_]{1,200}__)\s*:?$/;
+/** A line that is only a link, optionally after "Reference:", "Source:", "See" or "More:". */
+const LINK_ONLY = /^(?:(?:\*\*|__)?(?:references?|sources?|see(?: also)?|more|docs?|link|read more|learn more|details)(?:\*\*|__)?\s*:?(?:\*\*|__)?\s*)?\[[^\]]{0,300}\]\([^)\s]{0,500}\)\s*\.?$/;
+
+/** Cross-file heuristics when several files are linted together. */
+function crossFileChecks(docs: Doc[], results: LintResult[]): void {
+  // Same rule line in two files that the same tool loads in the same session. Files of different
+  // tools (AGENTS.md for Codex, .windsurfrules for Windsurf) are never paid for together.
+  const byRel = new Map(docs.map((d) => [d.file.rel, d]));
+  const groups = new Map<Doc, string>();
+  for (const d of docs) {
+    const t = sessionTool(d);
+    if (t) groups.set(d, t);
+  }
+  // A file a CLAUDE.md @-imports loads with it.
+  for (const d of docs) {
+    if (groups.get(d) !== "claude-code" || d.kind.kind !== "claude-md") continue;
+    const dir = path.posix.dirname(d.file.rel);
+    for (const im of extractImports(d.lines, d.fence, d.frontmatter.present ? d.frontmatter.endLine : -1)) {
+      const target = byRel.get(path.posix.normalize(path.posix.join(dir === "." ? "" : dir, im.path)));
+      if (target && !groups.has(target)) groups.set(target, "claude-code");
+    }
+  }
+  const seenByTool = new Map<string, Map<string, { path: string; line: number }>>();
+  docs.forEach((d, idx) => {
+    const tool = groups.get(d);
+    if (!tool) return;
+    const seen = seenByTool.get(tool) ?? new Map<string, { path: string; line: number }>();
+    seenByTool.set(tool, seen);
+    const start = d.frontmatter.present ? d.frontmatter.endLine + 1 : 0;
+    for (let i = start; i < d.lines.count; i++) {
+      if (d.fence[i]) continue;
+      const len = d.lines.end(i) - d.lines.start(i);
+      if (len < 20 || len > 400) continue;
+      const norm = d.lines.line(i).toLowerCase().replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").replace(/\s+/g, " ").trim();
+      if (norm.length < 20 || norm.startsWith("#") || norm.startsWith("|")) continue;
+      // Boilerplate that rule files repeat by design is not a rule: a bold label ("**Impact:
+      // CRITICAL**") unless it reads as an instruction, and a line that is only a link or a
+      // "Reference: [blog](...)" pointer (0.3.0 real-repo review: 23 of 29 hits in one repo).
+      if (BOLD_ONLY.test(norm) && !readsAsRule(norm)) continue;
+      if (LINK_ONLY.test(norm)) continue;
+      const prev = seen.get(norm);
+      if (prev && prev.path !== d.path) {
+        results[idx]!.issues.push({ severity: "warning", rule: "duplicate-across-files", message: `Same rule also in ${dp(prev.path)} line ${prev.line}; ${TOOL_NAME[tool] ?? tool} loads both files every session, so it is paid for twice. Keep it in one file`, line: i + 1 });
+      } else if (!prev) seen.set(norm, { path: d.path, line: i + 1 });
+    }
+  });
+  // Memory topic files that no MEMORY.md in the same folder links to never load.
+  const indexes = docs.filter((d) => d.kind.kind === "memory-index");
+  docs.forEach((d, idx) => {
+    if (d.kind.kind !== "memory-topic") return;
+    const dir = d.file.real.slice(0, d.file.real.length - d.file.rel.split("/").pop()!.length);
+    const base = d.file.rel.split("/").pop()!;
+    const idxDoc = indexes.find((m) => m.file.real.startsWith(dir) && m.file.real.slice(dir.length) === "MEMORY.md");
+    if (idxDoc && !idxDoc.text.includes(`(${base})`) && !idxDoc.text.includes(`(./${base})`)) {
+      results[idx]!.issues.push({ severity: "warning", rule: "orphan-memory", message: `Not linked from ${dp(idxDoc.path)}, so it never loads. Link it from the index or delete it`, line: 1 });
+    }
+  });
+}

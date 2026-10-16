@@ -2,6 +2,33 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-10-15
+
+### Added
+- `/asitis:md-fix`: shows the fixes `suggest_fixes` finds as a diff, asks, and applies only the ones you accept, one Edit per change.
+- The `asitis` CLI is bundled next to the server (`server/asitis.mjs`, pinned in `server/VERSION`).
+
+### Changed
+- The bundled server is `@asitis/mcp` 0.3.0: drift checks, `.asitisrc.json` config and suppression comments, and the opt-in skill and agent config scans (see the `@asitis/mcp` changelog).
+- `/asitis:md-lint` says how to run the skill and config scans when you want them. They are off unless you ask.
+- `/asitis:md-fix` describes whitespace-only fixes in one line instead of showing a diff of an invisible change.
+- The guard no longer asks before an edit that only removes trailing spaces or tabs that cannot be a hard line break, or adds a final newline. Those edits do not change how the file renders, and they are the safe fixes `/asitis:md-fix` applies. It still asks before removing a two-space line break inside a paragraph, and before any whitespace change in code blocks or frontmatter.
+
+## [0.2.5] - 2026-10-14
+
+### Changed
+- The bundled server is `@asitis/mcp` 0.2.5. `/asitis:md-lint` now reports short repeated rules and "Use X" next to "Never use X", and the model now sees the formatted, labelled results (see the `@asitis/mcp` changelog). `/asitis:md-budget` follows what each tool really loads and warns about a missing `@import`.
+- The asitis.app line in tool results is now off by default. Set `ASITIS_MCP_FOOTER=1` in the `env` block of your Claude Code settings to show it.
+
+### Fixed
+- Guard hook: on a file with mixed line endings, or a CRLF file whose first 4,096 characters have no line break, any Edit rewrites every line ending. The guard now says so and tells Claude to ask you, instead of advising a retry with an Edit that cannot avoid it.
+- Guard hook: a whole-file reformat is caught when it comes through Edit or MultiEdit (more than half the lines, at least 5), and through Write on small files too (more than 30%, at least 3 lines; the old check skipped files of 20 lines or fewer). Lines count as kept only in their original order, so a reordered file counts as rewritten. For these, Claude is told to ask you rather than retry with a large Edit.
+- Guard hook: a lost hard line break is reported even when the words on that line also change ("Violets are blue  " to "Violets are purple").
+- Guard hook: no more false "removes the byte order mark" on Write. Claude Code's Write keeps an existing BOM.
+- Guard hook: ASITIS_GUARD_MODE now wins over the old CLAUDE_PLUGIN_OPTION_GUARD_MODE, an empty plugin option is ignored, and an invalid value names the variable you set.
+- Guard hook: runs on Node 12 and later instead of failing with a syntax error on Node 12. The README now says that without `node` on your PATH the guard cannot run.
+- Guard hook: in headless runs Claude Code labels a guard denial "hook error"; the message now starts "AsItIs guard flagged this change on purpose (a guard decision, not a failure)", or "blocked" in deny mode.
+
 ## [0.2.4] - 2026-10-14
 
 ### Changed
@@ -71,6 +98,7 @@ All notable changes to the AsItIs Claude Code plugin are documented here. The fo
 - `/asitis:md-lint` and `/asitis:md-budget` commands.
 - Optional PreToolUse accident guard for Write, Edit and MultiEdit, with `ask`, `deny` and `off` modes. It fails closed on malformed input and is documented as an accident guard, not a security boundary.
 
+[0.2.5]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.1...v0.2.2

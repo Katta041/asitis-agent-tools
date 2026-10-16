@@ -43,6 +43,6 @@ body:
     id: version
     attributes:
       label: Version and where you ran it
-      description: For example "plugin 0.2.4 in Claude Code", "@asitis/mcp 0.2.4 in Cursor" or "browser checker".
+      description: For example "plugin 0.3.0 in Claude Code", "@asitis/mcp 0.3.0 in Cursor", "asitis lint in CI" or "browser checker".
     validations:
       required: true

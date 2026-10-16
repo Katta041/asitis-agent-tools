@@ -4,11 +4,13 @@
 
 | Part | What it does |
 |---|---|
-| MCP server `asitis` | Five read-only tools: `read_markdown`, `outline`, `lint_steering`, `context_budget`, `find_steering_files`. See [`@asitis/mcp`](https://github.com/Katta041/asitis-agent-tools/blob/main/packages/mcp/README.md). |
+| MCP server `asitis` | Six read-only tools: `read_markdown`, `outline`, `lint_steering`, `context_budget`, `find_steering_files`, `suggest_fixes`. See [`@asitis/mcp`](https://github.com/Katta041/asitis-agent-tools/blob/main/packages/mcp/README.md). |
 | Skill `markdown-byte-clean` | Teaches Claude to edit minimal ranges, never rewrite whole markdown files, and keep frontmatter, line endings, BOM and trailing spaces exactly as they are. |
-| `/asitis:md-lint [path]` | Lints steering files: frontmatter on line 1, YAML, required fields, limits, broken links and `@imports`, invisible characters, hidden instructions. |
+| `/asitis:md-lint [path] [skills] [config]` | Lints steering files: frontmatter on line 1, YAML, required fields, limits, broken links and `@imports`, invisible characters, hidden instructions, and drift between AGENTS.md, CLAUDE.md and the other agents' files. Add `skills` to also scan the scripts in skill folders, and `config` to audit `.claude/settings.json` and the MCP config files. |
 | `/asitis:md-budget [path]` | Shows approximately how many tokens load every session, per tool, and what to cut. |
-| Guard hook (optional) | Warns before a Write, Edit or MultiEdit that would change line endings, strip trailing spaces, drop a BOM or break frontmatter in an existing markdown file. |
+| `/asitis:md-fix [path]` | Shows mechanical fixes (invisible characters, frontmatter, skill names, trailing spaces, final newline) as a diff, asks, and applies only the ones you accept. |
+| Guard hook (optional) | Warns before a Write, Edit or MultiEdit that would change line endings, strip trailing spaces that make a line break, drop a BOM or break frontmatter in an existing markdown file. |
+| `asitis` CLI | The same linter for scripts and CI, bundled at `server/asitis.mjs`: `node server/asitis.mjs lint`. See [CLI and CI](https://github.com/Katta041/asitis-agent-tools#cli-and-ci). |
 
 ## Install
 
@@ -38,26 +40,29 @@ For other assistants (Claude Desktop, Cursor, Codex, Gemini CLI), use the MCP se
 ## Privacy
 
 - No network. The server and the hook make no connections, collect nothing and send nothing.
-- No writes. The server has no write tool and no write code; the hook only reads the file it is asked about.
+- No writes. The server has no write tool and no write code; the hook only reads the file it is asked about. `/asitis:md-fix` edits a file only after you accept the fix, through Claude's own Edit tool.
+- Markdown only, unless you ask. `/asitis:md-lint` reads steering files and `.asitisrc.json`. With `skills` it also reads the scripts in skill folders; with `config` it reads `.claude/settings.json`, `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` and `.gemini/settings.json`. `.claude/settings.local.json` needs `config-local`, and `~/.claude.json` is never read. A repo's `.asitisrc.json` cannot turn these scans on for you.
 - The server runs under Node's permission model: `node --permission` with read access to this plugin and your project folder only, and no write or child-process rights. Node enforces that, not just our code. Node blocks network access too from version 25; on Node 22.13 to 24 the no-network guarantee rests on the code, which contains no network calls. A small launcher (`server/launch.mjs`, about 110 lines, no dependencies) checks the Node version and starts the server with those flags; it reads no files and makes no connections.
 - Tool results go into Claude's context and so reach Anthropic like the rest of your session. That is Claude Code's traffic, not ours.
 
 ## Pinned server
 
-The server is not fetched from npm at runtime. `server/asitis-mcp.mjs` is the exact `@asitis/mcp` build for this plugin version (one file, zero dependencies), and `server/VERSION` records its version and SHA-256. A test fails if the file differs from a fresh build or if the versions disagree. [`server/THIRD_PARTY_NOTICES.md`](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/server/THIRD_PARTY_NOTICES.md) lists the bundled open-source licences.
+The server is not fetched from npm at runtime. `server/asitis-mcp.mjs` is the exact `@asitis/mcp` build for this plugin version (one file, zero dependencies), `server/asitis.mjs` is the CLI from the same build, and `server/VERSION` records the version and both SHA-256 values. A test fails if the file differs from a fresh build or if the versions disagree. [`server/THIRD_PARTY_NOTICES.md`](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/server/THIRD_PARTY_NOTICES.md) lists the bundled open-source licences.
 
 ## Guard hook
 
 **The guard is an accident guard, not a security boundary.** It exists to catch the common accident: an agent rewrites a whole file with `Write`, or an `Edit` whose `new_string` quietly drops trailing spaces or CRLF line endings. It checks `Write`, `Edit` and `MultiEdit` on existing `.md`, `.mdc`, `.markdown`, `.mdx`, `.cursorrules`, `.windsurfrules` and `.clinerules` files and warns when the change would:
 
 - convert CRLF to LF (or the reverse), flatten mixed line endings or remove lone CRs;
-- strip trailing whitespace (two trailing spaces are a hard line break);
-- remove or add the BOM, or drop the final newline;
+- strip trailing whitespace that can be a hard line break (two or more spaces with more paragraph text on the next line), any trailing whitespace in fenced code or frontmatter, including on a line whose words also change;
+- remove the BOM with an `Edit`, add a BOM, or drop the final newline (Claude Code's `Write` keeps an existing BOM, so a `Write` without one is fine);
 - move the frontmatter off line 1, remove its closing `---`, drop keys or indent it with tabs;
-- rewrite more than 30% of an existing file of more than 20 lines;
+- rewrite much of an existing file: with `Write`, more than 30% of its lines (at least 3 lines); with `Edit` or `MultiEdit`, more than half (at least 5 lines). Lines count as kept only if they stay in the same order, so a reordered file counts as rewritten;
 - touch a file with invalid UTF-8 bytes, which a text tool will replace.
 
-It checks an `Edit` or `MultiEdit` the way Claude Code writes it: Claude Code turns CRLF into LF, applies the edit, and writes every line break back in one style picked from the first 4,096 characters of the file. So a one-word `Edit` to a file with mixed line endings rewrites all of them, and the guard warns about that.
+It does not ask about whitespace that cannot change how the file renders: a single trailing space, trailing tabs, spaces on an otherwise blank line or at the end of a paragraph, and adding a missing final newline. Those are the safe fixes `/asitis:md-fix` applies, so accepting them takes one answer, not two.
+
+It checks an `Edit` or `MultiEdit` the way Claude Code writes it: Claude Code turns CRLF into LF, applies the edit, and writes every line break back in one style picked from the first 4,096 characters of the file. So a one-word `Edit` to a file with mixed line endings rewrites all of them, and so does any `Edit` to a CRLF file whose first 4,096 characters have no line break. The guard warns about that and tells Claude to ask you, because no `Edit` can avoid it.
 
 What it does not do: it does not see `Bash` (`sed -i`, redirects, scripts), `NotebookEdit`, other tools or other programs, and anything running as you can bypass it. It never changes the tool call.
 
@@ -76,6 +81,10 @@ It fails closed:
 - If the hook input is not valid JSON or lacks the fields it needs, the change is blocked with a one-line message saying why (`AsItIs guard: the hook input is not valid JSON. The change was blocked to be safe; ...`).
 - Claude Code gives the hook 10 seconds and lets the change through if a hook times out. The guard therefore stops itself after 6 seconds (counted from when the hook process starts), and on files over 16 MB, and asks you (blocks in `deny` mode) instead of letting an unchecked change through.
 
+One case it cannot cover: Claude Code starts the guard with `node`. If `node` is not on your `PATH`, or is older than Node 12, the guard cannot run and Claude Code lets the change through. The plugin's server needs Node 22.13 or later anyway, so with a working plugin the guard runs too.
+
+In a headless run (`claude -p`) Claude Code treats an "ask" as a denial and may label it "hook error". The guard's message starts with "AsItIs guard flagged this change on purpose (a guard decision, not a failure)" so the reason is clear.
+
 Set `ASITIS_GUARD_MODE` to `off` if that ever gets in your way.
 
 ## Options
@@ -85,8 +94,7 @@ The plugin works with no setup, so installing it asks nothing. To change a defau
 ```json
 {
   "env": {
-    "ASITIS_GUARD_MODE": "deny",
-    "ASITIS_MCP_FOOTER": "0"
+    "ASITIS_GUARD_MODE": "deny"
   }
 }
 ```
@@ -94,7 +102,7 @@ The plugin works with no setup, so installing it asks nothing. To change a defau
 | Variable | Default | Effect |
 |---|---|---|
 | `ASITIS_GUARD_MODE` | `ask` | `ask`, `deny` or `off` for the guard hook. |
-| `ASITIS_MCP_FOOTER` | on | The first tool result of each session ends with one line linking to asitis.app. Set to `0` to hide it. |
+| `ASITIS_MCP_FOOTER` | off | Set to `1` to end the first tool result of each session with one line linking to asitis.app. Before 0.2.5 this line was on by default. |
 
 Before 0.2.1 these were plugin options (`guard_mode`, `footer`) set with `/plugin configure`. Claude Code reports every plugin option the user has not saved as "not yet set" at install, even one with a default, so 0.2.1 reads environment variables instead. If you set either option, set the variable instead.
 

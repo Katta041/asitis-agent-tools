@@ -2,6 +2,67 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.3.0] - 2026-10-15
+
+### Added
+- `asitis` CLI in `@asitis/mcp`: `npx -y -p @asitis/mcp@0.3.0 asitis lint`. Text, JSON, SARIF and GitHub annotation output, exit codes 0 to 3, `--fail-on`, `--fix-preview` and an `asitis budget` command. Contract: [`docs/cli-contract.md`](docs/cli-contract.md).
+- GitHub Action (`Katta041/asitis-agent-tools@v0.3.0`) and a pre-commit hook (`asitis-lint`), both running the bundled CLI with no npm install. Setup for GitHub Actions, pre-commit, lefthook, husky and GitLab CI: [`docs/ci.md`](docs/ci.md).
+- `.asitisrc.json` config, inline suppression comments that need a rule id, and baselines.
+- Drift checks across AGENTS.md, CLAUDE.md, GEMINI.md, Cursor rules and Copilot instructions, including an AGENTS.md that Claude Code never reads because a CLAUDE.md shadows it.
+- Opt-in scans: skill folders (`include: ["skills"]`: scripts that download and run code, encoded payloads, credential theft, unscoped `allowed-tools`, skill arguments pasted into shell commands) and agent config (`include: ["config"]`: hooks, permissions, MCP launchers, inline secrets). Without `include` nothing beyond markdown is read, as before.
+- `suggest_fixes` tool and the `/asitis:md-fix` plugin command: fixes as a diff, applied only after you say yes.
+- A page for every rule in [`docs/rules/`](docs/rules/README.md).
+
+### Changed
+
+- Invisible and bidirectional characters, and hidden comments that ask the agent to ignore instructions, hide something, run a command or reach for secrets, are now errors, so the default `--fail-on error` blocks them in CI. Hidden comments that only address the agent stay warnings.
+- `lint_steering` reads `.asitisrc.json` and takes `include`. A repo's config can change severities but never makes the server read more.
+- The plugin guard lets whitespace fixes through when they cannot change how the file renders.
+
+### Security
+
+- A repo's own `.asitisrc.json` or baseline can no longer hide a security finding without saying so. `lint_steering` ignores rules turned off, lowered or ignored for security rules unless the call passes `trustRepoConfig: true`. The CLI and the Action still apply the config, but every hidden security finding stays in JSON and SARIF as a suppressed result with a justification, and one line counts them (also with `--quiet`). New CLI flag `--fail-on-hidden-security`; the Action's new input `fail-on-hidden-security` is on by default.
+- An `ignore` pattern no longer drops the security findings of a file it matches.
+- Redaction now masks credentials by position (URL passwords, `Authorization:` and key headers, `--token`, `key=` and the like), more key shapes (GitLab, Hugging Face, SendGrid, JWT, Slack webhooks, PEM headers) and random-looking words, before any quote is cut. Generic masks show only the length. Every message and notice gets a second pass. On the review's fixtures 35 of 36 fake keys showed up, at least in part, in each of text, JSON, SARIF, GitHub and `lint_steering` output; now none do. Fix diffs still show the lines they change, keys included, as they must for `git apply`.
+- `.claude.json` is refused as a `--config` or `--baseline` file, also through a symlink, and config and baseline errors no longer echo a value or key that could be a password or token.
+- Text output quotes a path that starts with a space, `:` or `#`, so a file name cannot start a workflow command in a CI log. `lint_steering` quotes any file name with spaces or punctuation, so a name cannot read as the tool's own report text.
+- Fix diffs quote a path with a space, so `diff --git a/x.md b/CLAUDE.md ...` can no longer be read as a different file.
+
+### Fixed
+- Precision on real repos: on 71 public repos, 59% of errors and warnings were worth fixing before these changes and 98% after, with no real finding lost. Repeated steps in parallel procedures, length warnings on skill reference files, boilerplate lines in rule files, a security skill's own pattern docs and the repository's own MCP server are no longer reported as problems; borderline cases (a CLAUDE.md just over 200 lines, a rule repeated under another heading) are notes. With `--format github`, notes are annotated only with `--annotate-notes`. Details in [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#030---2026-10-15).
+- No more `invisible-char` warnings on Persian, Hindi, Hebrew and Arabic text, emoji sequences or subdivision flags.
+- Skills in a folder symlinked into the project (`.claude/skills -> ../.agents/skills`) are reported once, not twice.
+- A folder the walk cannot read (permission denied) is reported: exit 2 in the CLI, a note in `lint_steering` and `find_steering_files`. Other read errors are exit 3 instead of a clean result. A deleted current folder is one line and exit 2.
+- The baseline fingerprint of `codex-chain-over-budget` hashes the chain of AGENTS.md files instead of the cut line, so CRLF or an edit above the cut no longer makes it a new finding.
+- `suggest_fixes` and `--fix-preview` offer no fix with more than 200,000 edits in one file (trailing spaces on millions of lines). Such a file took 54 s and 3.5 GB in `suggest_fixes`, and crashed `--fix-preview --format json`; it now takes about 1.3 s and says why there is no fix.
+- SARIF rules carry a `help` object (text and markdown), which GitHub code scanning asks for (GH2012).
+- CLI messages: no `<path>` placeholder or "this server" wording, and a refused `.mcp.json` or settings file points to `--include config`. The summary reads `no issues found, N suppressed.` as the contract says.
+- Action: the SARIF upload runs with `continue-on-error`, so a 403 on a private repo without Code Security no longer turns a clean lint red; `paths` takes a path with spaces on its own line or alone; an absolute `root` inside the workspace is made relative.
+- Docs: lefthook needs `glob_matcher: doublestar` to lint root files; the husky and lefthook lists match the pre-commit hook; husky keeps renamed files (`ACMR`) and file names with spaces; SHA pinning uses the peeled tag (`^{}`); `pre-commit try-repo` gets `--ref`; code scanning needs a public repo or Code Security; GitHub shows at most 10 annotations of each type per step.
+
+Details: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#030---2026-10-15) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#030---2026-10-15).
+
+## [0.2.5] - 2026-10-14
+
+### Changed
+- Tool results are text only by default. Claude Code 2.1 gives the model a result's `structuredContent` instead of its text when both are present, so the model lost the untrusted-content notice and, for `read_markdown`, the file text itself. `--structured` (or `ASITIS_MCP_STRUCTURED=1`) brings the JSON back for scripts.
+- The asitis.app line in tool results is now off by default. `--footer` or `ASITIS_MCP_FOOTER=1` shows it once per session; `--no-footer` is still accepted.
+- `context_budget` follows what each tool really loads: Claude Code reads AGENTS.md (and its imports) only when there is no CLAUDE.md, and otherwise only through `@AGENTS.md`; nested Cursor, Windsurf and Cline rules, Cline workflows and rules with `paths` are not counted as every-session; a project `memory/MEMORY.md` is not charged to Claude Code; Gemini imports are followed 5 levels deep.
+- Symlinks that resolve inside the project are followed, so a CLAUDE.md that links to AGENTS.md and a linked `.claude/skills` folder are checked and counted. Links that leave the project are still refused.
+- Results stay small enough for Claude Code: `read_markdown` pages 32 KiB at a time, `outline` 400 headings, lists are cut at 60 entries per group with a count of the rest, and lint lists at most 300 findings and says how many files it did not reach and how to lint them.
+
+### Fixed
+- `lint_steering` missed short repeated rules and plain contradictions. "Run `pnpm test` before every commit" under two headings was treated as a label, and "Use named exports" next to "Never use named exports" was never compared. Short items that read as instructions now count as rules, and "Use X", "Always X", "Do X" and "Prefer X" are matched against "Never X", "Don't X", "Do not X" and "Avoid X" anywhere in the file, reported on the later line with both lines named.
+- Lint precision and recall, from a labelled set of 233 cases: anchors in links are checked against headings; invalid UTF-8 is reported on its line; UTF-16 without a BOM is recognised and UTF-16 is not called binary; Cursor's unquoted `globs: *.ts` is accepted; YAML errors name the tool that reads the file; maintainer notes that mention a token, SSH or "Important:" are no longer flagged as hidden instructions, while "Agent:", "Bot," and requests to send secrets now are; emoji sequences are not invisible characters, but variation-selector smuggling is; `display:none` in inline code and `@claude` in a comment are ignored.
+- Vendor rules checked against the current docs: `yes`, `no`, `on`, `off`, `1` and `0` are valid skill booleans; `description` on a rule, `name` and `paths` on a command and `version` on a skill are reported as ignored; Codex's 32 KiB is shared by all AGENTS.md files, so the advice no longer suggests nested files; `missing-applyTo` needs both `applyTo` and `description` to be missing.
+- New checks: a frontmatter value cut short by an unquoted ` #`, and a misspelled key one or two letters from a known one ("did you mean user-invocable?").
+- `context_budget` explains why CLAUDE.md shows two sizes, warns about an `@import` whose file is missing, and no longer drops the rest of CLAUDE.md after an unclosed comment.
+- JSON-RPC errors follow the spec: bad JSON gets -32700, a batch -32600, an unknown tool or bad parameters -32602 in one line. A message over 10 MB ends the session with a one-line message and exit code 1. File errors say "Permission denied" or "Symlink loop", and internal errors never show an absolute path. At most 4 calls run at once.
+- Guard hook: correct advice when any Edit would rewrite a file's line endings; whole-file reformats are caught through Edit, MultiEdit and Write on small files, with order-aware churn; a lost hard break is reported when the line's words also change; no false BOM warning on Write; ASITIS_GUARD_MODE takes precedence and invalid values name the variable; runs on Node 12 and later; messages say the guard flagged or blocked the change on purpose.
+
+### Docs
+- A VS Code config (`.vscode/mcp.json`, `servers` key). The provenance note now says what is true: the release workflow publishes with provenance, and 0.2.4 and earlier were published by hand without it.
+
 ## [0.2.4] - 2026-10-14
 
 ### Changed
@@ -72,6 +133,7 @@ All notable changes to this repository are documented here. The format follows [
 - CI on Ubuntu, macOS and Windows, and a manual release workflow for npm trusted publishing with provenance.
 - MIT licence.
 
+[0.2.5]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Katta041/asitis-agent-tools/compare/v0.2.1...v0.2.2

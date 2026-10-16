@@ -1,0 +1,6 @@
+{
+  // VS Code reads this file as JSON with comments.
+  "servers": {
+    "latest": { "type": "stdio", "command": "npx", "args": ["example-mcp@latest"] },
+  }
+}

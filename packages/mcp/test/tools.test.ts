@@ -21,9 +21,9 @@ const lintOne = async (p: string): Promise<FileLint> => {
 const rules = (f: FileLint): string[] => f.issues.map((i) => i.rule);
 
 describe("tool list", () => {
-  test("exactly five read-only tools, no write or patch tool", async () => {
+  test("exactly six read-only tools, no write or patch tool", async () => {
     const { tools } = await c.client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["context_budget", "find_steering_files", "lint_steering", "outline", "read_markdown"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["context_budget", "find_steering_files", "lint_steering", "outline", "read_markdown", "suggest_fixes"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint, t.name).toBe(true);
       expect(t.annotations?.destructiveHint, t.name).toBe(false);
@@ -167,10 +167,10 @@ describe("lint_steering", () => {
   });
 
   test("memory index: broken entry, and an orphan topic file when linting the folder", async () => {
-    const f = await lintOne("memory/MEMORY.md");
+    const f = await lintOne(".claude/projects/demo/memory/MEMORY.md");
     expect(f.issues.map((i) => [i.rule, i.line])).toEqual([["broken-link", 2]]);
     const all = await c.call("lint_steering", {});
-    const orphan = (all.structured["files"] as FileLint[]).find((x) => x.path === "memory/user_role.md")!;
+    const orphan = (all.structured["files"] as FileLint[]).find((x) => x.path === ".claude/projects/demo/memory/user_role.md")!;
     expect(rules(orphan)).toContain("orphan-memory");
   });
 
@@ -198,7 +198,7 @@ describe("context_budget", () => {
     const tools = r.structured["tools"] as Array<{ tool: string; entries: Array<{ path: string }> }>;
     expect(tools.map((t) => t.tool)).toEqual(["claude-code", "codex", "gemini-cli", "cursor", "copilot"]);
     const cc = tools[0]!.entries.map((e) => e.path);
-    expect(cc).toEqual(expect.arrayContaining(["CLAUDE.md", "AGENTS.md", "docs/conventions.md", ".claude/rules/style.md", "memory/MEMORY.md"]));
+    expect(cc).toEqual(expect.arrayContaining(["CLAUDE.md", "AGENTS.md", "docs/conventions.md", ".claude/rules/style.md", ".claude/projects/demo/memory/MEMORY.md"]));
     expect(cc).not.toContain(".claude/rules/testing.md"); // has paths: loads on match only
     expect(tools.find((t) => t.tool === "cursor")!.entries.map((e) => e.path)).toEqual([".cursor/rules/windows-crlf-bom.mdc"]);
   });
@@ -220,14 +220,23 @@ describe("find_steering_files", () => {
     expect(names("on-match")).toEqual([".claude/rules/testing.md", ".cursor/rules/typescript.mdc", ".github/instructions/api.instructions.md"]);
     expect(names("on-invocation")).toEqual(expect.arrayContaining([".claude/agents/reviewer.md", ".claude/commands/release.md", ".claude/skills/pdf-export/SKILL.md"]));
     expect(names("on-demand")).toEqual(["packages/web/AGENTS.md"]);
-    expect(names("memory")).toEqual(["memory/MEMORY.md", "memory/feedback_testing.md", "memory/user_role.md"]);
+    expect(names("memory")).toEqual([".claude/projects/demo/memory/MEMORY.md", ".claude/projects/demo/memory/feedback_testing.md", ".claude/projects/demo/memory/user_role.md"]);
     expect(r.text).not.toMatch(/\.env|settings\.json/);
   });
 });
 
 describe("footer", () => {
-  test("shows once per session, on the first successful result, never on an error", async () => {
-    const f = await connect([FIXTURE_REPO]);
+  test("is off by default", async () => {
+    const d = await connect([FIXTURE_REPO]);
+    for (const [name, args] of [["outline", { path: "CLAUDE.md" }], ["find_steering_files", {}]] as const) {
+      const r = await d.call(name, args as Record<string, unknown>);
+      expect(r.isError).toBe(false);
+      expect(r.text).not.toMatch(/asitis\.app/);
+    }
+    await d.close();
+  });
+  test("when turned on, shows once per session, on the first successful result, never on an error", async () => {
+    const f = await connect([FIXTURE_REPO], { footer: true });
     const err = await f.call("read_markdown", { path: "nope.md" });
     expect(err.isError).toBe(true);
     expect(err.text).not.toMatch(/asitis\.app/);

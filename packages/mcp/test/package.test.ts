@@ -13,6 +13,7 @@ const SHELL = process.platform === "win32";
 const pkg = JSON.parse(readFileSync(path.join(PKG, "package.json"), "utf8"));
 const read = (p: string): string => readFileSync(p, "utf8");
 const sha = (p: string): string => createHash("sha256").update(readFileSync(p)).digest("hex");
+const CLI_BUNDLE = path.join(PKG, "dist/asitis.mjs");
 
 /**
  * Runs npm portably. On Windows `npm` is `npm.cmd`, which spawnSync cannot start without a
@@ -74,13 +75,14 @@ describe("npm package", () => {
     expect(p).toMatchObject({ registryType: "npm", identifier: pkg.name, version: pkg.version, transport: { type: "stdio" } });
     expect(p.packageArguments.map((a: { name: string }) => a.name)).toEqual(["--root"]);
   });
+  test("two bins: the MCP server and the asitis CLI", () => expect(pkg.bin).toEqual({ "asitis-mcp": "dist/asitis-mcp.mjs", asitis: "dist/asitis.mjs" }));
   test("provenance on, public access", () => expect(pkg.publishConfig).toEqual({ access: "public", provenance: true }));
   test("the published tarball contains only the bundle, notices and docs", () => {
     const r = npm(["pack", "--dry-run", "--json", "--ignore-scripts"], PKG);
     expect(r.error, "npm could not be started").toBeUndefined();
     expect(r.status, r.stderr).toBe(0);
     const listed = (JSON.parse(r.stdout)[0].files as Array<{ path: string }>).map((f) => f.path).sort();
-    expect(listed).toEqual(["CHANGELOG.md", "LICENSE", "README.md", "dist/THIRD_PARTY_NOTICES.md", "dist/asitis-mcp.mjs", "package.json"]);
+    expect(listed).toEqual(["CHANGELOG.md", "LICENSE", "README.md", "dist/THIRD_PARTY_NOTICES.md", "dist/asitis-mcp.mjs", "dist/asitis.mjs", "package.json"]);
   });
 });
 
@@ -90,7 +92,13 @@ describe("no write, exec or network code", () => {
     /\b(writeFile|appendFile|mkdir|mkdtemp|rm|rmdir|unlink|rename|copyFile|cp|symlink|link|chmod|chown|lchown|utimes|lutimes|truncate|ftruncate)(Sync)?\s*\((?!s\))/,
     /createWriteStream/, /O_WRONLY|O_RDWR|O_CREAT|O_APPEND/, /\beval\s*\(/, /\bFunction\s*\(/,
   ];
-  test.each(readdirSync(path.join(PKG, "src")))("src/%s", (f) => {
+  // Every source file, subfolders included (rules/, checks/, policy/, format/, fixes/, cli/).
+  const sources = files(path.join(PKG, "src")).map((p) => path.relative(path.join(PKG, "src"), p).split(path.sep).join("/"));
+  test("the scan sees the subfolders", () => {
+    expect(sources).toContain("rules/registry.ts");
+    expect(sources).toContain("checks/index.ts");
+  });
+  test.each(sources)("src/%s", (f) => {
     const src = read(path.join(PKG, "src", f));
     for (const re of FORBIDDEN_SRC) expect(src, `${f} matches ${re}`).not.toMatch(re);
   });
@@ -99,6 +107,22 @@ describe("no write, exec or network code", () => {
     for (const m of ["child_process", "net", "http", "https", "http2", "dns", "tls", "dgram", "worker_threads", "cluster"]) {
       expect(b, m).not.toMatch(new RegExp(`(from\\s*["']|require\\(["'])(node:)?${m}["']`));
     }
+  });
+  test("the CLI bundle imports only the Node modules the server uses, and nothing that writes", () => {
+    const b = read(CLI_BUNDLE);
+    expect(b.startsWith("#!/usr/bin/env node\n")).toBe(true);
+    // (?<![\w-]): the agent-config check has the string "--from" (npx flags), which minifies to --from","
+    const mods = new Set([...b.matchAll(/(?<![\w-])(?:from\s*["']|require\(["']|import\(["'])([^"']+)["']/g)].map((m) => m[1]!));
+    const allowed = new Set(["node:fs", "node:path", "node:crypto", "node:os", "node:util", "node:process", "node:module"]);
+    for (const m of mods) expect(allowed.has(m), m).toBe(true);
+    for (const m of ["child_process", "net", "http", "https", "http2", "dns", "tls", "dgram", "worker_threads", "cluster"]) {
+      expect(b, m).not.toMatch(new RegExp(`(from\\s*["']|require\\(["'])(node:)?${m}["']`));
+    }
+    for (const re of [/\b(writeFile|appendFile|mkdir|rmdir|unlink|rename|copyFile|symlink|chmod|chown|truncate)(Sync)?\s*\(/, /createWriteStream/, /\bfetch\s*\(/, /\beval\s*\(/]) {
+      expect(b, String(re)).not.toMatch(re);
+    }
+    // No MCP SDK or zod in the CLI: it only lints.
+    expect(b).not.toMatch(/modelcontextprotocol|jsonrpc/);
   });
   test("the guard hook only reads", () => {
     const h = read(path.join(PLUGIN, "hooks/guard.mjs"));
@@ -116,10 +140,19 @@ describe("Claude Code plugin", () => {
   test("versions agree everywhere", () => {
     expect(manifest.version).toBe(pkg.version);
     expect(market.plugins[0].version).toBe(pkg.version);
-    expect(read(path.join(PLUGIN, "server/VERSION"))).toMatch(new RegExp(`^@asitis/mcp@${pkg.version.replace(/\./g, "\\.")}\\nsha256 ${sha(BUNDLE)}\\n$`));
+    expect(read(path.join(PLUGIN, "server/VERSION"))).toBe(`@asitis/mcp@${pkg.version}\nsha256 ${sha(BUNDLE)}\nasitis.mjs sha256 ${sha(CLI_BUNDLE)}\n`);
+    expect(read(path.join(REPO, "action/VERSION"))).toBe(`@asitis/mcp@${pkg.version}\nasitis.mjs sha256 ${sha(CLI_BUNDLE)}\n`);
   });
   test("the vendored server is byte-identical to the fresh build (run npm run sync-plugin after changes)", () => {
     expect(sha(path.join(PLUGIN, "server/asitis-mcp.mjs"))).toBe(sha(BUNDLE));
+  });
+  test("both copies of the CLI are byte-identical to the fresh build (run npm run sync-plugin after changes)", () => {
+    expect(sha(path.join(PLUGIN, "server/asitis.mjs"))).toBe(sha(CLI_BUNDLE));
+    expect(sha(path.join(REPO, "action/asitis.mjs"))).toBe(sha(CLI_BUNDLE));
+  });
+  test("CI checks all three SHA-256 pins", () => {
+    const ci = read(path.join(REPO, ".github/workflows/ci.yml"));
+    for (const f of ["plugins/asitis/server/asitis-mcp.mjs", "plugins/asitis/server/asitis.mjs", "action/asitis.mjs"]) expect(ci).toContain(f);
   });
   test("the MCP server is pinned: the vendored bundle under Node's permission model, never npx or @latest", () => {
     const s = mcp.mcpServers.asitis;
@@ -140,7 +173,7 @@ describe("Claude Code plugin", () => {
   });
   test("the plugin's own skill and commands pass lint_steering with no errors or warnings", async () => {
     const c = await connect([PLUGIN]);
-    for (const p of ["skills/markdown-byte-clean/SKILL.md", "commands/md-lint.md", "commands/md-budget.md"]) {
+    for (const p of ["skills/markdown-byte-clean/SKILL.md", "commands/md-lint.md", "commands/md-budget.md", "commands/md-fix.md"]) {
       const r = await c.call("lint_steering", { path: p });
       const issues = (r.structured["files"] as Array<{ issues: Array<{ severity: string; rule: string }> }>)[0]!.issues;
       expect(issues.filter((i) => i.severity !== "info"), p).toEqual([]);
@@ -167,7 +200,7 @@ describe("copy rules: no em-dashes, no emoji, no AI attribution in anything we a
   // Every git-tracked file in the repository except the vendored bundle with its
   // third-party notices, the lockfile, and the byte-level fixtures (which contain emoji
   // and odd bytes on purpose). Untracked build artifacts (a local .tgz, dist) are never scanned.
-  const SKIP = new Set(["node_modules", ".git", "dist", "test-fixtures", "package-lock.json", "asitis-mcp.mjs", "THIRD_PARTY_NOTICES.md"]);
+  const SKIP = new Set(["node_modules", ".git", "dist", "test-fixtures", "package-lock.json", "asitis-mcp.mjs", "asitis.mjs", "THIRD_PARTY_NOTICES.md"]);
   // Binary media (the README demo GIF) is not text, so it is not scanned either.
   const BINARY = /\.(gif|png|jpe?g|webp|webm|mp4)$/i;
   const authored = authoredFiles(REPO, (p) => BINARY.test(p) || path.relative(REPO, p).split(path.sep).some((s) => SKIP.has(s)));

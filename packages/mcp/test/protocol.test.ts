@@ -30,9 +30,9 @@ describe("stdio server (bundled dist/asitis-mcp.mjs)", () => {
     expect(s.client.getInstructions()).toMatch(/cannot write, execute or reach the network/);
   });
 
-  test("lists the five read-only tools with input schemas", async () => {
+  test("lists the six read-only tools with input schemas", async () => {
     const { tools } = await s.client.listTools();
-    expect(tools).toHaveLength(5);
+    expect(tools).toHaveLength(6);
     for (const t of tools) {
       expect(t.inputSchema.type).toBe("object");
       expect(t.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: false });
@@ -46,6 +46,7 @@ describe("stdio server (bundled dist/asitis-mcp.mjs)", () => {
       ["lint_steering", { path: ".claude/skills/Bad_Skill/SKILL.md" }],
       ["context_budget", {}],
       ["find_steering_files", {}],
+      ["suggest_fixes", {}],
     ];
     let footers = 0;
     for (const [name, args] of calls) {
@@ -53,8 +54,8 @@ describe("stdio server (bundled dist/asitis-mcp.mjs)", () => {
       expect(r.isError, `${name}: ${r.text}`).toBe(false);
       footers += r.blocks.filter((b) => b === FOOTER).length;
     }
-    // The footer shows once per session: on the first result only.
-    expect(footers).toBe(1);
+    // The asitis.app line is opt-in (0.2.5): a server started without --footer never adds it.
+    expect(footers).toBe(0);
   });
 
   test("a tool that does not exist is rejected", async () => {
@@ -101,11 +102,46 @@ describe("runs inside Node's permission model with no write, network or child-pr
     }
   });
 
-  test("footer can be turned off with --footer false", async () => {
-    const s = await spawnClient([BUNDLE, "--root", FIXTURE_REPO, "--footer", "false"]);
-    const r = await toResult(s.client, "outline", { path: "CLAUDE.md" });
-    expect(r.text).not.toMatch(/asitis\.app/);
-    await s.close();
+  // The footer is opt-in since 0.2.5: --footer or ASITIS_MCP_FOOTER=1 turns it on, once per session.
+  // --no-footer and --footer false are still accepted, and win over the variable.
+  test.each([
+    [["--footer"], {}, 1],
+    [["--footer", "true"], {}, 1],
+    [["--footer=1"], {}, 1],
+    [[], { ASITIS_MCP_FOOTER: "1" }, 1],
+    [[], {}, 0],
+    [[], { ASITIS_MCP_FOOTER: "0" }, 0],
+    [["--footer", "false"], {}, 0],
+    [["--no-footer"], {}, 0],
+    [["--no-footer"], { ASITIS_MCP_FOOTER: "1" }, 0],
+    [["--footer", "false"], { ASITIS_MCP_FOOTER: "1" }, 0],
+  ] as Array<[string[], Record<string, string>, number]>)("footer with args %j and env %j: %i line(s)", async (flags, extra, expected) => {
+    const env = { ...(process.env as Record<string, string>), ...extra };
+    if (!("ASITIS_MCP_FOOTER" in extra)) delete env["ASITIS_MCP_FOOTER"];
+    const transport = new StdioClientTransport({ command: process.execPath, args: [BUNDLE, "--root", FIXTURE_REPO, ...flags], env, stderr: "pipe" });
+    const client = new Client({ name: "asitis-footer-test", version: "0.0.0" });
+    await client.connect(transport);
+    try {
+      let lines = 0;
+      for (let i = 0; i < 3; i++) {
+        const r = await toResult(client, "outline", { path: "CLAUDE.md" });
+        expect(r.isError, r.text).toBe(false);
+        lines += r.blocks.filter((b) => b === FOOTER).length;
+      }
+      expect(lines).toBe(expected);
+    } finally {
+      await client.close();
+    }
+  });
+  test("--footer does not swallow the folder after it", async () => {
+    const s = await spawnClient([BUNDLE, "--footer", FIXTURE_REPO]);
+    try {
+      const r = await toResult(s.client, "outline", { path: "CLAUDE.md" });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.blocks.at(-1)).toBe(FOOTER);
+    } finally {
+      await s.close();
+    }
   });
 });
 

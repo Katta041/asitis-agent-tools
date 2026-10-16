@@ -69,9 +69,9 @@ describe("Write", () => {
     const before = readFileSync(CRLF_MDC, "utf8");
     asks(runHook(pre("Write", { file_path: CRLF_MDC, content: before.replace(/\r\n/g, "\n") })), /converts 6 CRLF line endings to LF/);
   });
-  test("dropping the BOM asks first", () => {
+  test("a Write without the BOM passes, because Claude Code's Write keeps the file's BOM", () => {
     const before = readFileSync(CRLF_BOM_SKILL, "utf8");
-    asks(runHook(pre("Write", { file_path: CRLF_BOM_SKILL, content: before.slice(1) })), /removes the byte order mark/);
+    passes(runHook(pre("Write", { file_path: CRLF_BOM_SKILL, content: before.slice(1) })));
   });
   test("stripping trailing spaces asks first", () => {
     const before = readFileSync(CRLF_BOM_SKILL, "utf8");
@@ -254,13 +254,13 @@ describe("guard_mode", () => {
     const r = runHook(edit, { ASITIS_GUARD_MODE: m });
     expect(r.status, r.stderr).toBe(0);
     expect(r.json?.["hookSpecificOutput"]?.["permissionDecision"]).toBe("deny");
-    expect(r.json?.["systemMessage"]).toMatch(/Unknown guard_mode .* uses deny, the safest mode/);
+    expect(r.json?.["systemMessage"]).toMatch(/Unknown ASITIS_GUARD_MODE value .* uses deny, the safest mode/);
   });
   test("an unknown mode still warns when the edit is clean", () => {
     const r = runHook(pre("Edit", { file_path: LF_SKILL, old_string: "PDF export", new_string: "PDF export" }), { CLAUDE_PLUGIN_OPTION_GUARD_MODE: "strict" });
     expect(r.status).toBe(0);
     expect(r.json?.["hookSpecificOutput"]).toBeUndefined();
-    expect(r.json?.["systemMessage"]).toMatch(/Unknown guard_mode "strict"/);
+    expect(r.json?.["systemMessage"]).toMatch(/Unknown CLAUDE_PLUGIN_OPTION_GUARD_MODE value "strict"/);
   });
   test("the three documented modes are accepted as is", () => {
     expect(runHook(edit, { ASITIS_GUARD_MODE: "ask" }).json?.["hookSpecificOutput"]?.["permissionDecision"]).toBe("ask");
@@ -325,5 +325,40 @@ describe("fails closed instead of timing out", () => {
     const f = path.join(t.dir, "over.md");
     writeFileSync(f, "x".repeat(17 * 1024 * 1024));
     asks(runHook(pre("Edit", { file_path: f, old_string: "xx", new_string: "y" })), /larger than 16 MB/);
+  });
+});
+
+// 0.3.0: the guard lets through the byte changes /asitis:md-fix offers as safe, because they cannot
+// change how the file renders. Anything that can still asks.
+describe("whitespace changes that cannot change the rendering pass", () => {
+  let t: ReturnType<typeof tempDir>;
+  const file = (name: string, text: string): string => {
+    const f = path.join(t.dir, name);
+    writeFileSync(f, text);
+    return f;
+  };
+  beforeAll(() => {
+    t = tempDir("asitis-hook-safe-");
+  });
+  afterAll(() => t.cleanup());
+
+  test("one trailing space, trailing tabs and a whitespace-only line", () => {
+    const f = file("a.md", "# Rules\n\nRun the tests. \nUse pnpm.\t\n   \nDone.\n");
+    passes(runHook(pre("Write", { file_path: f, content: "# Rules\n\nRun the tests.\nUse pnpm.\n\nDone.\n" })));
+    passes(runHook(pre("Edit", { file_path: f, old_string: "tests. \n", new_string: "tests.\n" })));
+  });
+  test("two spaces at the end of a paragraph (no line after it in the paragraph)", () => {
+    const f = file("b.md", "# Rules\n\nLast line of the paragraph  \n\nNext.\n");
+    passes(runHook(pre("Edit", { file_path: f, old_string: "paragraph  \n", new_string: "paragraph\n" })));
+  });
+  test("adding a final newline", () => {
+    const f = file("c.md", "# Rules\n\nRun the tests.");
+    passes(runHook(pre("Edit", { file_path: f, old_string: "tests.", new_string: "tests.\n" })));
+  });
+  test("still asks: a hard break inside a paragraph, code, frontmatter", () => {
+    const f = file("d.md", "---\nname: x  \n---\n# Rules\n\nRoses are red  \nViolets are blue\n\n```\nkeep me  \n```\n");
+    asks(runHook(pre("Edit", { file_path: f, old_string: "red  \n", new_string: "red\n" })), /strips trailing whitespace on 1 line \(line 6\)/);
+    asks(runHook(pre("Edit", { file_path: f, old_string: "keep me  \n", new_string: "keep me\n" })), /strips trailing whitespace on 1 line \(line 10\)/);
+    asks(runHook(pre("Edit", { file_path: f, old_string: "name: x  \n", new_string: "name: x\n" })), /strips trailing whitespace on 1 line \(line 2\)/);
   });
 });

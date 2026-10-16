@@ -141,7 +141,7 @@ describe("#2 hidden-instruction needs an instruction, not a product name", () =>
   });
 
   test("comments addressed to the assistant still warn, including the existing cases", async () => {
-    expect(linesOf(await lint("addressed/AGENTS.md"), "hidden-instruction")).toEqual([3, 5, 7, 9, 11, 13]);
+    expect(linesOf(await lint("addressed/AGENTS.md"), "hidden-instruction").sort((a, b) => a - b)).toEqual([3, 5, 7, 9, 11, 13]);
   });
 
   test.each([
@@ -172,10 +172,13 @@ describe("#2 hidden-instruction needs an instruction, not a product name", () =>
 describe("#3 duplicate-rule compares whole list items and sentences, not markup or wrapped fragments", () => {
   test("closing tags, wrapped continuations and repeated labels are not duplicates; real ones are", async () => {
     const issues = await lint("dups/AGENTS.md");
-    const dups = issues.filter((i) => i.rule === "duplicate-rule");
+    const dups = issues.filter((i) => i.rule === "duplicate-rule").sort((a, b) => a.line - b.line);
     expect(dups.map((i) => i.line)).toEqual([38, 41]);
-    expect(dups[0]!.message).toMatch(/Same rule as line 33/);
+    // Line 38 repeats line 33 under another heading: a note. Line 41 repeats a sentence of its own paragraph: a warning.
+    expect(dups[0]!.message).toMatch(/Same rule as line 33, under another heading/);
+    expect(dups[0]!.severity).toBe("info");
     expect(dups[1]!.message).toMatch(/Same rule as line 40/);
+    expect(dups[1]!.severity).toBe("warning");
   });
 });
 
@@ -252,18 +255,23 @@ describe("quiet install", () => {
     expect(readFileSync(path.join(PLUGIN, "hooks/hooks.json"), "utf8")).not.toMatch(/user_config/);
   });
 
-  test("ASITIS_MCP_FOOTER=0 turns the footer off through the plugin's own server command", async () => {
+  test("the plugin's own server command adds no asitis.app line unless ASITIS_MCP_FOOTER=1", async () => {
     const cfg = JSON.parse(mcpJson).mcpServers.asitis as { args: string[] };
     const args = cfg.args.map((a) => a.replaceAll("${CLAUDE_PLUGIN_ROOT}", PLUGIN).replaceAll("${CLAUDE_PROJECT_DIR}", FIXTURE_REPO));
-    const env = { ...(process.env as Record<string, string>), ASITIS_MCP_FOOTER: "0" };
-    const client = new Client({ name: "asitis-021", version: "0.0.0" });
-    await client.connect(new StdioClientTransport({ command: process.execPath, args, env, stderr: "pipe" }));
-    try {
-      const r = await toResult(client, "outline", { path: "CLAUDE.md" });
-      expect(r.isError, r.text).toBe(false);
-      expect(r.text).not.toMatch(/asitis\.app/);
-    } finally {
-      await client.close();
+    expect(cfg.args.join(" ")).not.toMatch(/footer/);
+    for (const [value, shown] of [[undefined, false], ["0", false], ["1", true]] as const) {
+      const env = { ...(process.env as Record<string, string>) };
+      delete env["ASITIS_MCP_FOOTER"];
+      if (value !== undefined) env["ASITIS_MCP_FOOTER"] = value;
+      const client = new Client({ name: "asitis-021", version: "0.0.0" });
+      await client.connect(new StdioClientTransport({ command: process.execPath, args, env, stderr: "pipe" }));
+      try {
+        const r = await toResult(client, "outline", { path: "CLAUDE.md" });
+        expect(r.isError, r.text).toBe(false);
+        expect(/asitis\.app/.test(r.text), `ASITIS_MCP_FOOTER=${value}`).toBe(shown);
+      } finally {
+        await client.close();
+      }
     }
   });
 
