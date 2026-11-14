@@ -102,6 +102,33 @@ describe("runs inside Node's permission model with no write, network or child-pr
     }
   });
 
+  test("prompts and resources over stdio, with no write, network or child-process rights", async () => {
+    const s = await spawnClient(["--permission", `--allow-fs-read=${FIXTURE_REPO}`, `--allow-fs-read=${path.dirname(BUNDLE)}`, BUNDLE, "--root", FIXTURE_REPO, "--footer"]);
+    try {
+      expect((await s.client.listPrompts()).prompts.map((p) => p.name)).toEqual(expect.arrayContaining(["lint", "budget", "fix"]));
+      const p = await s.client.getPrompt({ name: "lint", arguments: { path: "CLAUDE.md" } });
+      expect((p.messages[0]!.content as { text: string }).text).toContain("`lint_steering`");
+      expect((await s.client.listResources()).resources.map((r) => r.uri)).toEqual(["asitis://findings", "asitis://budget"]);
+      for (const uri of ["asitis://findings", "asitis://budget", "asitis://findings/CLAUDE.md", "asitis://budget/CLAUDE.md"]) {
+        const r = await s.client.readResource({ uri });
+        const text = String((r.contents[0] as Record<string, unknown>)["text"]);
+        expect(text.length, uri).toBeGreaterThan(20);
+        expect(text.length, uri).toBeLessThanOrEqual(12_000);
+        expect(text, uri).not.toContain(FOOTER);
+      }
+      const denied = await s.client.readResource({ uri: "asitis://findings/..%2Fcrlf-bom-skill%2FSKILL.md" }).then(
+        () => null,
+        (e: { code: number }) => e.code,
+      );
+      expect(denied).toBe(-32602);
+      // A tool call still works after the resource reads, and still gets the footer once.
+      const r = await toResult(s.client, "outline", { path: "CLAUDE.md" });
+      expect(r.blocks.at(-1)).toBe(FOOTER);
+    } finally {
+      await s.close();
+    }
+  });
+
   // The footer is opt-in since 0.2.5: --footer or ASITIS_MCP_FOOTER=1 turns it on, once per session.
   // --no-footer and --footer false are still accepted, and win over the variable.
   test.each([
