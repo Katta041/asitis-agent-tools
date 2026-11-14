@@ -5,9 +5,9 @@ import { analyse, type Doc } from "./doc.js";
 import { outline } from "./outline.js";
 import type { Kind } from "./kinds.js";
 import { CAPS, VENDOR } from "./limits.js";
-import type { Sandbox } from "./paths.js";
+import { policyRefusal, type Sandbox } from "./paths.js";
 import { esc, hasUnsafe, q } from "./escape.js";
-import { extractImports, extractLinks, importIsSurelyFile, isExternalTarget, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
+import { extractImports, extractLinks, importIntent, importIsSurelyFile, importTarget, isExternalTarget, type ImportRef, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
 import { looksLikeSuppression } from "./suppress.js";
 import { lineOfByte } from "./text.js";
 import { approxTokens } from "./tokens.js";
@@ -1107,13 +1107,17 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
   // AGENTS.md is also read by Codex and others, where @ is plain text (@user, @next/rspack-core,
   // @transaction()). There, only an @path naming a file with an extension is treated as an import.
   const agents = doc.kind.kind === "agents-md";
+  const tool = doc.kind.kind === "gemini-md" ? "gemini" : "claude";
+  const loaded: Array<{ im: ImportRef; real: string }> = [];
   for (const im of imports) {
     if (agents && !(importIsSurelyFile(im) && /\.[A-Za-z0-9]{1,10}$/.test(im.path))) continue;
     if (im.path.startsWith("~")) {
       c.add("warning", "import-outside-root", `${q("@" + im.path, 200)} imports from your home folder. Claude Code asks for approval of external imports; teammates will not have this file`, im.line);
       continue;
     }
-    const probe = await sandbox.probe(im.path, dir);
+    const want = importIntent(im, tool);
+    if (!want) continue;
+    const probe = await sandbox.probe(want, dir);
     if (probe.state === "missing") {
       // @scope/package (an npm name: one slash, no file extension, not ./ or ../) is far more often a package than a file.
       const sure = importIsSurelyFile(im);
@@ -1123,13 +1127,92 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
       c.add(
         sure ? "warning" : "info",
         "broken-import",
-        `${q("@" + im.path, 200)} is read as an import but the file does not exist${sure ? ". Fix the path or remove the line" : npmName ? ". If this is an npm package name, not a file, wrap it in backticks" : ". If this is not a file, wrap it in backticks"}`,
+        `${q("@" + want, 200)} is read as an import but the file does not exist${sure ? ". Fix the path or remove the line" : npmName ? ". If this is an npm package name, not a file, wrap it in backticks" : ". If this is not a file, wrap it in backticks"}`,
         im.line,
       );
     } else if (probe.state === "outside") {
       c.add("warning", "import-outside-root", `${q("@" + im.path, 200)} resolves outside the allowed folder; Claude Code shows an approval dialog for external imports`, im.line);
+    } else {
+      const why = await notLoadedAsWritten(im, want, tool, dir, sandbox);
+      if (why) c.add("warning", "broken-import", `${q("@" + im.raw, 200)} is not loaded: ${why}`, im.line);
+      else if (probe.real) loaded.push({ im, real: probe.real });
     }
   }
+  if (loaded.length) await checkImportChains(doc, loaded, tool, sandbox, c);
+}
+
+const TOOL_NAME = { claude: "Claude Code", gemini: "Gemini CLI" } as const;
+
+/** Why an import whose file exists still loads nothing, or null when it loads. */
+async function notLoadedAsWritten(im: ImportRef, want: string, tool: "claude" | "gemini", dir: string, sandbox: Sandbox): Promise<string | null> {
+  const read = importTarget(im, tool);
+  if (read === null) {
+    return `${TOOL_NAME[tool]} only reads an @import that starts a line or follows a space, and this one comes right after "(". Take it out of the parentheses or put a space on both sides`;
+  }
+  if (read === want || read === "") return null;
+  if ((await sandbox.probe(read, dir)).state !== "missing") return null;
+  const extra = read.slice(want.length);
+  return `${TOOL_NAME[tool]} reads the path as ${q(read, 200)}, with the ${q(extra, 20)} on the end, and no file has that name. Put a space before the ${q(extra, 20)} or drop it`;
+}
+
+/** Imported files opened per linted file when following import chains. */
+const MAX_CHAIN_FILES = 100;
+/**
+ * Extensions Claude Code 2.1.312 loads through an import; anything else ("@figures/plot.png") is
+ * skipped as a non-text file, so whether it exists does not matter.
+ */
+const IMPORTED_TEXT = /\.(?:md|txt|text|json|ya?ml|toml|xml|csv|html?|css|scss|sass|less|[cm]?[jt]sx?|mts|cts|py[iw]?|rb|erb|rake|go|rs|java|kts?|scala|c|cpp|cc|cxx|h|hpp|hxx|cs|swift|sh|bash|zsh|fish|ps1|bat|cmd|env|ini|cfg|conf|config|properties|sql|graphql|gql|proto|vue|svelte|astro|ejs|hbs|pug|jade|php|pl|pm|lua|r|dart|exs?|erl|hrl|clj[sc]?|edn|l?hs|elm|mli?|f|f9[05]|for|cmake|make|makefile|gradle|sbt|rst|adoc|asciidoc|org|tex|latex|lock|log|diff|patch)$/i;
+/** Template placeholders in an imported file: "@epics/[current-epic]/EPIC.md", "@docs/001-xxx.md", "@<file>.md". */
+const IMPORT_PLACEHOLDER = /[[\]<>{}$]|\b(?:x{3,}|X{3,}|N{3,})\b|\.\.\./;
+
+/**
+ * Imports inside imported files. Claude Code loads them depth first, each file once, and stops 4
+ * hops from the file it started from (canary chain in 2.1.312: d1 to d4 loaded, d5 not); Gemini
+ * CLI stops at 5. A problem is reported on this file's import that starts the chain, with the
+ * chain spelled out. Files the linter checks on their own (another CLAUDE.md, GEMINI.md or rule)
+ * are not followed, so a broken import is reported once. Only @paths that are surely files and
+ * have an extension count in imported files, which are often plain docs that mention @people.
+ */
+async function checkImportChains(doc: Doc, tops: Array<{ im: ImportRef; real: string }>, tool: "claude" | "gemini", sandbox: Sandbox, c: Collector): Promise<void> {
+  const maxHops = tool === "gemini" ? VENDOR.geminiImportMaxDepth : VENDOR.importMaxHops;
+  const seen = new Set<string>([doc.file.real]);
+  const tooDeep: Array<{ real: string; line: number; message: string }> = [];
+  let opened = 0;
+  const visit = async (real: string, chain: string[], depth: number, topLine: number): Promise<void> => {
+    if (seen.has(real)) return;
+    seen.add(real);
+    const rel = sandbox.display(real);
+    if (policyRefusal(rel.replace(/\\/g, "/")) || ++opened > MAX_CHAIN_FILES) return;
+    let child: Doc;
+    try {
+      const f = await sandbox.open(real);
+      child = analyse(f, sandbox.displayFile(f));
+    } catch {
+      return; // unreadable, refused or not text: not followed
+    }
+    if (IMPORT_KINDS.includes(child.kind.kind)) return;
+    const childDir = path.dirname(child.file.real);
+    for (const im of extractImports(child.lines, child.fence, child.frontmatter.present ? child.frontmatter.endLine : -1)) {
+      if (!importIsSurelyFile(im) || !IMPORTED_TEXT.test(im.path) || IMPORT_PLACEHOLDER.test(im.path) || im.path.startsWith("~")) continue;
+      const want = importIntent(im, tool);
+      if (!want) continue;
+      const label = q([...chain, `@${want}`].join(" -> "), 300);
+      const where = `${child.path} line ${im.line}`;
+      const probe = await sandbox.probe(want, childDir);
+      if (probe.state === "missing") {
+        c.add("warning", "broken-import", `${label}: the last file does not exist (imported at ${where}), so that part of the instructions never loads. Fix the path there or remove the import`, topLine);
+      } else if (probe.state === "ok" && probe.real) {
+        const why = await notLoadedAsWritten(im, want, tool, childDir, sandbox);
+        if (why) c.add("warning", "broken-import", `${label}: the import at ${where} is not loaded: ${why}`, topLine);
+        else if (depth + 1 > maxHops) {
+          tooDeep.push({ real: probe.real, line: topLine, message: `${label}: the last file is ${depth + 1} hops from this one and ${TOOL_NAME[tool]} follows imports only ${maxHops} hops deep, so it is not loaded. Import it from a file closer to this one` });
+        } else await visit(probe.real, [...chain, `@${want}`], depth + 1, topLine);
+      }
+    }
+  };
+  for (const { im, real } of tops) await visit(real, [`@${importIntent(im, tool)}`], 1, im.line);
+  // A file cut off on one path may still load through another, shorter one.
+  for (const d of tooDeep) if (!seen.has(d.real)) c.add("warning", "broken-import", d.message, d.line);
 }
 
 export async function lintDoc(doc: Doc, sandbox: Sandbox): Promise<LintResult> {

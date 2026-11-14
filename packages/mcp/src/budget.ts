@@ -6,7 +6,7 @@ import { walk, type Deadline } from "./discover.js";
 import { inMemoryFolder, KIND_LABEL, LOAD_SHORT } from "./kinds.js";
 import { CAPS, VENDOR } from "./limits.js";
 import { policyRefusal, UserError, type Sandbox } from "./paths.js";
-import { extractImports, importIsSurelyFile } from "./scan.js";
+import { extractImports, importIntent, importIsSurelyFile, importTarget } from "./scan.js";
 import { approxTokens, tokensFromBytes } from "./tokens.js";
 
 export interface BudgetEntry {
@@ -64,7 +64,7 @@ async function openDoc(sandbox: Sandbox, p: string, baseDir?: string): Promise<D
 const MAX_IMPORTS_LISTED = 200;
 
 /** Expands @imports up to four hops, counting each file once. */
-export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string>, depth = 1, deadline?: Deadline, maxHops: number = VENDOR.importMaxHops): Promise<BudgetEntry[]> {
+export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string>, depth = 1, deadline?: Deadline, maxHops: number = VENDOR.importMaxHops, tool: "claude" | "gemini" = "claude"): Promise<BudgetEntry[]> {
   if (depth > maxHops) return [];
   const out: BudgetEntry[] = [];
   const dir = path.dirname(doc.file.real);
@@ -84,7 +84,15 @@ export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string
       out.push({ path: `@${shown(im.path)}`, tokens: 0, note: "outside the allowed folder (home), not counted", depth });
       continue;
     }
-    const probe = await sandbox.probe(im.path, dir);
+    const want = importIntent(im, tool);
+    if (!want) continue;
+    const probe = await sandbox.probe(want, dir);
+    // "@guide.md:" and "(@guide.md)" load nothing in Claude Code or Gemini CLI (see importTarget).
+    const read = probe.state === "ok" ? importTarget(im, tool) : want;
+    if (read !== want && (read === null || (read !== "" && (await sandbox.probe(read, dir)).state === "missing"))) {
+      out.push({ path: `@${shown(im.raw)}`, tokens: 0, note: "not loaded as written (see lint_steering), not counted", depth });
+      continue;
+    }
     // "@next/rspack-core" or "@user" that names no file is text to the reader, not a broken import: leave it out.
     if (probe.state === "missing" && !importIsSurelyFile(im)) continue;
     if (probe.state !== "ok" || !probe.real || !probe.rel) {
@@ -114,7 +122,7 @@ export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string
     try {
       const child = await openDoc(sandbox, probe.real);
       out.push({ path: child.path, tokens: bodyTokens(child, true), note: depth === 1 ? "imported" : `imported, ${depth} hops deep`, depth });
-      out.push(...(await expandImports(sandbox, child, seen, depth + 1, deadline, maxHops)));
+      out.push(...(await expandImports(sandbox, child, seen, depth + 1, deadline, maxHops, tool)));
     } catch (e) {
       out.push({ path: sandbox.display(probe.real), tokens: 0, note: e instanceof UserError ? e.message : "could not be read", depth });
     }
@@ -272,7 +280,7 @@ export async function projectBudget(sandbox: Sandbox, deadline?: Deadline): Prom
     const d = byRel("GEMINI.md");
     if (d) {
       const entries: BudgetEntry[] = [{ path: d.path, tokens: bodyTokens(d, false), note: "root GEMINI.md" }];
-      const imported = await expandImports(sandbox, d, new Set([d.file.real]), 1, deadline, VENDOR.geminiImportMaxDepth);
+      const imported = await expandImports(sandbox, d, new Set([d.file.real]), 1, deadline, VENDOR.geminiImportMaxDepth, "gemini");
       entries.push(...imported);
       tools.push({ tool: "gemini-cli", tokens: entries.reduce((a, e) => a + e.tokens, 0), entries, warnings: missingImportWarnings(imported) });
     }
@@ -300,6 +308,6 @@ export async function fileBudget(sandbox: Sandbox, p: string, deadline?: Deadlin
   const doc = await openDoc(sandbox, p);
   const strip = doc.kind.kind === "claude-md" || doc.kind.kind === "agents-md";
   const hops = doc.kind.kind === "gemini-md" ? VENDOR.geminiImportMaxDepth : VENDOR.importMaxHops;
-  const imports = ["claude-md", "agents-md", "gemini-md", "claude-rule"].includes(doc.kind.kind) ? await expandImports(sandbox, doc, new Set([doc.file.real]), 1, deadline, hops) : [];
+  const imports = ["claude-md", "agents-md", "gemini-md", "claude-rule"].includes(doc.kind.kind) ? await expandImports(sandbox, doc, new Set([doc.file.real]), 1, deadline, hops, doc.kind.kind === "gemini-md" ? "gemini" : "claude") : [];
   return { doc, tokens: bodyTokens(doc, strip), imports };
 }

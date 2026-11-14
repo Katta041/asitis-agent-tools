@@ -667,9 +667,44 @@ export function extractLinks(lines: LineIndex, fence: Uint8Array): LinkRef[] {
 
 export interface ImportRef {
   line: number; // 1-based
+  /** The word after @ as written, up to a space or backtick. */
   raw: string;
+  /** raw without the punctuation that ends a sentence around it: what the author meant. */
   path: string;
   looksLikePath: boolean;
+  /** Written right after "(", where neither Claude Code nor Gemini CLI reads an import. */
+  afterParen: boolean;
+}
+
+/**
+ * The path the tool itself resolves for an import, or null when it does not read one there.
+ * Claude Code 2.1.312 matches /(?:^|\s)@((?:[^\s\\]|\\ )+)/ in markdown text tokens and cuts the
+ * match at "#"; emphasis markers are gone by then, punctuation is not. Gemini CLI's findImports takes
+ * the word up to whitespace and keeps everything. Both need whitespace before the @. Checked with
+ * canary files in Claude Code: "@guide.md:", "@guide.md." and "(see @guide.md)" load nothing,
+ * "**@guide.md**", "_@guide.md_" and "@guide.md#setup" load guide.md.
+ */
+export function importTarget(im: ImportRef, tool: "claude" | "gemini"): string | null {
+  if (im.afterParen) return null;
+  if (tool === "gemini") return im.raw;
+  const h = im.raw.indexOf("#");
+  const p = h >= 0 ? im.raw.slice(0, h) : im.raw;
+  // "**@x.md**:" and "_@x.md_": the closing emphasis, and punctuation after it, are outside the
+  // text token. Scanned from the end, so a long run of "*" stays linear.
+  let end = p.length;
+  while (end > 0 && SENTENCE_END.includes(p[end - 1]!)) end--;
+  let mark = end;
+  while (mark > 0 && (p[mark - 1] === "*" || p[mark - 1] === "_")) mark--;
+  return mark < end ? p.slice(0, mark) : p;
+}
+
+const SENTENCE_END = ".,;:!?)]\"'\u201c\u201d\u2018\u2019";
+
+/** What the author meant, for the tool: Claude Code drops a #fragment, Gemini CLI does not. */
+export function importIntent(im: ImportRef, tool: "claude" | "gemini"): string {
+  if (tool === "gemini") return im.path;
+  const h = im.path.indexOf("#");
+  return h >= 0 ? im.path.slice(0, h) : im.path;
 }
 
 /**
@@ -757,7 +792,7 @@ export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLin
     const trimmed = raw.slice(0, cut);
     if (!trimmed) continue;
     const looksLikePath = trimmed.includes("/") || /\.[A-Za-z0-9]{1,10}$/.test(trimmed);
-    out.push({ line: li + 1, raw, path: trimmed, looksLikePath });
+    out.push({ line: li + 1, raw, path: trimmed, looksLikePath, afterParen: prev === 40 });
   }
   return out;
 }
