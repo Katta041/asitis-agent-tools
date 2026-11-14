@@ -7,7 +7,7 @@ import { classify, inMemoryFolder, isSteering } from "./kinds.js";
 import { CAPS } from "./limits.js";
 import { policyRefusal, type Root, type Sandbox } from "./paths.js";
 
-const SKIP_DIRS = new Set([
+export const SKIP_DIRS = new Set([
   "node_modules", ".git", ".hg", ".svn", "dist", "build", "out", "target", "coverage", ".next", ".nuxt", ".turbo",
   ".cache", ".venv", "venv", "__pycache__", ".tox", "vendor", ".idea", ".gradle", ".terraform",
 ]);
@@ -35,6 +35,13 @@ export interface WalkResult {
    * Their files were not searched, so a caller must say so: a partial walk must not look complete.
    */
   unreadable: string[];
+  /**
+   * With collectNames: every file name the walk listed under the primary root, root-relative POSIX,
+   * whatever its type. Names only: nothing is opened. Used to match path globs against the tree.
+   */
+  names?: string[];
+  /** With collectNames: folders under the primary root the walk did not enter (SKIP_DIRS, or past the depth limit), root-relative. */
+  skippedDirs?: string[];
 }
 
 export class Deadline {
@@ -48,9 +55,11 @@ export class Deadline {
 }
 
 /** Lists steering files (and, with includeAll, every readable markdown file) under the roots. */
-export async function walk(sandbox: Sandbox, opts: { maxDepth?: number; includeAll?: boolean; deadline?: Deadline } = {}): Promise<WalkResult> {
+export async function walk(sandbox: Sandbox, opts: { maxDepth?: number; includeAll?: boolean; deadline?: Deadline; collectNames?: boolean } = {}): Promise<WalkResult> {
   const maxDepth = Math.min(opts.maxDepth ?? CAPS.walkMaxDepth, CAPS.walkMaxDepth);
   const out: WalkResult = { files: [], skippedSymlinks: 0, truncated: false, cut: { depth: false, size: false, time: false }, entriesSeen: 0, unreadable: [] };
+  const names: string[] | null = opts.collectNames ? (out.names = []) : null;
+  const skippedDirs: string[] | null = opts.collectNames ? (out.skippedDirs = []) : null;
   for (const root of sandbox.roots) {
     const queue: Array<{ dir: string; rel: string; depth: number }> = [{ dir: root.real, rel: "", depth: 0 }];
     const visited = new Set<string>([await fsp.realpath(root.real).catch(() => root.real)]);
@@ -92,12 +101,21 @@ export async function walk(sandbox: Sandbox, opts: { maxDepth?: number; includeA
           } else isFile = st.isFile();
         }
         if (isDir) {
-          if (SKIP_DIRS.has(e.name)) continue;
-          if (depth + 1 > maxDepth) { out.truncated = true; out.cut.depth = true; continue; }
+          if (SKIP_DIRS.has(e.name)) {
+            if (skippedDirs && root === sandbox.primary) skippedDirs.push(childRel);
+            continue;
+          }
+          if (depth + 1 > maxDepth) {
+            out.truncated = true;
+            out.cut.depth = true;
+            if (skippedDirs && root === sandbox.primary) skippedDirs.push(childRel);
+            continue;
+          }
           queue.push({ dir: path.join(dir, e.name), rel: childRel, depth: depth + 1 });
           continue;
         }
         if (!isFile) continue;
+        if (names && root === sandbox.primary) names.push(childRel);
         if (policyRefusal(childRel)) continue;
         const c = classify(childRel, inMemoryFolder(childRel, !!root.extra));
         if (!opts.includeAll && !isSteering(c.kind)) continue;
