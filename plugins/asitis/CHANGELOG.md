@@ -2,6 +2,11 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-11-15
+
+### Changed
+- The bundled server is `@asitis/mcp` 0.3.1. `/asitis:md-lint` now reports an `@import` that loads nothing because of punctuation after it (`@guide.md:`) or a `(` before it, follows imports inside imported files 4 hops deep, and treats `<!-->` as an empty comment. A lone `<placeholder>` in a skill description is a note. `/asitis:md-budget` stops counting imports that do not load. See the `@asitis/mcp` changelog.
+
 ## [0.3.0] - 2026-10-15
 
 ### Added

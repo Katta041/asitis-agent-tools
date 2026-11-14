@@ -305,8 +305,8 @@ describe("one project for the lint, budget and outline fixes", () => {
     expect(one(await lint(".claude/skills/xml-self/SKILL.md"), "xml-tag")?.message).toMatch(/"<br\/>"/);
     expect(one(await lint(".claude/skills/xml-attr/SKILL.md"), "xml-tag")?.message).toMatch(/<note level=/);
   });
-  test("placeholders such as <number> and <id> are not XML tags", async () => {
-    expect(one(await lint(".claude/skills/xml-placeholder/SKILL.md"), "xml-tag")).toBeUndefined();
+  test("placeholders such as <number> and <id> are a note, not a warning (0.3.1)", async () => {
+    expect(one(await lint(".claude/skills/xml-placeholder/SKILL.md"), "xml-tag")).toMatchObject({ severity: "info" });
   });
   test("a description over 1,024 characters is an error", async () => {
     expect(one(await lint(".claude/skills/long-desc/SKILL.md"), "description-too-long")).toMatchObject({ severity: "error" });
