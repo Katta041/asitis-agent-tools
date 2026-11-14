@@ -89,6 +89,8 @@ export interface PlanTotals {
   launchSteps: number;
   laterTokens: number;
   laterSteps: number;
+  /** Steps that load only when a setting we cannot see is on, or that load at launch but are not counted. */
+  conditionalSteps: number;
   cutSteps: number;
   skipped: number;
 }
@@ -99,16 +101,19 @@ export function totals(p: LoadPlan): PlanTotals {
   let laterTokens = 0;
   let laterSteps = 0;
   let cutSteps = 0;
+  let conditionalSteps = 0;
   for (const s of p.steps) {
     if (s.cut) cutSteps++;
     if (s.kind === "missing" || s.kind === "overflow") continue;
     if (s.trigger === "launch" && s.counted) {
       launchTokens += s.tokens;
       launchSteps++;
+    } else if (s.trigger === "setting" || s.trigger === "launch") {
+      conditionalSteps++;
     } else {
       laterTokens += s.tokens;
       laterSteps++;
     }
   }
-  return { launchTokens, launchSteps, laterTokens, laterSteps, cutSteps, skipped: p.skipped.length };
+  return { launchTokens, launchSteps, laterTokens, laterSteps, conditionalSteps, cutSteps, skipped: p.skipped.length };
 }

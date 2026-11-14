@@ -68,7 +68,7 @@ function toolView(p: LoadPlan, opts: ViewOptions): { lines: string[]; json: Reco
   const offset = Math.min(opts.offset ?? 0, p.steps.length);
   const page = p.steps.slice(offset, offset + MAX_STEPS);
   const next = offset + page.length < p.steps.length ? offset + page.length : null;
-  const head = `${toolName(p.tool)}: ${t.launchSteps ? `${fmtTokens(t.launchTokens)} at launch from ${plural(t.launchSteps, "file")}` : "nothing counted at launch"}${t.laterSteps ? `; ${plural(t.laterSteps, "more file")} can load later (${fmtTokens(t.laterTokens).replace(/^about /, "up to about ")})` : ""}${t.cutSteps ? `; ${plural(t.cutSteps, "file")} cut` : ""}${t.skipped ? `; ${n(t.skipped)} not loaded` : ""}`;
+  const head = `${toolName(p.tool)}: ${t.launchSteps ? `${fmtTokens(t.launchTokens)} at launch from ${plural(t.launchSteps, "file")}` : "nothing counted at launch"}${t.laterSteps ? `; ${plural(t.laterSteps, "more file")} can load later (${fmtTokens(t.laterTokens).replace(/^about /, "up to about ")})` : ""}${t.conditionalSteps ? `; ${plural(t.conditionalSteps, "file")} depending on settings or not counted` : ""}${t.cutSteps ? `; ${plural(t.cutSteps, "file")} cut` : ""}${t.skipped ? `; ${n(t.skipped)} not loaded` : ""}`;
   const lines: string[] = ["", head];
   const groups: Array<[string, (s: LoadStep) => boolean]> = [
     ["At launch", (s) => s.trigger === "launch" && s.counted],
