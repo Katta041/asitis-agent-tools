@@ -9,6 +9,7 @@ import { DRIFT_RULES } from "./drift.meta.js";
 import { FIX_RULES } from "./fixes.meta.js";
 import { SECURITY_RULES } from "./security.meta.js";
 import { SKILLS_RULES } from "./skills.meta.js";
+import { SKILL_TRIGGER_RULES } from "./skill-triggers.meta.js";
 import { SPEC_RULES } from "./spec.meta.js";
 import { SUPPRESS_RULES } from "./suppress.meta.js";
 import type { RuleMeta } from "./types.js";
@@ -24,6 +25,7 @@ export const RULE_GROUPS: ReadonlyArray<{ name: string; owner: string; rules: re
   { name: "agent-config", owner: "WP6", rules: AGENT_CONFIG_RULES },
   { name: "fixes", owner: "WP7", rules: FIX_RULES },
   { name: "spec", owner: "unassigned", rules: SPEC_RULES },
+  { name: "skill-triggers", owner: "0.4.0 track 2", rules: SKILL_TRIGGER_RULES },
   { name: "security", owner: "unassigned", rules: SECURITY_RULES },
 ];
 
