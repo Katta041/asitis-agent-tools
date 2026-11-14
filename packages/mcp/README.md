@@ -224,6 +224,12 @@ Every rule has a page with examples: [`docs/rules/`](https://github.com/Katta041
 
 Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: false`. Tool results carry no link to asitis.app unless you ask for one: with `--footer` (or `ASITIS_MCP_FOOTER=1`) the first result of each session ends with one line, `Edit these files without rewriting them: https://asitis.app/?ref=mcp`, and later results and errors do not repeat it. `--no-footer` is still accepted and changes nothing. Results are text only. Pass `--structured` (or set `ASITIS_MCP_STRUCTURED=1`) to also get each result as JSON in `structuredContent`, for scripts. It is off by default because Claude Code 2.1 gives the model the JSON instead of the text when both are present, which drops the untrusted-content notice and, for `read_markdown`, the file text.
 
+### Prompts and resources
+
+So you don't need to know the tool names, the server also has MCP prompts: `lint`, `budget` and `fix` (plus `loads` when the server has the `load_plan` tool). They ask your assistant to call the matching tool and report the result the same way the plugin's `/asitis:md-*` commands do. In Claude Code they show up as `/mcp__asitis__lint`, `/mcp__asitis__budget` and `/mcp__asitis__fix`; `/mcp__asitis__lint skills config` adds the opt-in scans.
+
+Two resources hold the same reports as text, for clients that attach context by reference: `asitis://findings` (lint findings for the whole folder, worst first, at most 40 listed) and `asitis://budget` (what each tool loads every session). `asitis://findings/<path>` and `asitis://budget/<path>` do the same for one file. Each read runs the check again. Resources go through the same folder limits as the tools, and anything over 12,000 characters is cut with a line saying which tool gives the rest.
+
 Vendor limits checked, with sources in [`src/limits.ts`](https://github.com/Katta041/asitis-agent-tools/blob/main/packages/mcp/src/limits.ts):
 
 | File | Limit |
