@@ -465,6 +465,8 @@ function checkHidden(doc: Doc, c: Collector): void {
       c.add(hiddenSeverity(f.matched), "hidden-instruction", `Hidden HTML comment ${f.matched}: ${q(f.preview, 80)}. It is invisible when rendered but agents reading the raw file see it. Remove it unless you wrote it`, f.line);
     } else if (f.closed && looksLikeSuppression(f.preview)) {
       // An asitis-disable comment is checked by suppress.ts; counting it as hidden would make every suppression add a note.
+    } else if (f.closed && f.preview === "") {
+      // An empty comment (<!---->, <!-->) hides nothing.
     } else {
       benignAt(f.line, f.preview);
     }

@@ -6,7 +6,7 @@
 
 import type { Fixer } from "../fix.js";
 import type { FixEdit } from "../findings.js";
-import { classifyInstruction, InlineCodeSpans, scanComments, scanRefComments } from "../scan.js";
+import { classifyInstruction, commentClose, InlineCodeSpans, scanComments, scanRefComments } from "../scan.js";
 import { LineIndex } from "../text.js";
 import { patched, suggestion, textEdit } from "./util.js";
 
@@ -28,7 +28,7 @@ export const fixHiddenInstruction: Fixer = (doc, issue) => {
     const open = s.indexOf("<!--", pos);
     if (open < 0 || open >= lineEnd) break;
     if (spans.inCode(li, open)) { pos = open + 4; continue; }
-    const close = s.indexOf("-->", open + 4);
+    const close = commentClose(s, open);
     if (close < 0 || close - open > MAX_COMMENT) break;
     pos = close + 3;
     if (!classifyInstruction(s.slice(open + 4, close))) continue;

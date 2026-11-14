@@ -6,7 +6,7 @@ import { walk, type Deadline } from "./discover.js";
 import { inMemoryFolder, KIND_LABEL, LOAD_SHORT } from "./kinds.js";
 import { CAPS, VENDOR } from "./limits.js";
 import { policyRefusal, UserError, type Sandbox } from "./paths.js";
-import { extractImports, importIntent, importIsSurelyFile, importTarget } from "./scan.js";
+import { commentClose, extractImports, importIntent, importIsSurelyFile, importTarget } from "./scan.js";
 import { approxTokens, tokensFromBytes } from "./tokens.js";
 
 export interface BudgetEntry {
@@ -37,7 +37,7 @@ export function stripBlockComments(doc: Doc): string {
     const open = s.indexOf("<!--", pos);
     if (open < 0) break;
     const li = doc.lines.lineOf(open);
-    const close = s.indexOf("-->", open + 4);
+    const close = commentClose(s, open);
     // An unclosed comment is not stripped: Claude Code loads the text after it (checked with a canary).
     if (close < 0) break;
     const end = close + 3;

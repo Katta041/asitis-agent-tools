@@ -351,6 +351,17 @@ export function classifyInstruction(text: string): string | null {
   return null;
 }
 
+/**
+ * Where the "-->" that closes the comment opened at `open` starts, or -1. "<!-->" and "<!--->" are
+ * complete, empty comments (CommonMark 0.31.2, 6.6, and the HTML spec), so their "-->" overlaps
+ * the opener; looking only from open + 4 read the rest of the file as hidden (issue #28).
+ */
+export function commentClose(s: string, open: number): number {
+  if (s.startsWith(">", open + 4)) return open + 2;
+  if (s.startsWith("->", open + 4)) return open + 3;
+  return s.indexOf("-->", open + 4);
+}
+
 export function scanComments(lines: LineIndex, fence: Uint8Array): { findings: CommentFinding[]; total: number } {
   const s = lines.text;
   const spans = new InlineCodeSpans(lines);
@@ -361,7 +372,7 @@ export function scanComments(lines: LineIndex, fence: Uint8Array): { findings: C
     const open = s.indexOf("<!--", pos);
     if (open < 0) break;
     const startLine = lines.lineOf(open);
-    const close = s.indexOf("-->", open + 4);
+    const close = commentClose(s, open);
     const end = close < 0 ? s.length : close + 3;
     if (fence[startLine]) { pos = end; continue; } // visible as code, not hidden
     if (spans.inCode(startLine, open)) { pos = open + 4; continue; } // `<!-- -->` in a code span is shown, not hidden
@@ -371,7 +382,7 @@ export function scanComments(lines: LineIndex, fence: Uint8Array): { findings: C
       if (close < 0) break;
       continue;
     }
-    const body = s.slice(open + 4, close < 0 ? Math.min(s.length, open + 4 + COMMENT_SLICE) : Math.min(close, open + 4 + COMMENT_SLICE));
+    const body = close >= 0 && close < open + 4 ? "" : s.slice(open + 4, close < 0 ? Math.min(s.length, open + 4 + COMMENT_SLICE) : Math.min(close, open + 4 + COMMENT_SLICE));
     const matched = classifyInstruction(body);
     const preview = body.replace(/\s+/g, " ").trim().slice(0, 120);
     findings.push({ line: startLine + 1, endLine: lines.lineOf(Math.max(open, end - 1)) + 1, closed: close >= 0, instructionLike: matched !== null, matched, preview });
@@ -751,7 +762,7 @@ export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLin
     while (cEnd <= at && cNext >= 0) {
       const open = s.indexOf("<!--", cNext);
       if (open < 0) { cNext = -1; break; }
-      const close = s.indexOf("-->", open + 4);
+      const close = commentClose(s, open);
       const li = lines.lineOf(open);
       if (fence[li] || commentSpans.inCode(li, open)) { cNext = open + 4; continue; }
       cStart = open;

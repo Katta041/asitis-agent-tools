@@ -20,7 +20,7 @@ import { q } from "./escape.js";
 import { CAPS } from "./limits.js";
 import type { Issue } from "./lint.js";
 import { activeRules, getRule } from "./rules/registry.js";
-import { InlineCodeSpans } from "./scan.js";
+import { commentClose, InlineCodeSpans } from "./scan.js";
 
 export interface InlineSuppression {
   kind: "next-line" | "file";
@@ -75,7 +75,7 @@ export function parseSuppressions(doc: Doc): InlineSuppression[] {
   while (out.length < MAX_DIRECTIVES) {
     const open = s.indexOf("<!--", pos);
     if (open < 0) break;
-    const close = s.indexOf("-->", open + 4);
+    const close = commentClose(s, open);
     if (close < 0) break; // unclosed-comment is reported by lint.ts; nothing after it is a directive
     pos = close + 3;
     const startLine = lines.lineOf(open);
