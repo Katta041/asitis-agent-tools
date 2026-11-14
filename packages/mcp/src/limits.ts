@@ -72,4 +72,7 @@ export const CAPS = {
   /** Tool calls that run at once; more wait in a queue of at most maxQueued, then are refused. */
   maxConcurrentCalls: 4,
   maxQueuedCalls: 32,
+  /** Findings listed in the asitis://findings resource, and the most characters any resource returns. Clients attach resources to the context whole, so they stay small. */
+  resourceMaxFindings: 40,
+  resourceMaxChars: 12000,
 } as const;
