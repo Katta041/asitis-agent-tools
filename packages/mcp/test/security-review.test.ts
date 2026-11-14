@@ -3,10 +3,10 @@
 //   2. no key or password from a file reaches any output, in any format, from any rule;
 //   3. output cannot start a workflow command, quoted names stay visibly quoted, refused files stay
 //      refused, a partial walk never looks clean, and fix diffs name the right file.
-// Fake keys are generated at test time from random bytes, so nothing that looks like a real key is
-// committed. Fixture payloads (curl ... | sh to example.invalid) are written here and only ever read.
+// Fake keys are generated at test time from a seeded byte stream, so nothing that looks like a real
+// key is committed and every run checks the same keys. Set ASITIS_KEY_SEED to try other keys. Fixture payloads (curl ... | sh to example.invalid) are written here and only ever read.
 import { spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
@@ -152,6 +152,24 @@ describe("1. the repo's own config cannot silently hide security findings", () =
 // 2. Secrets never reach the output.
 
 const ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const SEED = process.env.ASITIS_KEY_SEED ?? "asitis-0.3.1";
+
+/**
+ * Bytes from sha256(seed:counter). Random keys made this test fail about once in 60 runs on a
+ * harmless match, and a failure could not be replayed; a fixed seed gives the same keys every run.
+ */
+function byteStream(seed: string): (n: number) => Buffer {
+  let counter = 0;
+  let pool = Buffer.alloc(0);
+  return (n) => {
+    while (pool.length < n) pool = Buffer.concat([pool, createHash("sha256").update(`${seed}:${counter++}`).digest()]);
+    const out = pool.subarray(0, n);
+    pool = pool.subarray(n);
+    return out;
+  };
+}
+let bytes = byteStream(`${SEED}:extra`);
+
 /**
  * n random characters from the alphabet. When n is 9 or more, each class the alphabet has (digits,
  * upper, lower case) appears at least 3 times, as in a generated key; shorter runs need one of each.
@@ -161,8 +179,7 @@ function rnd(n: number, alphabet = ALNUM): string {
   const classes = [/[0-9]/, /[A-Z]/, /[a-z]/].filter((re) => re.test(alphabet)).length;
   if (need * classes > n) throw new Error(`rnd(${n}) cannot hold ${need} of each of ${classes} classes`);
   for (;;) {
-    const bytes = randomBytes(n);
-    const s = [...bytes].map((b) => alphabet[b % alphabet.length]).join("");
+    const s = [...bytes(n)].map((b) => alphabet[b % alphabet.length]).join("");
     const ok = (re: RegExp): boolean => !re.test(alphabet) || (s.match(new RegExp(re.source, "g"))?.length ?? 0) >= need;
     if (ok(/[0-9]/) && ok(/[A-Z]/) && ok(/[a-z]/)) return s;
   }
@@ -170,7 +187,9 @@ function rnd(n: number, alphabet = ALNUM): string {
 const HEX = "0123456789abcdef";
 
 /** Fake keys of every shape the review used: provider prefixes, and plain random values. */
-function fakeKeys(): string[] {
+function fakeKeys(seed = SEED): string[] {
+  const saved = bytes;
+  bytes = byteStream(seed);
   const keys = [
     `AKIA${rnd(16, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")}`,
     `ghp_${rnd(36)}`,
@@ -194,6 +213,7 @@ function fakeKeys(): string[] {
     `https://deploy:${rnd(10)}@example.invalid/`,
     `Bearer ${rnd(16)}`,
   ];
+  bytes = saved;
   return keys;
 }
 
@@ -228,24 +248,46 @@ function leakProject(name: string, keys: string[]): string {
   });
 }
 
-/** Text that may legitimately appear in output although it is part of a fake key. */
-const BENIGN = ["https://hooks.slack.com/services/T", "@example.invalid/", "Bearer ", "https://", "deploy:"];
+/**
+ * Text around a fake key that is not secret and may appear in output: the scheme, the host and the
+ * word Bearer. It is cut out before the check, so "Bearer " plus a token starting with B cannot
+ * match the redacted "Bearer Bearer [redacted, ...]". A key's own prefix (ghp_, sk-ant-) stays in.
+ */
+const CONTEXT = ["https://hooks.slack.com/services/", "https://deploy:", "@example.invalid/", "Bearer "];
 
-/** Every run of 8 or more characters of a key found in the output. */
+/** Every run of 8 or more secret characters of a key found in the output. */
 function leaks(output: string, keys: readonly string[]): string[] {
   const found: string[] = [];
   for (const k of keys) {
-    for (let i = 0; i + 8 <= k.length; i++) {
-      const w = k.slice(i, i + 8);
-      if (BENIGN.some((b) => b.includes(w))) continue;
-      if (output.includes(w)) {
-        found.push(`${k.slice(0, 4)}... (characters ${i} to ${i + 8})`);
+    let secret = k;
+    for (const c of CONTEXT) secret = secret.replace(c, "");
+    for (let i = 0; i + 8 <= secret.length; i++) {
+      if (output.includes(secret.slice(i, i + 8))) {
+        found.push(`${k.slice(0, 4)}... (characters ${i} to ${i + 8} of the secret part, seed ${SEED})`);
         break;
       }
     }
   }
   return found;
 }
+
+describe("2a. the leak check itself", () => {
+  test("a context word next to the key is not counted as part of it", () => {
+    // Redaction keeps the word Bearer and masks what follows. With a token that starts with B, the
+    // output reads "Bearer Bearer [redacted, ...]" and "Bearer B" is not a leak.
+    expect(leaks("Authorization: Bearer Bearer [redacted, 16 chars]", ["Bearer B5zOjkG23bYI0ZDT"])).toEqual([]);
+  });
+
+  test("8 characters of a key are still caught, prefix or not", () => {
+    expect(leaks("x Bearer B5zOjkG2 y", ["Bearer B5zOjkG23bYI0ZDT"])).toHaveLength(1);
+    expect(leaks("ghp_abcd1234", [`ghp_abcd1234${"x".repeat(32)}`])).toHaveLength(1);
+    expect(leaks("https://deploy:Ab3dEf9h@", ["https://deploy:Ab3dEf9hXY@example.invalid/"])).toHaveLength(1);
+  });
+
+  test("the fake keys are the same on every run", () => {
+    expect(fakeKeys()).toEqual(fakeKeys());
+  });
+});
 
 describe("2. no key from a file reaches any output", () => {
   const keys = fakeKeys();
