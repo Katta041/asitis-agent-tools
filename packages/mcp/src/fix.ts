@@ -9,13 +9,14 @@
 
 import type { Doc } from "./doc.js";
 import type { Deadline } from "./discover.js";
-import { applyEdits, combineDiffs, DiffUnavailable, sortEdits, unifiedDiff } from "./diff.js";
+import { applyEdits, combineDiffs, CONTEXT_LINES, DiffUnavailable, sortEdits, unifiedDiff } from "./diff.js";
 import { dp as plainPath, esc, UNTRUSTED_NOTE, unsafeCodePoint } from "./escape.js";
 import type { FixEdit, FixSafety } from "./findings.js";
 import { FIXERS } from "./fixes/index.js";
 import type { Issue } from "./lint.js";
 import { UserError, type Sandbox } from "./paths.js";
 import { findingPath, lintProject, type ProjectResult } from "./project.js";
+import { findSecrets } from "./redact.js";
 import { getRule, RULES } from "./rules/registry.js";
 
 export type { FixEdit };
@@ -75,6 +76,52 @@ function unfixable(doc: Doc): string | null {
   return null;
 }
 
+const SECRET_NOTE = "No fix offered: a line this fix would show looks like it holds a secret. Remove the secret by hand first (and revoke it), then lint again.";
+
+const secretCache = new WeakMap<Doc, { lines: Set<number>; starts: number[] }>();
+
+/** 1-based lines holding something findSecrets matches, and the byte offset where each line starts. */
+function secretInfo(doc: Doc): { lines: Set<number>; starts: number[] } {
+  let info = secretCache.get(doc);
+  if (!info) {
+    const lines = new Set<number>();
+    for (const m of findSecrets(doc.text, 1000)) lines.add(doc.lines.lineOf(m.start) + 1);
+    const starts = [0];
+    if (lines.size) {
+      const buf = doc.file.buf;
+      for (let i = 0; i < buf.length; i++) {
+        if (buf[i] === 10 || (buf[i] === 13 && buf[i + 1] !== 10)) starts.push(i + 1);
+      }
+    }
+    info = { lines, starts };
+    secretCache.set(doc, info);
+  }
+  return info;
+}
+
+const secretLines = (doc: Doc): Set<number> => secretInfo(doc).lines;
+
+/** 1-based line of a byte offset, by binary search over line starts. */
+function lineAt(starts: number[], offset: number): number {
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >>> 1;
+    if (starts[mid]! <= offset) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo + 1;
+}
+
+/** True when a diff of this edit would show a secret line, as a changed line or as context. */
+function nearSecret(doc: Doc, e: FixEdit, secret: Set<number>): boolean {
+  const { starts } = secretInfo(doc);
+  const from = lineAt(starts, e.startByte) - CONTEXT_LINES;
+  const to = lineAt(starts, Math.max(e.startByte, e.endByte)) + CONTEXT_LINES + 1; // +1: an edit at a line end can pull in the next line
+  for (const l of secret) if (l >= from && l <= to) return true;
+  return false;
+}
+
 interface Found {
   issue: Issue;
   fix: FixSuggestion;
@@ -108,7 +155,15 @@ function collect(doc: Doc, issues: readonly Issue[], safety: "safe" | "all", rul
       if (path === null) fix = { ...fix, what: "", edits: [], note: "No fix: the file is outside the project folder, so a diff could not name it." };
       else {
         try {
-          unifiedDiff(path, doc.file.buf, fix.edits);
+          // A diff shows whole lines and their context. If one of them holds a key, the diff would
+          // print it, and a masked diff would not apply, so edits near a key are left out (issue 32).
+          const secret = secretLines(doc);
+          if (secret.size) {
+            const kept = fix.edits.filter((e) => !nearSecret(doc, e, secret));
+            if (!kept.length) fix = { ...fix, what: "", edits: [], note: SECRET_NOTE };
+            else if (kept.length < fix.edits.length) fix = { ...fix, edits: kept, note: `${fix.note ? `${fix.note} ` : ""}Lines next to a secret were left out of this fix; remove the secret by hand first (and revoke it).` };
+          }
+          if (fix.edits.length && findSecrets(unifiedDiff(path, doc.file.buf, fix.edits), 1).length) fix = { ...fix, what: "", edits: [], note: SECRET_NOTE };
         } catch (e) {
           if (!(e instanceof DiffUnavailable)) throw e;
           fix = { ...fix, what: "", edits: [], note: `No fix: ${e.message}, so a diff cannot show the change exactly. Fix it by hand.` };
