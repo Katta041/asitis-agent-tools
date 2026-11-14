@@ -102,9 +102,13 @@ const RESERVED_WORDS = ["anthropic", "claude"];
 // and does not say what counts. A lone <number> or <file> is how people write a placeholder, and in
 // 66 public repos every xml-tag hit of the old pattern was one (Claude Code skills, never sent to
 // the API). So only definite markup is reported: a closing tag, a self-closing tag, or a tag with
-// an attribute. A lone placeholder the API might still reject is a known miss, noted on the rule page.
+// an attribute. A lone placeholder such as <service> is a note: Claude Code is fine with it, and only
+// an upload to the API might be refused.
 const CLOSING_TAG = /<\/([A-Za-z][\w.:-]{0,60})\s{0,8}>/;
 const MARKUP_TAG = /<[A-Za-z][\w.:-]{0,60}(?:\s{1,8}[A-Za-z_:][\w.:-]{0,60}\s{0,8}=\s{0,8}(?:"[^"<>\n]{0,200}"|'[^'<>\n]{0,200}'|[^\s"'<>=]{1,200})){1,8}\s{0,8}\/?>|<[A-Za-z][\w.:-]{0,60}\s{0,8}\/>/;
+
+/** A lone <word> written as a placeholder. Not after a letter (List<String>), and no / or @ inside (autolinks, emails). */
+const LONE_TAG = /(?:^|[^\w<])<([A-Za-z][\w.:-]{0,60})>/;
 
 /** The first definite XML or HTML tag in a skill name or description, quoted as written, or null. */
 function xmlTag(text: string): string | null {
@@ -286,6 +290,11 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
         const tag = xmlTag(desc);
         if (tag) {
           c.add("warning", "xml-tag", `description contains an XML tag ${q(tag, 60)}. The Claude API and claude.ai reject XML tags in a skill description, and agents can read tags there as instructions`, line("description"));
+        } else {
+          const lone = LONE_TAG.exec(desc);
+          if (lone) {
+            c.add("info", "xml-tag", `description contains ${q(`<${lone[1]}>`, 60)}, which reads as an XML tag. Claude Code is fine with it, but the Claude API and claude.ai say a skill description cannot contain XML tags, so if you plan to upload this skill, write it without angle brackets (${lone[1]!.toUpperCase()} or {${lone[1]}} for a placeholder)`, line("description"));
+          }
         }
         const combined = desc.length + (str(data["when_to_use"])?.length ?? 0);
         if (combined > VENDOR.skillListingChars) {

@@ -137,3 +137,25 @@ describe("broken-import: imports inside imported files", () => {
     expect(of(fs, "broken-import")).toEqual([]);
   });
 });
+
+describe("xml-tag: a lone placeholder in a skill description", () => {
+  const skill = (description: string): Record<string, string> => ({ ".claude/skills/deploy/SKILL.md": `---\nname: deploy\ndescription: ${description}\n---\n\nSteps.\n` });
+  const tags = async (description: string): Promise<Finding[]> => of(await lint(project(skill(description))), "xml-tag", ".claude/skills/deploy/SKILL.md");
+
+  test("<service> is a note, since only an upload to the Claude API cares", async () => {
+    const t = await tags("Deploys <service> to staging. Use when asked to deploy.");
+    expect(t.map((f) => f.severity)).toEqual(["note"]);
+    expect(t[0]!.message).toContain('"<service>"');
+    expect(t[0]!.message).toContain("SERVICE");
+  });
+
+  test("generics, comparisons, autolinks and emails are not tags", async () => {
+    for (const d of ["Returns a List<String> of names. Use when listing.", "Use when x < y and z > w.", "Docs at <https://example.invalid/x>. Use for docs.", "Mail <team@example.invalid>. Use for mail."]) {
+      expect(await tags(d), d).toEqual([]);
+    }
+  });
+
+  test("real markup is still a warning", async () => {
+    expect((await tags("<important>Always use this.</important> Deploys.")).map((f) => f.severity)).toEqual(["warning"]);
+  });
+});

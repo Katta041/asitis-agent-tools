@@ -1,5 +1,5 @@
 ## Catches
-Markup inside a skill `name` or `description`: a closing tag such as `</important>`, a self-closing tag such as `<br/>`, or a tag with an attribute such as `<note level="high">`. A lone word in angle brackets, such as `<number>` or `<file>`, is how people write a placeholder, so it is not reported. The Claude API docs say only that these fields "cannot contain XML tags" without defining one, so an upload that the API rejects for a placeholder is possible; this rule does not catch that case.
+Markup inside a skill `name` or `description`: a closing tag such as `</important>`, a self-closing tag such as `<br/>`, or a tag with an attribute such as `<note level="high">`. A lone word in angle brackets in a description, such as `<service>` or `<file>`, is how people write a placeholder. Claude Code is fine with it, but the Claude API docs say these fields "cannot contain XML tags" without defining one, so an upload could be refused. That case is a note. `List<String>`, `<https://...>` and `<name@example.com>` are not reported.
 
 ## Bad
 ```markdown
