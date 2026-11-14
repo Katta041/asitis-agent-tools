@@ -1,0 +1,28 @@
+## claude-code from (root)
+on-read (not counted) file a/CLAUDE.md [canary]
+on-read (not counted) file b/CLAUDE.md [canary]
+skipped b/AGENTS.md: Claude Code reads the CLAUDE.md in b instead [canary]
+
+## codex from (root)
+skipped b/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+
+## cursor from (root)
+on-read (not counted) file b/AGENTS.md [documented]
+
+## copilot from (root)
+on-read (not counted) file b/AGENTS.md [documented]
+
+## claude-code from a
+launch file a/CLAUDE.md [canary]
+skipped b/AGENTS.md: in b, which is not the start folder, above it or below it [canary]
+skipped b/CLAUDE.md: in b, which is not the start folder, above it or below it [canary]
+
+## codex from a
+skipped b/AGENTS.md: in b, which is not on the path from the project root to the start folder [documented]
+
+## cursor from a
+skipped b/AGENTS.md: in b, outside the opened folder [assumed]
+
+## copilot from a
+setting (not counted) file a/CLAUDE.md [documented]
+skipped b/AGENTS.md: in b, which is not the workspace folder, above it or below it [documented]

@@ -1,0 +1,47 @@
+## claude-code from (root)
+launch file CLAUDE.md [canary]
+skipped AGENTS.md: CLAUDE.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it [canary]
+skipped pkg/AGENTS.md: CLAUDE.md switches off the AGENTS.md fallback for this folder [canary]
+warning Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions
+
+## codex from (root)
+launch file AGENTS.md [documented]
+skipped pkg/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+on-read (not counted) file pkg/AGENTS.md [documented]
+
+## copilot from (root)
+launch file .github/copilot-instructions.md [documented]
+on-read (not counted) file pkg/AGENTS.md [documented]
+on-match (not counted) file .github/instructions/none.instructions.md matches 0 [documented]
+on-match (not counted) file .github/instructions/py.instructions.md matches 1 [documented]
+on-invoke (not counted) file .github/instructions/manual.instructions.md [documented]
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file CLAUDE.md [documented]
+skipped docs/stray.instructions.md: not in .github/instructions, the default instructions folder (chat.instructionsFilesLocations can add folders) [documented]
+
+## claude-code from pkg
+launch file CLAUDE.md [canary]
+skipped AGENTS.md: CLAUDE.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it [canary]
+skipped pkg/AGENTS.md: CLAUDE.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it [canary]
+warning Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions
+warning Claude Code ignores pkg/AGENTS.md here: there is a CLAUDE.md in this folder or above and none imports it. Add the line @AGENTS.md to a CLAUDE.md next to it if both should share instructions
+
+## codex from pkg
+launch file AGENTS.md [documented]
+launch file pkg/AGENTS.md [documented]
+
+## cursor from pkg
+launch (not counted) file pkg/AGENTS.md [assumed]
+skipped AGENTS.md: in the project root, outside the opened folder [assumed]
+
+## copilot from pkg
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file pkg/AGENTS.md [documented]
+skipped .github/copilot-instructions.md: Copilot reads .github/copilot-instructions.md only at the workspace root [documented]
+skipped docs/stray.instructions.md: not in pkg/.github/instructions, the default instructions folder (chat.instructionsFilesLocations can add folders) [documented]
+skipped .github/instructions/manual.instructions.md: not in pkg/.github/instructions, the default instructions folder (chat.instructionsFilesLocations can add folders) [documented]
+skipped .github/instructions/none.instructions.md: not in pkg/.github/instructions, the default instructions folder (chat.instructionsFilesLocations can add folders) [documented]
+skipped .github/instructions/py.instructions.md: not in pkg/.github/instructions, the default instructions folder (chat.instructionsFilesLocations can add folders) [documented]

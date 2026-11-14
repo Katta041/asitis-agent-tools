@@ -1,0 +1,6 @@
+## claude-code from (root)
+launch file CLAUDE.md [canary]
+launch listing Skill listing (1 entry) [canary]
+
+## copilot from (root)
+setting (not counted) file CLAUDE.md [documented]

@@ -1,0 +1,13 @@
+## claude-code from (root)
+launch file CLAUDE.md [canary]
+launch import a.md depth 1 [canary]
+launch import b.md depth 2 [canary]
+launch import c.md depth 3 [canary]
+launch import d.md depth 4 [canary]
+launch import loop1.md depth 1 [canary]
+launch import loop2.md depth 2 [canary]
+launch missing @docs/missing.md depth 1 [canary]
+warning @docs/missing.md (CLAUDE.md, line 5) points to a file that does not exist, so nothing from it loads. Fix the path or remove the line
+
+## copilot from (root)
+setting (not counted) file CLAUDE.md [documented]

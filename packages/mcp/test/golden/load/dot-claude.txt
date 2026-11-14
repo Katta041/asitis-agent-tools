@@ -1,0 +1,9 @@
+## claude-code from (root)
+launch file .claude/CLAUDE.md [canary]
+skipped .claude/AGENTS.md: a CLAUDE.md in the start folder or above switches off the AGENTS.md fallback, and no CLAUDE.md imports it [canary]
+
+## codex from (root)
+skipped .claude/AGENTS.md: Codex reads AGENTS.md in each folder, not .claude/AGENTS.md [documented]
+
+## copilot from (root)
+setting (not counted) file .claude/CLAUDE.md [documented]

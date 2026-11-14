@@ -17,7 +17,10 @@ export interface MatchCount {
   complete: boolean;
 }
 
-export function countMatches(ctx: LoadContext, patterns: readonly string[], base: string): MatchCount {
+/** What countMatches needs from the walk: the name list (null when incomplete) and the folders it did not enter. */
+export type NameSource = Pick<LoadContext, "names" | "walk">;
+
+export function countMatches(ctx: NameSource, patterns: readonly string[], base: string): MatchCount {
   const compiled: CompiledGlob[] = [];
   const unreadable: string[] = [];
   for (const p of patterns) {

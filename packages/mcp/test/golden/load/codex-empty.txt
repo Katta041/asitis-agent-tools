@@ -1,0 +1,11 @@
+## claude-code from (root)
+launch file AGENTS.md [canary]
+
+## codex from (root)
+skipped AGENTS.md: empty; Codex skips empty files [documented]
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+
+## copilot from (root)
+setting (not counted) file AGENTS.md [documented]

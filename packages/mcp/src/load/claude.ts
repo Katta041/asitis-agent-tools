@@ -10,7 +10,10 @@
 //   matching file, patterns relative to the folder that holds .claude. Rules in nested .claude/rules
 //   folders load on demand.
 // - From v2.1.309 a file that loads on demand (subfolder CLAUDE.md and its imports, nested rules,
-//   path-scoped rules) is cut at 40,000 characters on a 200K window (DOC.claudeOnDemandCut).
+//   path-scoped rules) is cut at 40,000 characters on a 200K window (DOC.claudeOnDemandCut). Our
+//   canary on 2.1.312 did not see that cut, so we warn instead of cutting.
+// - Canary on 2.1.312: @imports in files from folders above the start folder are not expanded
+//   (claude-code issue 78697), and @imports in rules are.
 // - A file over 4 MiB is skipped (DOC.claudeTooLarge).
 // - AGENTS.md (DOC.claudeAgentsMd): read only when no CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md
 //   sits in the working folder or above; then every AGENTS.md and .claude/AGENTS.md from there up
@@ -35,6 +38,7 @@ import {
   countingFiles,
   dirOf,
   expandImports,
+  importsOf,
   join,
   missingImportWarnings,
   scopeOf,
@@ -68,14 +72,14 @@ export function claudeCodeLoads(d: Doc): "yes" | "nested" | "no" {
   return it.holder === "" ? "yes" : "nested";
 }
 
-/** The on-demand cut: Claude gets the first 40,000 characters (of the text after comments are stripped). */
-function onDemandCut(text: string): { tokens: number; cut?: Cut } {
-  const whole = approxTokens(text);
-  if (text.length <= VENDOR.claudeOnDemandChars) return { tokens: whole };
-  return {
-    tokens: approxTokens(text.slice(0, VENDOR.claudeOnDemandChars)),
-    cut: { at: VENDOR.claudeOnDemandChars, unit: "chars", reason: `Claude Code 2.1.309 and later gives Claude only the first ${fmt(VENDOR.claudeOnDemandChars)} characters of a file that loads on demand (200K context window), with a note to read the rest`, tokensWhole: whole },
-  };
+/**
+ * The documented on-demand limit (40,000 characters on a 200K window, from 2.1.309). Canary runs on
+ * 2.1.312 (Haiku and Sonnet, 2026-11-14) still saw the end of a 50,000-character subfolder CLAUDE.md,
+ * so this is a warning about a documented limit, not a cut we claim happens.
+ */
+function onDemandLimit(text: string, shown: string): string | null {
+  if (text.length <= VENDOR.claudeOnDemandChars) return null;
+  return `${shown} is ${fmt(text.length)} characters and loads on demand; Claude Code's docs say such files are cut at ${fmt(VENDOR.claudeOnDemandChars)} characters on a 200K context window (2.1.309 and later), though a canary on 2.1.312 still saw the end. Keep it under ${fmt(VENDOR.claudeOnDemandChars)} characters, or split it into rules`;
 }
 
 export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPlan> {
@@ -94,12 +98,10 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
     const b = behaviour(TOOL, "imports", "documented", DOC.claudeImports);
     for (const h of hits) {
       const kind: LoadStep["kind"] = h.overflow ? "overflow" : h.missingFrom || h.tokens === 0 && /not counted/.test(h.note ?? "") ? "missing" : "import";
-      let tokens = h.tokens;
-      let cut: Cut | undefined;
+      const tokens = h.tokens;
       if (onDemand && h.doc) {
-        const c = onDemandCut(stripBlockComments(h.doc));
-        tokens = c.tokens;
-        cut = c.cut;
+        const w = onDemandLimit(stripBlockComments(h.doc), h.path);
+        if (w) warnings.push(w);
       }
       steps.push({
         path: h.path,
@@ -109,13 +111,23 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
         ...(h.via ? { via: h.via } : {}),
         ...(h.depth !== undefined ? { depth: h.depth } : {}),
         tokens,
-        ...(cut ? { cut } : {}),
         scope,
         counted,
         ...b,
         ...(h.note ? { note: h.note } : {}),
         ...(h.missingFrom ? { missingFrom: h.missingFrom } : {}),
       });
+    }
+  };
+
+  // Canary on 2.1.312 (claude-code issue 78697): @imports in a CLAUDE.md, AGENTS.md or rule from a
+  // folder above the start folder are not expanded. List each direct import as not loaded.
+  const unexpanded = async (d: Doc, dir: string): Promise<void> => {
+    for (const im of importsOf(d)) {
+      if (im.path.startsWith("~")) continue;
+      const probe = await sandbox.probe(im.path, path.dirname(d.file.real));
+      if (probe.state !== "ok" || !probe.real || seen.has(probe.real)) continue;
+      skipped.push({ path: sandbox.display(probe.real), reason: `imported by ${d.path}, but Claude Code does not expand imports in files from ${where(dir)} when it starts in ${where(cwd)}, a folder below it`, ...behaviour(TOOL, "ancestor-imports-not-expanded", "assumed", "https://github.com/anthropics/claude-code/issues/78697") });
     }
   };
 
@@ -149,16 +161,22 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
     const stripped = raw > t ? `; the file is about ${fmt(raw)} tokens, but Claude Code strips block HTML comments before loading` : "";
     const id = usingClaude ? (it.dir === "" ? "root-claude-md" : "ancestor-claude-md") : it.dir === "" ? "agents-md-fallback" : "ancestor-agents-md";
     const b = behaviour(TOOL, id, "documented", usingClaude ? DOC.claudeMemoryLoad : DOC.claudeAgentsMd);
-    const from = it.dir === "" ? "" : ` (from ${it.dir}, above the start folder)`;
+    const from = it.dir === cwd ? "" : ` (from ${where(it.dir)}, above the start folder)`;
     const note = usingClaude ? `project instructions${from}${stripped}` : `read because there is no CLAUDE.md (Claude Code 2.1.277 and later)${from}${stripped}`;
     steps.push({ path: d.path, kind: "file", trigger: "launch", when: launchWhen, tokens: t, scope: it.dir, counted: true, ...b, note });
     if (d.profile.lines > VENDOR.claudeMdTargetLines) warnings.push(`${d.path} is ${fmt(d.profile.lines)} lines; Claude Code recommends under ${VENDOR.claudeMdTargetLines}`);
+    if (it.dir !== cwd) {
+      await unexpanded(d, it.dir);
+      continue;
+    }
     const hits = await expandImports(sandbox, d, seen, 1, deadline);
     pushImports(hits, "launch", launchWhen, it.dir, true, false);
     warnings.push(...missingImportWarnings(hits));
   }
   if (usingClaude) {
     for (const d of chain) {
+      const dot = (await files.hasFile(join(d, ".claude"), "AGENTS.md")) ? await files.doc(join(d, ".claude/AGENTS.md")) : null;
+      if (dot && !seen.has(dot.file.real)) skipped.push({ path: dot.path, reason: "a CLAUDE.md in the start folder or above switches off the AGENTS.md fallback, and no CLAUDE.md imports it", ...behaviour(TOOL, "agents-md-shadowed", "documented", DOC.claudeAgentsMd) });
       const rel = join(d, "AGENTS.md");
       const agents = (await files.hasFile(d, "AGENTS.md")) ? await files.doc(rel) : null;
       if (!agents || seen.has(agents.file.real)) continue;
@@ -166,7 +184,8 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
         ? "Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions"
         : `Claude Code ignores ${agents.path} here: there is a CLAUDE.md in this folder or above and none imports it. Add the line @AGENTS.md to a CLAUDE.md next to it if both should share instructions`;
       warnings.push(msg);
-      skipped.push({ path: agents.path, reason: `${counting[counting.length - 1]} is in the start folder or above, which switches off the AGENTS.md fallback, and no CLAUDE.md imports it`, ...behaviour(TOOL, "agents-md-shadowed", "documented", DOC.claudeAgentsMd) });
+      const by = counting.find((c) => scopeOf(c) === d) ?? counting[counting.length - 1];
+      skipped.push({ path: agents.path, reason: `${by} switches off the AGENTS.md fallback, and no CLAUDE.md imports it`, ...behaviour(TOOL, "agents-md-shadowed", "documented", DOC.claudeAgentsMd) });
     }
   }
 
@@ -192,12 +211,24 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
         const id = scope === "" ? "rules-no-paths-launch" : "ancestor-rules-launch";
         const b = behaviour(TOOL, id, scope === "" ? "documented" : "assumed", DOC.claudeRules);
         steps.push({ path: d.path, kind: "file", trigger: "launch", when: launchWhen, tokens: bodyTokens(d, true), scope, counted: true, ...b, note: "rule without paths, so it loads every session" });
+        if (scope !== cwd) {
+          await unexpanded(d, scope);
+          continue;
+        }
+        const hits = await expandImports(sandbox, d, seen, 1, deadline);
+        pushImports(hits, "launch", launchWhen, scope, true, false);
+        warnings.push(...missingImportWarnings(hits));
         continue;
       }
-      const c = onDemandCut(stripBlockComments(d));
+      const limit = onDemandLimit(stripBlockComments(d), d.path);
+      if (limit) warnings.push(limit);
       if (!scoped) {
         const b = behaviour(TOOL, "nested-rules-on-read", "documented", DOC.claudeRules);
-        steps.push({ path: d.path, kind: "file", trigger: "on-read", when: readWhen(scope), tokens: c.tokens, ...(c.cut ? { cut: c.cut } : {}), scope, counted: false, ...b, note: "nested rule without paths" });
+        steps.push({ path: d.path, kind: "file", trigger: "on-read", when: readWhen(scope), tokens: bodyTokens(d, true), scope, counted: false, ...b, note: "nested rule without paths" });
+        seen.add(d.file.real);
+        const hits = await expandImports(sandbox, d, seen, 1, deadline);
+        pushImports(hits, "on-read", readWhen(scope), scope, false, true);
+        warnings.push(...missingImportWarnings(hits));
         continue;
       }
       const m = countMatches(ctx, patterns, scope);
@@ -210,8 +241,7 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
         when: `when Claude reads or edits a file matching ${shown}${patterns.length > 5 ? ", ..." : ""}${scope ? ` (relative to ${scope})` : ""}`,
         patterns,
         matches: m.count,
-        tokens: c.tokens,
-        ...(c.cut ? { cut: c.cut } : {}),
+        tokens: bodyTokens(d, true),
         scope,
         counted: false,
         ...b,
@@ -279,7 +309,7 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
       const reason = /(^|\/)\.agents\/skills\//.test(rel)
         ? ".agents/skills is a shared skills folder that Copilot and Antigravity read; Claude Code reads skills only from .claude/skills"
         : "SKILL.md outside .claude/skills/ (a plugin, or an Agent Skills repository); Claude Code does not load it from here";
-      skipped.push({ path: d.path, reason, basis: "documented", source: /(^|\/)\.agents\/skills\//.test(rel) ? DOC.vscodeSkills : DOC.claudeSkills });
+      skipped.push({ path: d.path, reason, ...behaviour(TOOL, /(^|\/)\.agents\/skills\//.test(rel) ? "agents-skills-not-read" : "skill-outside", "documented", /(^|\/)\.agents\/skills\//.test(rel) ? DOC.vscodeSkills : DOC.claudeSkills) });
       continue;
     }
     const t = k === "skill" || k === "claude-command" ? skillListingTokens(d) : agentListingTokens(d);
@@ -342,9 +372,10 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
         continue;
       }
       seen.add(d.file.real);
-      const c = onDemandCut(stripBlockComments(d));
+      const limit = onDemandLimit(stripBlockComments(d), d.path);
+      if (limit) warnings.push(limit);
       const b = behaviour(TOOL, isAgents ? "nested-agents-md-on-read" : "nested-claude-md-on-read", "documented", isAgents ? DOC.claudeAgentsMd : DOC.claudeMemoryLoad);
-      steps.push({ path: d.path, kind: "file", trigger: "on-read", when: readWhen(scope), tokens: c.tokens, ...(c.cut ? { cut: c.cut } : {}), scope, counted: false, ...b, note: isAgents ? "subfolder AGENTS.md, read because that folder has no CLAUDE.md" : "subfolder instructions" });
+      steps.push({ path: d.path, kind: "file", trigger: "on-read", when: readWhen(scope), tokens: bodyTokens(d, true), scope, counted: false, ...b, note: isAgents ? "subfolder AGENTS.md, read because that folder has no CLAUDE.md" : "subfolder instructions" });
       const hits = await expandImports(sandbox, d, seen, 1, deadline);
       pushImports(hits, "on-read", readWhen(scope), scope, false, true);
       warnings.push(...missingImportWarnings(hits));
@@ -359,13 +390,12 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
     else if (base === "AGENTS.local.md") reason = "Claude Code never reads AGENTS.local.md";
     else if (/(^|\/)\.agents\/rules\/[^/]+\.md$/i.test(rel)) reason = ".agents/rules is Antigravity's rules folder; Claude Code never reads files under .agents/";
     else if (/(^|\/)\.agents\/(?!skills\/)[^/]+\.md$/i.test(rel)) reason = "Claude Code never reads files under .agents/";
-    if (reason) skipped.push({ path: rel, reason, basis: "documented", source: /\.agents\/rules/.test(rel) ? DOC.antigravityRules : DOC.claudeAgentsMd });
+    if (reason) skipped.push({ path: rel, reason, ...behaviour(TOOL, "variants-never-read", "documented", /\.agents\/rules/.test(rel) ? DOC.antigravityRules : DOC.claudeAgentsMd) });
   }
 
   const notes = [
     "Files above the project folder and in your home folder (~/.claude/CLAUDE.md, personal skills, plugins) are not shown.",
     "claudeMdExcludes and the Project instructions setting live in settings files AsItIs does not read; this assumes the defaults.",
-    `On-demand files are cut at ${fmt(VENDOR.claudeOnDemandChars)} characters, the limit for a 200K context window; 1M windows allow 150,000 to 200,000.`,
   ];
   return { tool: TOOL, cwd, steps, skipped, warnings, notes };
 }

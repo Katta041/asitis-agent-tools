@@ -1,0 +1,119 @@
+## claude-code from (root)
+launch file AGENTS.md [canary]
+on-read (not counted) file packages/api/AGENTS.md [canary]
+on-read (not counted) file packages/api/sub/AGENTS.md [canary]
+on-read (not counted) file packages/empty/AGENTS.md [canary]
+on-read (not counted) file packages/web/AGENTS.md [canary]
+skipped packages/web/AGENTS.override.md: Claude Code never reads AGENTS.override.md (Codex reads it in place of AGENTS.md) [canary]
+
+## codex from (root)
+launch file AGENTS.md [documented]
+skipped packages/api/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+skipped packages/empty/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+skipped packages/web/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+skipped packages/web/AGENTS.override.md: below the start folder; Codex stops at the folder it starts in [documented]
+skipped packages/api/sub/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+on-read (not counted) file packages/api/AGENTS.md [documented]
+on-read (not counted) file packages/empty/AGENTS.md [documented]
+on-read (not counted) file packages/web/AGENTS.md [documented]
+on-read (not counted) file packages/api/sub/AGENTS.md [documented]
+
+## copilot from (root)
+on-read (not counted) file packages/api/AGENTS.md [documented]
+on-read (not counted) file packages/empty/AGENTS.md [documented]
+on-read (not counted) file packages/web/AGENTS.md [documented]
+on-read (not counted) file packages/api/sub/AGENTS.md [documented]
+setting (not counted) file AGENTS.md [documented]
+
+## claude-code from packages/api
+launch file AGENTS.md [canary]
+launch file packages/api/AGENTS.md [canary]
+on-read (not counted) file packages/api/sub/AGENTS.md [canary]
+skipped packages/empty/AGENTS.md: in packages/empty, which is not the start folder, above it or below it [canary]
+skipped packages/web/AGENTS.md: in packages/web, which is not the start folder, above it or below it [canary]
+skipped packages/web/AGENTS.override.md: Claude Code never reads AGENTS.override.md (Codex reads it in place of AGENTS.md) [canary]
+
+## codex from packages/api
+launch file AGENTS.md [documented]
+launch file packages/api/AGENTS.md [documented]
+skipped packages/empty/AGENTS.md: in packages/empty, which is not on the path from the project root to the start folder [documented]
+skipped packages/web/AGENTS.md: in packages/web, which is not on the path from the project root to the start folder [documented]
+skipped packages/web/AGENTS.override.md: in packages/web, which is not on the path from the project root to the start folder [documented]
+skipped packages/api/sub/AGENTS.md: below the start folder (packages/api); Codex stops at the folder it starts in [documented]
+
+## cursor from packages/api
+launch (not counted) file packages/api/AGENTS.md [assumed]
+on-read (not counted) file packages/api/sub/AGENTS.md [documented]
+skipped AGENTS.md: in the project root, outside the opened folder [assumed]
+skipped packages/empty/AGENTS.md: in packages/empty, outside the opened folder [assumed]
+skipped packages/web/AGENTS.md: in packages/web, outside the opened folder [assumed]
+
+## copilot from packages/api
+on-read (not counted) file packages/api/sub/AGENTS.md [documented]
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file packages/api/AGENTS.md [documented]
+skipped packages/empty/AGENTS.md: in packages/empty, which is not the workspace folder, above it or below it [documented]
+skipped packages/web/AGENTS.md: in packages/web, which is not the workspace folder, above it or below it [documented]
+
+## claude-code from packages/web
+launch file AGENTS.md [canary]
+launch file packages/web/AGENTS.md [canary]
+skipped packages/api/AGENTS.md: in packages/api, which is not the start folder, above it or below it [canary]
+skipped packages/empty/AGENTS.md: in packages/empty, which is not the start folder, above it or below it [canary]
+skipped packages/api/sub/AGENTS.md: in packages/api/sub, which is not the start folder, above it or below it [canary]
+skipped packages/web/AGENTS.override.md: Claude Code never reads AGENTS.override.md (Codex reads it in place of AGENTS.md) [canary]
+
+## codex from packages/web
+launch file AGENTS.md [documented]
+launch file packages/web/AGENTS.override.md [documented]
+skipped packages/web/AGENTS.md: Codex reads AGENTS.override.md in this folder instead [documented]
+skipped packages/api/AGENTS.md: in packages/api, which is not on the path from the project root to the start folder [documented]
+skipped packages/empty/AGENTS.md: in packages/empty, which is not on the path from the project root to the start folder [documented]
+skipped packages/api/sub/AGENTS.md: in packages/api/sub, which is not on the path from the project root to the start folder [documented]
+
+## cursor from packages/web
+launch (not counted) file packages/web/AGENTS.md [assumed]
+skipped AGENTS.md: in the project root, outside the opened folder [assumed]
+skipped packages/api/AGENTS.md: in packages/api, outside the opened folder [assumed]
+skipped packages/empty/AGENTS.md: in packages/empty, outside the opened folder [assumed]
+skipped packages/api/sub/AGENTS.md: in packages/api/sub, outside the opened folder [assumed]
+
+## copilot from packages/web
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file packages/web/AGENTS.md [documented]
+skipped packages/api/AGENTS.md: in packages/api, which is not the workspace folder, above it or below it [documented]
+skipped packages/empty/AGENTS.md: in packages/empty, which is not the workspace folder, above it or below it [documented]
+skipped packages/api/sub/AGENTS.md: in packages/api/sub, which is not the workspace folder, above it or below it [documented]
+
+## claude-code from packages/empty
+launch file AGENTS.md [canary]
+launch file packages/empty/AGENTS.md [canary]
+skipped packages/api/AGENTS.md: in packages/api, which is not the start folder, above it or below it [canary]
+skipped packages/web/AGENTS.md: in packages/web, which is not the start folder, above it or below it [canary]
+skipped packages/api/sub/AGENTS.md: in packages/api/sub, which is not the start folder, above it or below it [canary]
+skipped packages/web/AGENTS.override.md: Claude Code never reads AGENTS.override.md (Codex reads it in place of AGENTS.md) [canary]
+
+## codex from packages/empty
+launch file AGENTS.md [documented]
+skipped packages/empty/AGENTS.md: empty; Codex skips empty files [documented]
+skipped packages/api/AGENTS.md: in packages/api, which is not on the path from the project root to the start folder [documented]
+skipped packages/web/AGENTS.md: in packages/web, which is not on the path from the project root to the start folder [documented]
+skipped packages/web/AGENTS.override.md: in packages/web, which is not on the path from the project root to the start folder [documented]
+skipped packages/api/sub/AGENTS.md: in packages/api/sub, which is not on the path from the project root to the start folder [documented]
+
+## cursor from packages/empty
+launch (not counted) file packages/empty/AGENTS.md [assumed]
+skipped AGENTS.md: in the project root, outside the opened folder [assumed]
+skipped packages/api/AGENTS.md: in packages/api, outside the opened folder [assumed]
+skipped packages/web/AGENTS.md: in packages/web, outside the opened folder [assumed]
+skipped packages/api/sub/AGENTS.md: in packages/api/sub, outside the opened folder [assumed]
+
+## copilot from packages/empty
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file packages/empty/AGENTS.md [documented]
+skipped packages/api/AGENTS.md: in packages/api, which is not the workspace folder, above it or below it [documented]
+skipped packages/web/AGENTS.md: in packages/web, which is not the workspace folder, above it or below it [documented]
+skipped packages/api/sub/AGENTS.md: in packages/api/sub, which is not the workspace folder, above it or below it [documented]

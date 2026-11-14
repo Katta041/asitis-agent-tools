@@ -1,0 +1,45 @@
+## claude-code from (root)
+launch file AGENTS.md [canary]
+on-read (not counted) file pkg/AGENTS.md [canary]
+
+## codex from (root)
+launch file AGENTS.md [documented]
+skipped pkg/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+
+## cursor from (root)
+launch file .cursorrules [assumed]
+launch file .cursor/rules/always.mdc [documented]
+launch (not counted) file AGENTS.md [assumed]
+on-match (not counted) file .cursor/rules/ts.mdc matches 1 [documented]
+on-read (not counted) file pkg/.cursor/rules/n.mdc [documented]
+on-read (not counted) file pkg/AGENTS.md [documented]
+on-invoke (not counted) file .cursor/rules/desc.mdc [documented]
+on-invoke (not counted) file .cursor/rules/manual.mdc [documented]
+skipped pkg/.cursorrules: legacy .cursorrules below the workspace root; Cursor reads it at the root only (it recommends .cursor/rules) [assumed]
+
+## copilot from (root)
+on-read (not counted) file pkg/AGENTS.md [documented]
+setting (not counted) file AGENTS.md [documented]
+
+## claude-code from pkg
+launch file AGENTS.md [canary]
+launch file pkg/AGENTS.md [canary]
+
+## codex from pkg
+launch file AGENTS.md [documented]
+launch file pkg/AGENTS.md [documented]
+
+## cursor from pkg
+launch file pkg/.cursorrules [assumed]
+launch file pkg/.cursor/rules/n.mdc [documented]
+launch (not counted) file pkg/AGENTS.md [assumed]
+skipped .cursorrules: rules in the project root apply when that folder is the workspace; this assumes Cursor reads rules from the opened folder and below [assumed]
+skipped .cursor/rules/always.mdc: rules in the project root apply when that folder is the workspace; this assumes Cursor reads rules from the opened folder and below [assumed]
+skipped .cursor/rules/desc.mdc: rules in the project root apply when that folder is the workspace; this assumes Cursor reads rules from the opened folder and below [assumed]
+skipped .cursor/rules/manual.mdc: rules in the project root apply when that folder is the workspace; this assumes Cursor reads rules from the opened folder and below [assumed]
+skipped .cursor/rules/ts.mdc: rules in the project root apply when that folder is the workspace; this assumes Cursor reads rules from the opened folder and below [assumed]
+skipped AGENTS.md: in the project root, outside the opened folder [assumed]
+
+## copilot from pkg
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file pkg/AGENTS.md [documented]

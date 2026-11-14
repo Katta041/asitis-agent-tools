@@ -1,0 +1,17 @@
+## claude-code from (root)
+launch file AGENTS.md [canary]
+skipped AGENTS.local.md: Claude Code never reads AGENTS.local.md [canary]
+skipped AGENTS.override.md: Claude Code never reads AGENTS.override.md (Codex reads it in place of AGENTS.md) [canary]
+skipped .agents/notes.md: Claude Code never reads files under .agents/ [canary]
+skipped .agents/rules/r.md: .agents/rules is Antigravity's rules folder; Claude Code never reads files under .agents/ [canary]
+
+## codex from (root)
+launch file AGENTS.override.md [documented]
+skipped AGENTS.md: Codex reads AGENTS.override.md in this folder instead [documented]
+skipped AGENTS.local.md: Codex does not read AGENTS.local.md [documented]
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+
+## copilot from (root)
+setting (not counted) file AGENTS.md [documented]

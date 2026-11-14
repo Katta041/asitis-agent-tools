@@ -1,0 +1,7 @@
+## claude-code from (root)
+launch file CLAUDE.md [canary]
+on-read (not counted) file pkg/CLAUDE.md [canary]
+warning pkg/CLAUDE.md is 45,007 characters and loads on demand; Claude Code's docs say such files are cut at 40,000 characters on a 200K context window (2.1.309 and later), though a canary on 2.1.312 still saw the end. Keep it under 40,000 characters, or split it into rules
+
+## copilot from (root)
+setting (not counted) file CLAUDE.md [documented]

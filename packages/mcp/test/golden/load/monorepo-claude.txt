@@ -1,0 +1,55 @@
+## claude-code from (root)
+launch file CLAUDE.md [canary]
+launch import docs/root-guide.md depth 1 [canary]
+on-read (not counted) file packages/api/CLAUDE.md [canary]
+on-read (not counted) import packages/api/api-guide.md depth 1 [canary]
+on-read (not counted) file packages/api/src/db/CLAUDE.md [canary]
+on-read (not counted) file packages/web/CLAUDE.md [canary]
+skipped packages/web/AGENTS.md: Claude Code reads the CLAUDE.md in packages/web instead [canary]
+
+## codex from (root)
+skipped packages/web/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+
+## cursor from (root)
+on-read (not counted) file packages/web/AGENTS.md [documented]
+
+## copilot from (root)
+on-read (not counted) file packages/web/AGENTS.md [documented]
+setting (not counted) file CLAUDE.md [documented]
+
+## claude-code from packages/api
+launch file CLAUDE.md [canary]
+launch file packages/api/CLAUDE.md [canary]
+launch import packages/api/api-guide.md depth 1 [canary]
+on-read (not counted) file packages/api/src/db/CLAUDE.md [canary]
+skipped docs/root-guide.md: imported by CLAUDE.md, but Claude Code does not expand imports in files from the project root when it starts in packages/api, a folder below it [canary]
+skipped packages/web/AGENTS.md: in packages/web, which is not the start folder, above it or below it [canary]
+skipped packages/web/CLAUDE.md: in packages/web, which is not the start folder, above it or below it [canary]
+
+## codex from packages/api
+skipped packages/web/AGENTS.md: in packages/web, which is not on the path from the project root to the start folder [documented]
+
+## cursor from packages/api
+skipped packages/web/AGENTS.md: in packages/web, outside the opened folder [assumed]
+
+## copilot from packages/api
+setting (not counted) file packages/api/CLAUDE.md [documented]
+skipped packages/web/AGENTS.md: in packages/web, which is not the workspace folder, above it or below it [documented]
+
+## claude-code from packages/web/src
+launch file CLAUDE.md [canary]
+launch file packages/web/CLAUDE.md [canary]
+skipped docs/root-guide.md: imported by CLAUDE.md, but Claude Code does not expand imports in files from the project root when it starts in packages/web/src, a folder below it [canary]
+skipped packages/web/AGENTS.md: packages/web/CLAUDE.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it [canary]
+skipped packages/api/CLAUDE.md: in packages/api, which is not the start folder, above it or below it [canary]
+skipped packages/api/src/db/CLAUDE.md: in packages/api/src/db, which is not the start folder, above it or below it [canary]
+warning Claude Code ignores packages/web/AGENTS.md here: there is a CLAUDE.md in this folder or above and none imports it. Add the line @AGENTS.md to a CLAUDE.md next to it if both should share instructions
+
+## codex from packages/web/src
+launch file packages/web/AGENTS.md [documented]
+
+## cursor from packages/web/src
+skipped packages/web/AGENTS.md: in packages/web, outside the opened folder [assumed]
+
+## copilot from packages/web/src
+setting (not counted) file packages/web/AGENTS.md [documented]

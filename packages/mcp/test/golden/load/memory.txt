@@ -1,0 +1,6 @@
+## claude-code from (root)
+launch file CLAUDE.md [canary]
+launch file .claude/projects/demo/memory/MEMORY.md cut at 200 lines [documented]
+
+## copilot from (root)
+setting (not counted) file CLAUDE.md [documented]

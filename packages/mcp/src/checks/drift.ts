@@ -64,7 +64,7 @@ interface Member {
   full: boolean;
 }
 
-interface Rules {
+export interface Rules {
   /** Normalised rule text to its first line and preview. */
   all: Map<string, { line: number; preview: string }>;
   pos: Map<string, { line: number; preview: string }>;
@@ -97,7 +97,7 @@ function memberOf(doc: Doc): Member | null {
   return null;
 }
 
-function rulesOf(doc: Doc): Rules {
+export function rulesOf(doc: Doc): Rules {
   const r: Rules = { all: new Map(), pos: new Map(), neg: new Map() };
   forEachRule(doc, (u) => {
     if (!u.rule && !u.pol) return;
@@ -117,13 +117,13 @@ function rulesOf(doc: Doc): Rules {
  */
 const GROUP_MAX = 3;
 
-interface Pending {
+export interface Pending {
   path: string;
   issue: Issue;
   extra?: ExtraFile;
 }
 
-function emitGroup(ctx: CheckContext, items: Pending[], groupMessage: (others: string) => string): void {
+export function emitGroup(ctx: CheckContext, items: Pending[], groupMessage: (others: string) => string): void {
   items.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   if (items.length <= GROUP_MAX) {
     for (const it of items) ctx.report(it.path, it.issue, it.extra);

@@ -1,6 +1,6 @@
 // Where each piece of loading behaviour comes from. Every behaviour a model encodes has an id here
 // with its doc link (read 15 November 2026) and, when a canary run confirmed it, the tool version
-// and date. Recheck these when a vendor changes its docs; test/load-canary.md has the canary recipe.
+// and date. Recheck these when a vendor changes its docs; scripts/canary/ has the canary recipe.
 
 import type { Basis } from "./types.js";
 
@@ -42,10 +42,38 @@ export interface CanaryRun {
 }
 
 /**
- * Canary runs recorded so far. Filled from the runs described in test/load-canary.md. A behaviour
+ * Canary runs recorded so far. Filled from runs of scripts/canary/run.sh. A behaviour
  * listed here gets basis "canary"; everything else keeps its documented or assumed basis.
  */
-export const CANARY_RUNS: readonly CanaryRun[] = [];
+export const CANARY_RUNS: readonly CanaryRun[] = [
+  {
+    // 15 claude -p runs from five folders of two planted trees (scripts/canary).
+    tool: "claude-code",
+    version: "2.1.312",
+    date: "2026-11-14",
+    confirmed: [
+      "root-claude-md", // CLAUDE.md and CLAUDE.local.md at the start folder
+      "ancestor-claude-md", // CLAUDE.md files above the start folder
+      "imports", // @imports at the start folder, four hops and not five
+      "rules-no-paths-launch",
+      "ancestor-rules-launch", // .claude/rules of folders above the start folder
+      "path-rules-on-match", // including a no-slash pattern matching at any depth
+      "nested-rules-on-read",
+      "nested-claude-md-on-read", // and the folders between, and their imports
+      "nested-agents-md-on-read",
+      "agents-md-fallback", // AGENTS.md and .claude/AGENTS.md with no CLAUDE.md, with imports
+      "ancestor-agents-md",
+      "agents-md-shadowed",
+      "skills-launch",
+      "ancestor-skills",
+      "nested-skills-on-read",
+      "sibling-claude-md",
+      "variants-never-read", // AGENTS.override.md, AGENTS.local.md, .agents/rules
+      "agents-skills-not-read",
+      "ancestor-imports-not-expanded",
+    ],
+  },
+];
 
 export interface Behaviour {
   basis: Basis;

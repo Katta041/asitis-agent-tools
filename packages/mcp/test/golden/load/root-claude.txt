@@ -1,0 +1,5 @@
+## claude-code from (root)
+launch file CLAUDE.md [canary]
+
+## copilot from (root)
+setting (not counted) file CLAUDE.md [documented]
