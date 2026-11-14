@@ -81,9 +81,14 @@ describe(`10 MB adversarial inputs, each tool call under ${BUDGET_MS} ms`, () =>
   test.each(Object.keys(CASES))("%s", async (name) => {
     const p = `${name}/CLAUDE.md`;
     for (const tool of ["lint_steering", "read_markdown", "outline", "context_budget"]) {
-      const r = await c.call(tool, { path: p });
+      let r = await c.call(tool, { path: p });
+      // One retry over budget. The first read of a 10 MB file written a moment ago can stall (Windows
+      // Defender scans it; directive-comments once took 3.2 s on Windows CI and 0.3 s here), and so
+      // can a GC pause after 40 such files. A scanner that is really slow is slow both times.
+      const first = r.ms;
+      if (first >= BUDGET_MS) r = await c.call(tool, { path: p });
       expect(r.isError, `${tool}: ${r.text.slice(0, 200)}`).toBe(false);
-      expect(r.ms, `${tool} on ${name} took ${r.ms.toFixed(0)} ms`).toBeLessThan(BUDGET_MS);
+      expect(r.ms, `${tool} on ${name} took ${first.toFixed(0)} ms, then ${r.ms.toFixed(0)} ms`).toBeLessThan(BUDGET_MS);
       // Results stay bounded no matter how hostile the file is.
       expect(r.text.length, `${tool} result size`).toBeLessThan(400 * 1024);
     }
