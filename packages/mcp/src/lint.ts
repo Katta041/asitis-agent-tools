@@ -841,7 +841,7 @@ function sectionRelation(a: SectionPath, b: SectionPath): "same" | "same-topic" 
 
 /** A template line whose words are mostly placeholders ("- [Finding from Phase 1] -> [explains this choice]", "> [Example]"). */
 function placeholderOnly(text: string): boolean {
-  if (!text.includes("[")) return false;
+  if (!text.includes("[") || !text.includes("]")) return false;
   const rest = text.replace(/\[[^\]\n]{1,80}\](?![(\[:])/g, " ").replace(LIST_MARKER, "");
   if (rest.length === text.length) return false;
   return (rest.match(/[\p{L}\p{N}]{2,}/gu) ?? []).length < 4;
@@ -881,6 +881,14 @@ function checkRules(doc: Doc, c: Collector): void {
   // The finding for each paragraph or list item: the strongest of its sentences.
   const best = new Map<number, { j: number; kind: DupKind }>();
   const rank: Record<DupKind, number> = { "same-section": 2, copied: 2, elsewhere: 1 };
+  // Copies of a rule share their text, so the placeholder test runs once per text, not once per copy
+  // (10 MB of "[a]" lines is 2.6 million copies).
+  const placeholder = new Map<string, boolean>();
+  const isPlaceholder = (text: string): boolean => {
+    let v = placeholder.get(text);
+    if (v === undefined) placeholder.set(text, (v = placeholderOnly(text)));
+    return v;
+  };
   for (let j = 0; j < units.length; j++) {
     const f = firstOf[j]!;
     if (f < 0) continue;
@@ -892,7 +900,7 @@ function checkRules(doc: Doc, c: Collector): void {
     // "Bugfix PRs:" each with "- Add a changelog entry") is a per-parent checklist, even when it is an instruction.
     const rel = sectionRelation(first.path, u.path);
     const structural = u.listItem && u.norm.length < 40 && ((!rule && (rel !== "same" || u.nested)) || (u.nested && first.parent !== u.parent));
-    if (structural || placeholderOnly(u.preview) || rel === "parallel") continue;
+    if (structural || rel === "parallel" || isPlaceholder(u.preview)) continue;
     const kind: DupKind = rel === "same" ? "same-section" : rel === "same-topic" && copied(j) ? "copied" : "elsewhere";
     const prev = best.get(u.block);
     if (!prev || rank[kind] > rank[prev.kind]) best.set(u.block, { j, kind });
