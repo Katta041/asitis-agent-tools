@@ -49,7 +49,7 @@ export async function planCursor(ctx: LoadContext, cwd: string): Promise<LoadPla
       continue;
     }
     if (globs.length) {
-      const m = countMatches(ctx, globs, scope);
+      const m = countMatches(ctx, globs, [scope, ""]);
       later.push({ path: d.path, kind: "file", trigger: "on-match", when: `when a file matching ${globs.slice(0, 5).join(", ")}${globs.length > 5 ? ", ..." : ""} is in context${scope ? ` (relative to ${scope})` : ""}`, patterns: globs, matches: m.count, tokens, scope, counted: false, ...behaviour(TOOL, "globs", "documented", DOC.cursorRules), note: "rule with globs" });
       continue;
     }

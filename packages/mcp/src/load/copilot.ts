@@ -15,7 +15,7 @@
 
 import { approxTokens } from "../tokens.js";
 import type { LoadContext } from "./context.js";
-import { chainTo, dirOf, join, within } from "./files.js";
+import { chainTo, dirOf, join, scopeOf, within } from "./files.js";
 import { patternList } from "./glob.js";
 import { countMatches } from "./match.js";
 import { behaviour, DOC } from "./sources.js";
@@ -65,7 +65,7 @@ export async function planCopilot(ctx: LoadContext, cwd: string): Promise<LoadPl
     const applyTo = data ? patternList(data["applyTo"]) : [];
     const tokens = approxTokens(d.text);
     if (applyTo.length) {
-      const m = countMatches(ctx, applyTo, cwd);
+      const m = countMatches(ctx, applyTo, [cwd, scopeOf(d.file.rel)]);
       later.push({ path: d.path, kind: "file", trigger: "on-match", when: `when the agent works with a file matching ${applyTo.slice(0, 5).join(", ")}${applyTo.length > 5 ? ", ..." : ""}`, patterns: applyTo, matches: m.count, tokens, scope: cwd, counted: false, ...behaviour(TOOL, "applyTo", "documented", DOC.vscodeInstructionsRef), note: "instructions with applyTo" });
       continue;
     }

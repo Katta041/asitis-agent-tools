@@ -2,8 +2,9 @@
 //
 // - path-rule-matches-nothing: a Claude Code rule with paths, a Cursor rule with globs or a Copilot
 //   instructions file with applyTo whose patterns match no file in the project, so it never loads.
-//   Only when the whole folder was walked and the walk was not cut short; patterns we cannot read
-//   (negations, absolute paths) and patterns into folders the walk skips keep it silent.
+//   Only when the whole folder was walked and the walk was not cut short, and only when a pattern
+//   names a folder; patterns we cannot read (negations, absolute paths), patterns into folders the
+//   walk skips, and extension-only patterns ("**/*.py") keep it silent.
 // - nested-duplicate: a subfolder's CLAUDE.md, AGENTS.md or GEMINI.md repeats rules from the same
 //   kind of file in a folder above, which the agent already has when it works there.
 // - nested-contradiction: the subfolder file says the opposite of the file above. Often an intended
@@ -95,7 +96,7 @@ async function pathRules(ctx: CheckContext, files: FileIndex): Promise<void> {
     const data = d.frontmatter.data;
     let key: string;
     let tool: string;
-    let base: string;
+    let base: string[];
     const holder = (marker: string): string => {
       const at = rel.lastIndexOf(`${marker}/`);
       return at <= 0 ? "" : rel.slice(0, at - 1);
@@ -103,26 +104,33 @@ async function pathRules(ctx: CheckContext, files: FileIndex): Promise<void> {
     if (d.kind.kind === "claude-rule") {
       key = "paths";
       tool = "Claude Code loads this rule only when it reads a matching file, so it never loads";
-      base = holder(".claude");
+      // Claude Code memory docs: patterns are relative to the folder that holds .claude.
+      base = [holder(".claude")];
     } else if (d.kind.kind === "cursor-rule") {
       if (data["alwaysApply"] === true || data["alwaysApply"] === "true") continue;
       key = "globs";
       tool = "Cursor attaches this rule only when a matching file is in context, so it never attaches by itself";
-      base = holder(".cursor");
+      // The Cursor docs do not say what a nested rule's globs are relative to: try both readings.
+      base = [holder(".cursor"), ""];
     } else if (d.kind.kind === "copilot-scoped") {
       key = "applyTo";
       tool = "Copilot applies these instructions only to matching files, so they never apply";
-      base = "";
+      // Relative to the workspace root; a nested .github is its own workspace when that folder is opened.
+      base = ["", holder(".github")];
     } else continue;
     const patterns = patternList(data[key]);
     if (!patterns.length) continue;
     const m = countMatches(source, patterns, base);
     if (m.count !== 0 || !m.complete || m.unreadable.length) continue;
+    // Only patterns that name a place ("src/legacy/**", ".github/workflows/*.yml"). A language pack
+    // copied in ("**/*.py" in a repo with no Python) never loads either, but that is harmless, and the
+    // real-repo review found nothing worth fixing among them.
+    if (!m.compiled.some((g) => g.prefix)) continue;
     const shown = patterns.slice(0, 3).map((p) => q(p, 80)).join(", ");
     ctx.report(d.path, {
       severity: "warning",
       rule: "path-rule-matches-nothing",
-      message: `No file in this project matches ${key} ${shown}${patterns.length > 3 ? ` and ${fmt(patterns.length - 3)} more` : ""}${base ? ` (relative to ${dp(base)})` : ""}. ${tool}. Fix the pattern or delete the file`,
+      message: `No file in this project matches ${key} ${shown}${patterns.length > 3 ? ` and ${fmt(patterns.length - 3)} more` : ""}${base[0] ? ` (relative to ${dp(base[0])})` : ""}. ${tool}. Fix the pattern or delete the file`,
       line: keyLine(d, key),
       fingerprintText: `${key}: ${patterns.join(",")}`,
     });

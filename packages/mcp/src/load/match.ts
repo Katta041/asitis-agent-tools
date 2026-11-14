@@ -20,7 +20,13 @@ export interface MatchCount {
 /** What countMatches needs from the walk: the name list (null when incomplete) and the folders it did not enter. */
 export type NameSource = Pick<LoadContext, "names" | "walk">;
 
-export function countMatches(ctx: NameSource, patterns: readonly string[], base: string): MatchCount {
+/**
+ * Files matching any pattern, with patterns taken relative to any of the bases. Several bases when the
+ * vendor docs do not say which folder a nested rule's patterns are relative to: a match from either
+ * counts, so "matches nothing" is only said when no reading matches.
+ */
+export function countMatches(ctx: NameSource, patterns: readonly string[], baseOrBases: string | readonly string[]): MatchCount {
+  const bases = [...new Set(typeof baseOrBases === "string" ? [baseOrBases] : baseOrBases)];
   const compiled: CompiledGlob[] = [];
   const unreadable: string[] = [];
   for (const p of patterns) {
@@ -33,9 +39,9 @@ export function countMatches(ctx: NameSource, patterns: readonly string[], base:
   // A pattern that points into node_modules, dist, build or another folder the walk does not enter
   // may match files we never listed.
   const skipped = ctx.walk.skippedDirs ?? [];
-  const lowerBase = base.toLowerCase();
   let complete = true;
-  for (const g of compiled) {
+  for (const g of compiled) for (const base of bases) {
+    const lowerBase = base.toLowerCase();
     const fromRoot = lowerBase ? (g.prefix ? `${lowerBase}/${g.prefix}` : lowerBase) : g.prefix;
     // A pattern with no literal folders ("**/*.ts") is not held up by node_modules somewhere: a rule
     // whose only matches live in dependencies or build output is worth hearing about anyway.
@@ -50,11 +56,16 @@ export function countMatches(ctx: NameSource, patterns: readonly string[], base:
   const budget = new Budget(STEPS_PER_RULE);
   let count = 0;
   for (const n of names) {
+    let hit = false;
     for (const g of compiled) {
-      const m = globMatches(g, base, n, budget);
-      if (m === null) return { count: null, compiled, unreadable, complete: false };
-      if (m) { count++; break; }
+      for (const base of bases) {
+        const m = globMatches(g, base, n, budget);
+        if (m === null) return { count: null, compiled, unreadable, complete: false };
+        if (m) { hit = true; break; }
+      }
+      if (hit) break;
     }
+    if (hit) count++;
   }
   return { count, compiled, unreadable, complete };
 }

@@ -1,5 +1,5 @@
 ## Catches
-A Claude Code rule with `paths`, a Cursor rule with `globs` or a Copilot instructions file with `applyTo` whose patterns match no file in the project. These files load only for matching files, so this one never loads. It usually happens after a folder is renamed. Only runs when the whole folder is linted, and stays quiet when the folder walk was cut short or a pattern points into a folder AsItIs does not walk (such as `node_modules` or `dist`).
+A Claude Code rule with `paths`, a Cursor rule with `globs` or a Copilot instructions file with `applyTo` whose patterns match no file in the project. These files load only for matching files, so this one never loads. It usually happens after a folder is renamed. Only runs when the whole folder is linted, and only for patterns that name a folder. It stays quiet when the folder walk was cut short, when a pattern points into a folder AsItIs does not walk (such as `node_modules` or `dist`), and for extension-only patterns like `**/*.py`: a language pack with nothing to match is harmless. On a sparse checkout, files that are not checked out count as missing.
 
 ## Bad
 ```markdown

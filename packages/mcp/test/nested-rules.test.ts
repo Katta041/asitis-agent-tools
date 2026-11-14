@@ -36,7 +36,8 @@ describe("path-rule-matches-nothing", () => {
     const root = temp({
       ".claude/rules/api.md": `${fm('paths:\n  - "src/legacy-api/**/*.ts"')}# API\n`,
       ".cursor/rules/ts.mdc": `${fm('globs: "app/**/*.tsx"\nalwaysApply: false')}TSX\n`,
-      ".github/instructions/py.instructions.md": `${fm('applyTo: "**/*.py"')}Python\n`,
+      ".github/instructions/py.instructions.md": `${fm('applyTo: ".github/workflows/*.yml"')}Workflows\n`,
+      ".github/workflows/build.yaml": "",
       "src/api/a.ts": "",
     });
     const fs = await lint(root);
@@ -63,6 +64,7 @@ describe("path-rule-matches-nothing", () => {
         ".claude/rules/neg.md": `${fm('paths:\n  - "!src/**"')}Neg\n`,
         "templates/app/.claude/rules/t.md": `${fm('paths:\n  - "src/**"')}Template\n`,
         ".claude/rules/gone.md": `${fm('paths:\n  - "gone/**"')}Gone\n`,
+        ".github/instructions/kotlin.instructions.md": `${fm('applyTo: "**/*.kt"')}Kotlin pack, no Kotlin here\n`,
       },
       ["dist"],
     );
