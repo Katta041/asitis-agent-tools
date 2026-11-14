@@ -31,6 +31,8 @@ export interface LintArgs {
   allowBroadRoot: boolean;
   /** Exit 1 when the repo's config or baseline hides or lowers a security finding. */
   failOnHiddenSecurity: boolean;
+  /** Print the "checked with AsItIs" README badge after a clean run (text format only). */
+  badge: boolean;
 }
 
 export interface BudgetArgs {
@@ -130,6 +132,7 @@ export function parse(argv: string[]): Parsed {
         "annotate-notes": { type: "boolean" },
         "allow-broad-root": { type: "boolean" },
         "fail-on-hidden-security": { type: "boolean" },
+        badge: { type: "boolean" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
       },
@@ -165,6 +168,7 @@ export function parse(argv: string[]): Parsed {
     if (v.quiet) throw new UserError("--quiet only applies to asitis lint");
     if (v["annotate-notes"]) throw new UserError("--annotate-notes only applies to asitis lint");
     if (v["fail-on-hidden-security"]) throw new UserError("--fail-on-hidden-security only applies to asitis lint");
+    if (v.badge) throw new UserError("--badge only applies to asitis lint");
     if (rest.length > 1) throw new UserError("asitis budget takes at most one file; leave it out for the whole folder");
     return {
       command: "budget",
@@ -183,6 +187,9 @@ export function parse(argv: string[]): Parsed {
   if (v["annotate-notes"] && format !== "github") throw new UserError("--annotate-notes only applies to --format github");
   const fp = single("--fix-preview", v["fix-preview"]);
   if (fp !== undefined && fp !== "all" && fp !== "safe") throw new UserError(`--fix-preview takes no value or =safe, not ${shown(fp)}`);
+  if (v.badge && format !== "text") throw new UserError("--badge only applies to --format text");
+  if (v.badge && fp !== undefined) throw new UserError("--badge cannot be combined with --fix-preview");
+  if (v.badge && writeBaseline) throw new UserError("--badge cannot be combined with --write-baseline");
   return {
     command: "lint",
     paths: rest,
@@ -200,5 +207,6 @@ export function parse(argv: string[]): Parsed {
     annotateNotes: !!v["annotate-notes"],
     allowBroadRoot,
     failOnHiddenSecurity: !!v["fail-on-hidden-security"],
+    badge: !!v.badge,
   };
 }

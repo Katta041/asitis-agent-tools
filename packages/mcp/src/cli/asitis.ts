@@ -29,6 +29,9 @@ export const EXIT = { ok: 0, findings: 1, usage: 2, internal: 3 } as const;
 
 export const ISSUES_URL = "https://github.com/Katta041/asitis-agent-tools/issues";
 
+/** The README badge --badge prints, the same snippet as in README.md and action/README.md. */
+export const BADGE_MARKDOWN = "[![checked with AsItIs](https://img.shields.io/badge/checked%20with-AsItIs-007370)](https://asitis.app)";
+
 /** Same floor as engines in package.json and the plugin launcher. */
 const MIN_NODE = [22, 13, 0] as const;
 
@@ -59,6 +62,7 @@ Options for lint:
   --allow-broad-root       allow your home folder or the filesystem root as --root
   --fail-on-hidden-security
                            exit 1 when .asitisrc.json or the baseline hides or lowers a security finding
+  --badge                  text: after a run with no errors or warnings, print a README badge
 
 Options for budget: --root, --format text|json, --max-file-mb, --allow-broad-root.
 
@@ -85,6 +89,7 @@ Cursor rules, Copilot instructions, GEMINI.md, ...). Prints one line per finding
   --quiet, -q              text and github: findings only, no summary or notices
   --annotate-notes         github: also annotate notes (by default only errors and warnings are)
   --allow-broad-root       allow your home folder or the filesystem root as --root
+  --badge                  after a run with no errors or warnings, print a README badge snippet
 
 Exit codes: 0 no findings at or above --fail-on, 1 findings, 2 usage or input error, 3 internal error.
 `;
@@ -310,6 +315,13 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
         return code;
       }
       io.out(formatText(report, { quiet: a.quiet, notes, alerts }));
+      if (a.badge) {
+        // Clean means nothing a reader would call a problem: no error or warning left, nothing
+        // hidden from security, and an exit code of 0. Notes are fine.
+        const open = findings.filter((f) => !f.suppressed && (f.severity === "error" || f.severity === "warning")).length;
+        if (!open && !hiddenSec && code === EXIT.ok) io.out(`\nAdd this to your README:\n\n${BADGE_MARKDOWN}\n`);
+        else io.err(`asitis: no badge yet: ${open ? `fix the ${open.toLocaleString("en-US")} ${open === 1 ? "error or warning" : "errors and warnings"} above` : hiddenSec ? "the config or baseline hides security findings" : "this run exits non-zero"}, then run --badge again\n`);
+      }
       break;
     case "json":
       io.out(formatJson(report));

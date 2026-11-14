@@ -302,6 +302,14 @@ repos:
       - id: asitis-lint
 ```
 
+**README badge.** Once `asitis lint` runs clean, you can say so in your README. `asitis lint --badge` prints the snippet after a run with no errors or warnings:
+
+```markdown
+[![checked with AsItIs](https://img.shields.io/badge/checked%20with-AsItIs-007370)](https://asitis.app)
+```
+
+It is a static badge: it says you check your steering files with AsItIs, not that the last run passed. Pair it with the Action so it stays true.
+
 [`docs/ci.md`](docs/ci.md) covers the Action's inputs and SARIF upload, lefthook, husky and GitLab CI. Every flag and exit code is in [`docs/cli-contract.md`](docs/cli-contract.md).
 
 ## Config
