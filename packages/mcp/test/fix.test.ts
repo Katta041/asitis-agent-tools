@@ -173,8 +173,9 @@ describe.each(Object.entries(VARIANTS))("fixture variant %s", (variant, transfor
       expect(n(lintAfter), `${variant} ${f.path} ${f.ruleId}`).toBeLessThan(n(lintBefore));
     }
     const errorsBefore = new Set(lintBefore.map((x) => `${x.path} ${x.rule}`));
-    // A BOM before frontmatter that was not read before is reported once the frontmatter is on line 1.
-    const fresh = lintAfter.filter((x) => !errorsBefore.has(`${x.path} ${x.rule}`) && !(x.rule === "frontmatter-bom" && variant.includes("bom")));
+    // A BOM before frontmatter that was not read before is reported once the frontmatter is on line 1,
+    // and a rule's paths can only be checked against the tree once its frontmatter is read.
+    const fresh = lintAfter.filter((x) => !errorsBefore.has(`${x.path} ${x.rule}`) && !(x.rule === "frontmatter-bom" && variant.includes("bom")) && x.rule !== "path-rule-matches-nothing");
     expect(fresh).toEqual([]);
     // Nothing left to fix but what has no fix (the non-ASCII skill name).
     const again = await suggest(dir);

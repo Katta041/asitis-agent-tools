@@ -184,8 +184,8 @@ describe("one-line errors (exit 2)", () => {
     [["lint", "--write-baseline"], /^asitis: --write-baseline needs --format json\n$/],
     [["lint", "--fix-preview=all-of-it"], /^asitis: --fix-preview takes no value or =safe, not "all-of-it"\n$/],
     [["lint", "--quiet=yes"], /^asitis: --quiet does not take a value\n$/],
-    [["frobnicate"], /^asitis: unknown command "frobnicate"; the commands are lint and budget\n$/],
-    [[], /^asitis: no command given; run asitis lint, asitis budget or asitis --help\n$/],
+    [["frobnicate"], /^asitis: unknown command "frobnicate"; the commands are lint, budget and loads\n$/],
+    [[], /^asitis: no command given; run asitis lint, asitis budget, asitis loads or asitis --help\n$/],
     [["budget", "--fail-on", "error"], /^asitis: --fail-on only applies to asitis lint\n$/],
     [["budget", "--format", "sarif"], /^asitis: --format must be text or json, not "sarif"\n$/],
   ])("%j", (args, pattern) => expectUserError(cli(args as string[]), pattern as RegExp));

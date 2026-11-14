@@ -49,7 +49,7 @@ const MARK: Record<string, string> = { assumed: " (assumed)", canary: "", docume
 
 function stepLine(s: LoadStep, i: number, name: (p: string) => string): string {
   const indent = s.depth ? "   ".repeat(s.depth) : "";
-  const label = s.kind === "overflow" ? esc(s.path, 300) : name(s.path);
+  const label = s.kind === "overflow" || s.kind === "listing" ? esc(s.path, 300) : name(s.path);
   const mark = MARK[s.basis] ?? "";
   if (s.kind === "missing") return `    ${i}. ${indent}${label}: ${esc(s.note ?? "not loaded", 200)}`;
   if (s.kind === "overflow") return `    ${i}. ${indent}${label}`;

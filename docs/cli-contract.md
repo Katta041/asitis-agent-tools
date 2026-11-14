@@ -31,9 +31,10 @@ asitis lint [paths...] [--root <dir>] [--format text|json|sarif|github]
             [--annotate-notes]
             [--fail-on-hidden-security]
 asitis budget [file] [--root <dir>] [--format text|json] [--max-file-mb <n>]
+asitis loads [dir] [--root <dir>] [--tool <list>] [--format text|json] [--max-file-mb <n>]
 asitis --version
 asitis --help
-asitis lint --help | asitis budget --help
+asitis lint --help | asitis budget --help | asitis loads --help
 ```
 
 | Flag | Default | Meaning |
@@ -109,6 +110,8 @@ For `--fix-preview` with `text`, print `fixPreview(project, safety)` from `fix.t
 ## Budget
 
 `asitis budget [file]` prints what each agent loads at the start of every session, the same report as the MCP `context_budget` tool: per agent (Claude Code, Codex, Gemini CLI, Cursor, Copilot) a total and one line per file, largest agent first. With a file, it counts that file and its imports only. `--format json` prints the structured report. Token counts are local estimates. It exits 0 when the count ran, and 2 for the usual user errors; it has no `--fail-on`. A walk cut short prints the reason on stderr (`asitis: <reason>; the totals above may be low`).
+
+`asitis loads [dir]` prints what each agent loads when a session starts in `dir` (default: the root), the same report as the MCP `load_plan` tool: per agent, the files that load at launch with their imports, the files that load later and when, what is cut, what is never read and why, and totals. `dir` is relative to the current folder and must be inside the root; pass the repository root with `--root` so files above `dir` count. `--tool` takes a comma-separated list of claude-code, codex, gemini-cli, cursor and copilot. `--format json` prints the structured report with `schemaVersion: 1`. It exits 0 when it ran and 2 for the usual user errors (folder not found, not a folder, outside the root, unknown tool). When the root has no `.git` entry it says so on stderr, since files above the root may be missing.
 
 `project.notes` are one-line notices (for example an `include` value that is not available yet). Print them to stderr for `json` and `sarif`, after the summary for `text`, and as `::notice::` lines for `github`.
 

@@ -1,5 +1,5 @@
 // Where each piece of loading behaviour comes from. Every behaviour a model encodes has an id here
-// with its doc link (read 15 November 2026) and, when a canary run confirmed it, the tool version
+// with the URL of its doc, read 15 November 2026, and, when a canary run confirmed it, the tool version
 // and date. Recheck these when a vendor changes its docs; scripts/canary/ has the canary recipe.
 
 import type { Basis } from "./types.js";
