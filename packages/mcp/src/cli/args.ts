@@ -42,7 +42,20 @@ export interface BudgetArgs {
   allowBroadRoot: boolean;
 }
 
-export type Parsed = LintArgs | BudgetArgs | { command: "help"; topic?: "lint" | "budget" } | { command: "version" };
+export interface LoadsArgs {
+  command: "loads";
+  /** The folder a session starts in, as given (relative to the current folder). */
+  dir: string | undefined;
+  root: string | undefined;
+  tools: string[];
+  format: "text" | "json";
+  maxFileBytes: number | undefined;
+  allowBroadRoot: boolean;
+}
+
+export const LOADS_TOOLS = ["claude-code", "codex", "gemini-cli", "cursor", "copilot"] as const;
+
+export type Parsed = LintArgs | BudgetArgs | LoadsArgs | { command: "help"; topic?: "lint" | "budget" | "loads" } | { command: "version" };
 
 /** "error, warning, note or never". */
 const orList = (xs: readonly string[]): string => `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`;
@@ -130,6 +143,7 @@ export function parse(argv: string[]): Parsed {
         "annotate-notes": { type: "boolean" },
         "allow-broad-root": { type: "boolean" },
         "fail-on-hidden-security": { type: "boolean" },
+        tool: { type: "string", multiple: true },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
       },
@@ -140,17 +154,18 @@ export function parse(argv: string[]): Parsed {
   const { values: v, positionals } = parsed;
   if (v.help) {
     const topic = positionals[0];
-    return topic === "lint" || topic === "budget" ? { command: "help", topic } : { command: "help" };
+    return topic === "lint" || topic === "budget" || topic === "loads" ? { command: "help", topic } : { command: "help" };
   }
   if (v.version) return { command: "version" };
   const [command, ...rest] = positionals;
-  if (command === undefined) throw new UserError("no command given; run asitis lint, asitis budget or asitis --help");
+  if (command === undefined) throw new UserError("no command given; run asitis lint, asitis budget, asitis loads or asitis --help");
 
   const root = single("--root", v.root);
   const maxFileBytes = maxFileMb(single("--max-file-mb", v["max-file-mb"]));
   const allowBroadRoot = !!v["allow-broad-root"];
 
-  if (command === "budget") {
+  if (command !== "loads" && v.tool?.length) throw new UserError("--tool only applies to asitis loads");
+  if (command === "budget" || command === "loads") {
     for (const [flag, given] of [
       ["--fail-on", v["fail-on"]],
       ["--config", v.config],
@@ -165,6 +180,17 @@ export function parse(argv: string[]): Parsed {
     if (v.quiet) throw new UserError("--quiet only applies to asitis lint");
     if (v["annotate-notes"]) throw new UserError("--annotate-notes only applies to asitis lint");
     if (v["fail-on-hidden-security"]) throw new UserError("--fail-on-hidden-security only applies to asitis lint");
+    if (command === "loads") {
+      if (rest.length > 1) throw new UserError("asitis loads takes at most one folder, the one a session starts in");
+      const tools: string[] = [];
+      for (const t of (v.tool ?? []).flatMap((x) => x.split(","))) {
+        const k = t.trim();
+        if (!k) continue;
+        if (!(LOADS_TOOLS as readonly string[]).includes(k)) throw new UserError(`--tool takes ${orList(LOADS_TOOLS)}, not ${shown(k)}`);
+        if (!tools.includes(k)) tools.push(k);
+      }
+      return { command: "loads", dir: rest[0], root, tools, format: pick("--format", single("--format", v.format), ["text", "json"] as const, "text"), maxFileBytes, allowBroadRoot };
+    }
     if (rest.length > 1) throw new UserError("asitis budget takes at most one file; leave it out for the whole folder");
     return {
       command: "budget",
@@ -175,7 +201,7 @@ export function parse(argv: string[]): Parsed {
       allowBroadRoot,
     };
   }
-  if (command !== "lint") throw new UserError(`unknown command ${shown(command)}; the commands are lint and budget`);
+  if (command !== "lint") throw new UserError(`unknown command ${shown(command)}; the commands are lint, budget and loads`);
 
   const format = pick("--format", single("--format", v.format), FORMATS, "text");
   const writeBaseline = !!v["write-baseline"];

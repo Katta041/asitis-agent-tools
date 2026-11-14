@@ -1,4 +1,4 @@
-// The MCP server: six read-only tools. There is no write, patch, exec or
+// The MCP server: seven read-only tools. There is no write, patch, exec or
 // network code anywhere in this package; tests assert that.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -19,6 +19,8 @@ import { scanComments, scanInvisible, scanRefComments } from "./scan.js";
 import { alignUtf8End, alignUtf8Start, type Profile } from "./text.js";
 import { approxTokens, fmtTokens } from "./tokens.js";
 import { VERSION } from "./version.js";
+import { loadContext, plan, PLAN_TOOLS, type ToolId } from "./load/index.js";
+import { resolveCwd, viewPlans } from "./load/view.js";
 
 export const FOOTER = "Edit these files without rewriting them: https://asitis.app/?ref=mcp";
 
@@ -433,6 +435,30 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
   );
 
   server.registerTool(
+    "load_plan",
+    {
+      title: "What the agent loads",
+      description:
+        "What each agent (Claude Code, Codex, Gemini CLI, Cursor, Copilot) loads when a session starts in a folder, in order: files at launch with @imports, files that load later (subfolder instruction files on first read, rules on matching files, nested skills), what gets cut (Codex 32 KiB chain, Claude Code 40,000-character on-demand cut, MEMORY.md 200 lines), what is never read and why, and token totals. Each step says whether it rests on vendor docs, a canary run or an assumption. Local estimates, read-only.",
+      inputSchema: {
+        cwd: z.string().max(CAPS.maxPathChars).optional().describe("Folder the session starts in, relative to the allowed folder (default: the allowed folder itself)"),
+        tool: z.enum(PLAN_TOOLS as [ToolId, ...ToolId[]]).optional().describe("One tool; omit for all five"),
+        offset: z.number().int().min(0).optional().describe("Skip this many steps per tool (paging; 60 are listed per call)"),
+      },
+      annotations: { title: "What the agent loads", ...READ_ONLY },
+    },
+    guard(async ({ cwd, tool, offset }, deadline) => {
+      const start = await resolveCwd(sandbox, cwd);
+      const ctx = await loadContext(sandbox, deadline);
+      const plans = [];
+      for (const t of tool ? [tool] : PLAN_TOOLS) plans.push(await plan(ctx, start, t));
+      const v = viewPlans(plans, { forModel: true, ...(offset ? { offset } : {}), walkNote: ctx.walk.truncated ? walkCutNote(ctx.walk) : "" });
+      const lines = v.text.split("\n");
+      return { content: [{ type: "text", text: [lines[0]!, UNTRUSTED_NOTE, ...lines.slice(1)].join("\n") }], structuredContent: { ...v.json, truncated: ctx.walk.truncated } };
+    }),
+  );
+
+  server.registerTool(
     "find_steering_files",
     {
       title: "Find steering files",
@@ -545,7 +571,7 @@ function oneLineIssues(e: unknown): string | null {
 function strictProtocolErrors(server: McpServer): void {
   const handlers = (server.server as unknown as { _requestHandlers?: unknown })._requestHandlers;
   if (!(handlers instanceof Map)) return;
-  const tools = ["read_markdown", "outline", "lint_steering", "context_budget", "find_steering_files", "suggest_fixes"];
+  const tools = ["read_markdown", "outline", "lint_steering", "context_budget", "load_plan", "find_steering_files", "suggest_fixes"];
   for (const [method, fn] of [...handlers.entries()] as Array<[string, (req: any, extra: unknown) => Promise<unknown>]>) {
     handlers.set(method, async (req: any, extra: unknown) => {
       if (method === "tools/call") {

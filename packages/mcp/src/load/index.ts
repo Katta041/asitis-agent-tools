@@ -24,7 +24,20 @@ function planSimple(ctx: LoadContext, tool: "windsurf" | "cline", cwd: string): 
   return { tool, cwd, steps, skipped: [], warnings: [], notes: [] };
 }
 
+const GROUP: Record<string, number> = { launch: 0, "on-read": 2, "on-match": 2, "on-invoke": 3, setting: 4 };
+
+/** Launch steps first (counted, then listed only), then later ones; load order is kept inside each group. */
+function ordered(p: LoadPlan): LoadPlan {
+  const rank = (s: LoadStep): number => (s.trigger === "launch" ? (s.counted ? 0 : 1) : GROUP[s.trigger]!);
+  const steps = p.steps.map((s, i) => ({ s, i })).sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i).map((x) => x.s);
+  return { ...p, steps };
+}
+
 export async function plan(ctx: LoadContext, cwd: string, tool: ToolId): Promise<LoadPlan> {
+  return ordered(await planOne(ctx, cwd, tool));
+}
+
+async function planOne(ctx: LoadContext, cwd: string, tool: ToolId): Promise<LoadPlan> {
   switch (tool) {
     case "claude-code":
       return planClaude(ctx, cwd);
