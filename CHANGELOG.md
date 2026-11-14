@@ -2,6 +2,22 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.3.1] - 2026-11-15
+
+### Fixed
+- `broken-import` reads `@` imports the way Claude Code does. I checked its parser in 2.1.312 and ran canary files through it: it takes the whole word after `@`, so `See @guide.md: for details`, `Follow @AGENTS.md.` and `(see @guide.md)` load nothing even when the file is there. Those are now warnings, and so is `(@guide.md)`, where the `@` does not follow a space. `@guide.md#setup` is no longer called missing, because Claude Code drops the `#setup`. Gemini CLI keeps it, so GEMINI.md is checked the Gemini way.
+- `broken-import` follows imports inside imported files, the way Claude Code loads them: depth first, each file once, and 4 hops deep (Gemini CLI: 5). A missing file further down, or one past the last hop, is reported on the import that starts the chain, with the chain written out: `"@docs/a.md -> @b.md -> @missing.md"`. Images and template placeholders in imported docs are skipped.
+- `context_budget` no longer counts an import that loads nothing.
+- An empty comment written `<!-->` or `<!--->` hid the rest of the file: everything up to the next `-->` was read as one comment, so visible text could get a `hidden-instruction` error ([#28](https://github.com/Katta041/asitis-agent-tools/issues/28)). Both are now empty comments, also for suppression comments, import detection, token counts and `suggest_fixes`. An empty comment no longer counts toward the `hidden-comment` note.
+- `lint_steering` on 10 MB of `[a` lines took about 2.9 s against a 3 s budget. The `duplicate-rule` placeholder check now runs once per rule text instead of once per copy: 1.3 s, same output.
+
+### Changed
+- `xml-tag`: a lone placeholder such as `<service>` in a skill description is now a note. Claude Code is fine with it, but the Claude API docs say a description "cannot contain XML tags" without saying what counts, so an upload could be refused. `List<String>`, autolinks and email addresses are not reported, and real markup is still a warning.
+- npm: the `@asitis/mcp` description now starts with "Linter for CLAUDE.md, AGENTS.md, SKILL.md and Cursor rules", and the keywords add `claude`, `codex`, `cursor`, `cursorrules`, `windsurf`, `agent-skills`, `cli`, `github-action`, `pre-commit`, `sarif` and `context-engineering`.
+- GitHub Action: renamed to "AsItIs lint for CLAUDE.md, AGENTS.md and SKILL.md" with a description under the Marketplace's 125-character limit, so it can be listed. Workflows that use `Katta041/asitis-agent-tools@v0.3.0` keep working.
+
+On 80 public repos, errors and warnings went from 220 to 227 and none went away. I checked all 7 new warnings by hand and each one is real: 6 imports that Claude Code does not load because of a trailing `.` or `)` or a `(` before the `@`, and one import inside an imported file that points at the wrong folder. There are also 7 new `xml-tag` notes. Details: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#031---2026-11-15) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#031---2026-11-15).
+
 ## [0.3.0] - 2026-10-15
 
 ### Added

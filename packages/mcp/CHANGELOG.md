@@ -2,6 +2,26 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-11-15
+
+### Fixed
+- `broken-import` resolves an import the way the tool that loads it does. Claude Code 2.1.312 matches `(?:^|\s)@((?:[^\s\\]|\\ )+)` in markdown text, cuts the match at `#` and keeps any punctuation; Gemini CLI's `findImports` takes the word up to whitespace and keeps everything. So when the file exists but the word has a trailing `:`, `.`, `;` or `)`, or the `@` comes right after `(`, the import loads nothing and is now a warning that says why. Before, the punctuation was stripped and the import passed. A `#section` after a Claude Code import is no longer reported as a missing file. Canary runs in Claude Code confirmed each case: `@colon.md:`, `@period.md.`, `@semi.md;`, `(see @paren.md)` and `(@open.md)` did not load; `**@bold.md**`, `_@em.md_`, `@frag.md#setup` and a list item did.
+- `broken-import` checks imports inside imported files. It walks them depth first, opens each file once and stops where the tool stops: 4 hops for Claude Code (`VENDOR.importMaxHops`; the canary chain loaded d1 to d4 and not d5) and 5 for Gemini CLI. A missing file, an import that loads nothing, or a file past the last hop is reported on the import in the linted file that starts the chain, with the chain in the message. A file cut off on one path but loaded through a shorter one is not reported. In imported files only paths that are surely files with a text extension Claude Code loads count; `@people`, `@scope/pkg`, images and template placeholders (`[name]`, `xxx`) are skipped. Imported CLAUDE.md, GEMINI.md and rule files are not followed, since they are linted on their own. At most 100 imported files are opened per linted file.
+- `context_budget` lists an import that loads nothing as "not loaded as written" and does not count its tokens.
+- `<!-->` and `<!--->` are complete, empty comments (CommonMark 0.31.2, 6.6). Every comment scanner looked for `-->` from four characters after `<!--`, so it missed the one that overlaps the opener and read the rest of the file as hidden ([#28](https://github.com/Katta041/asitis-agent-tools/issues/28)). Fixed in one place, `commentClose()` in `scan.ts`, used by `hidden-comment` and `hidden-instruction`, import detection, suppression comments, the budget's comment stripping and the `hidden-instruction` fix. Empty comments no longer count toward the `hidden-comment` note.
+- `duplicate-rule` ran its placeholder regex once per copy of a rule. A 10 MB file of `[a` lines has millions of copies and took 2.9 s in `lint_steering`; the result is now cached per rule text and the check is skipped when there is no `]`. 1.3 s, byte-identical output.
+
+### Changed
+- `xml-tag`: a lone `<word>` in a skill description (`<service>`, `<file>`, `<version>`) is a note instead of nothing. It is not reported after a letter (`List<String>`) or with `/` or `@` inside (autolinks, emails). Closing tags, self-closing tags and tags with attributes are still warnings.
+- npm description and keywords (see the root changelog).
+
+### Precision
+I ran `asitis lint --include skills,config` over 80 public repos: the top results of a GitHub code search for CLAUDE.md files with `@` imports, GEMINI.md and SKILL.md files, plus ruff, cal.com, sentry-javascript, pydantic-ai and vercel/ai. Compared with 0.3.0, errors and warnings went from 220 to 227, nothing was removed, and all 7 new warnings are real when checked by hand (6 punctuation or `(` imports, 1 chained import that resolves against the wrong folder). The first version of the chain check also reported image paths and `[placeholder]` paths in imported docs (9 more); those are now skipped. The 7 new `xml-tag` notes are 5 placeholders and 2 element names (`<details>`, `<Link>`).
+
+### Tests
+- `security-review.test.ts` failed about once in 60 runs. A fake key `Bearer B...` matched the correct output `Bearer Bearer [redacted, 16 chars]`. The leak check now leaves out the context words around a key (`Bearer `, the URL scheme and host), and the keys come from a seeded stream, so every run checks the same keys (`ASITIS_KEY_SEED` tries others). 150 seeds, 4 formats each, gave no false match.
+- `dos.test.ts` retries a tool call once when it goes over the 3 s budget. A cold first read of a 10 MB file written a moment before (Windows Defender scans it) or a GC pause can cost a second once; a slow scanner is slow both times. The budget itself is unchanged.
+
 ## [0.3.0] - 2026-10-15
 
 ### Added
