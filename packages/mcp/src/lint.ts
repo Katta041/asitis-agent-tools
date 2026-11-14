@@ -3,11 +3,12 @@
 import path from "node:path";
 import { analyse, type Doc } from "./doc.js";
 import { outline } from "./outline.js";
-import type { Kind } from "./kinds.js";
+import { isSteering, type Kind } from "./kinds.js";
 import { CAPS, VENDOR } from "./limits.js";
 import type { Sandbox } from "./paths.js";
 import { esc, hasUnsafe, q } from "./escape.js";
 import { extractImports, extractLinks, importIsSurelyFile, isExternalTarget, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
+import { findSecrets } from "./redact.js";
 import { looksLikeSuppression } from "./suppress.js";
 import { lineOfByte } from "./text.js";
 import { approxTokens } from "./tokens.js";
@@ -1124,6 +1125,65 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
   }
 }
 
+// secret-in-steering (F13). findSecrets() in redact.ts knows exact key shapes only, so a hit is a
+// key format, not a guess. Docs and steering files also carry placeholder keys on purpose
+// (AKIAIOSFODNN7EXAMPLE from the AWS docs, sk-ant-xxxx...), and a PEM header with no key under it
+// is prose about keys, so those are skipped. The message names the type, line and column, never a
+// single character of the key, and the fingerprint hashes the type instead of the line, so a
+// baseline file holds nothing derived from the key either.
+
+/** A token that is shaped like a key but was written by a person: a placeholder or an example. */
+export function placeholderKey(value: string): boolean {
+  if (/example|x{4}|X{4}|your|placeholder|dummy|fake|sample|redacted|changeme|\.\.\.|<|\*{3}/i.test(value)) return true;
+  // The random part: what follows the fixed prefix (ghp_, sk-ant-, AKIA, xoxb-, sk_live_).
+  const body = value.replace(/^(?:sk-ant-[a-z0-9]{0,8}-?|sk-(?:proj|svcacct|admin)-|sk-|github_pat_|gh[pousr]_|xox[abposr]-|(?:sk|rk)_(?:live|test)_|npm_|AIza|AKIA|ASIA)/, "");
+  if (body.length < 12) return true;
+  // Words joined by hyphens ("sk-governance-specialist", "xoxb-your-bot-token") are names, not keys.
+  if (/^[A-Za-z]{1,40}(?:[-_][A-Za-z]{1,40}){1,30}$/.test(body) && !/[A-Z].*[a-z].*[A-Z]|[a-z].*[A-Z].*[a-z]/.test(body)) return true;
+  let run = 1;
+  let up = 1;
+  const distinct = new Set<string>();
+  for (let i = 0; i < body.length; i++) {
+    distinct.add(body[i]!);
+    if (i === 0) continue;
+    const d = body.charCodeAt(i) - body.charCodeAt(i - 1);
+    run = d === 0 ? run + 1 : 1;
+    up = d === 1 ? up + 1 : 1;
+    // Five of one character, or six in a row like abcdef or 123456, is typed, not generated.
+    if (run >= 5 || up >= 6) return true;
+  }
+  return distinct.size < Math.min(10, Math.floor(body.length / 2));
+}
+
+/** True when the lines after a PEM header hold key material (a long base64 line), not prose or "...". */
+function pemBodyFollows(doc: Doc, line: number): boolean {
+  for (let k = line + 1; k <= Math.min(doc.lines.count - 1, line + 2); k++) {
+    const t = doc.lines.line(k).trim();
+    if (/^[A-Za-z0-9+/=]{40,}$/.test(t) && !placeholderKey(t)) return true;
+  }
+  return false;
+}
+
+function checkSecrets(doc: Doc, c: Collector): void {
+  if (!isSteering(doc.kind.kind)) return;
+  for (const s of findSecrets(doc.text, CAPS.maxFindingsPerRule)) {
+    const value = doc.text.slice(s.start, s.end);
+    const li = doc.lines.lineOf(s.start);
+    if (s.type === "private key" ? !pemBodyFollows(doc, li) : placeholderKey(value)) continue;
+    const column = s.start - doc.lines.start(li) + 1;
+    c.issues.push({
+      severity: "error",
+      rule: "secret-in-steering",
+      message: `Something shaped like a ${s.type} is on this line (column ${column}). Steering files are committed and sent to the model provider every session: revoke the key, delete it here and load it from an environment variable or a secret store. Deleting it does not remove it from git history, which is why it has to be revoked`,
+      line: li + 1,
+      column,
+      endLine: li + 1,
+      endColumn: column + (s.end - s.start),
+      fingerprintText: `secret-in-steering ${s.type}`,
+    });
+  }
+}
+
 export async function lintDoc(doc: Doc, sandbox: Sandbox): Promise<LintResult> {
   const c = new Collector();
   const body = doc.frontmatter.present ? doc.text.slice(doc.lines.start(Math.min(doc.frontmatter.endLine + 1, doc.lines.count - 1))) : doc.text;
@@ -1133,6 +1193,7 @@ export async function lintDoc(doc: Doc, sandbox: Sandbox): Promise<LintResult> {
   checkProfile(doc, c);
   c.issues.push(...hygieneIssues(doc)); // trailing-whitespace and final-newline (WP7), at most one each
   checkHidden(doc, c);
+  checkSecrets(doc, c);
   checkRules(doc, c);
   await checkLinks(doc, sandbox, c);
   if (hasUnsafe(doc.path)) {

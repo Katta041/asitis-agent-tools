@@ -3,7 +3,7 @@
 // and .asitisrc.json files agree on them. Every rule here is category security, so it can never
 // be suppressed inline.
 
-import { planned, SRC, type RuleMeta } from "./types.js";
+import { planned, rule, SRC, type RuleMeta } from "./types.js";
 
 export const SECURITY_RULES: RuleMeta[] = [
   planned({ id: "sec-covert-instruction", category: "security", defaultSeverity: "warning", summary: "Visible text tells the agent to hide something from the user or act covertly", why: "Hide-from-user, secretly, ignore-previous-instructions and identity-conditional wording in a skill or rule is how poisoned skills steer an agent.", source: SRC.toolPoisoning }),
@@ -16,5 +16,6 @@ export const SECURITY_RULES: RuleMeta[] = [
   planned({ id: "sec-hidden-markup-ext", category: "security", defaultSeverity: "warning", summary: "Text hidden in picture, alt, title, off-screen or collapsed markup", why: "Extends hidden-styled-text to other ways of hiding text from people but not from agents.", source: SRC.toolPoisoning }),
   planned({ id: "sec-skill-typosquat", category: "security", defaultSeverity: "warning", summary: "Skill name is one or two edits from a well-known skill or vendor", why: "Typosquatted skills ride on the trust of the real one.", source: SRC.toxicSkills }),
   planned({ id: "sec-agent-workflow", category: "security", defaultSeverity: "warning", scope: "project", summary: "CI workflow runs an agent on untrusted input with shell or write access", why: "An agent triggered by issues or pull_request_target with Bash allowed can be steered by anyone who opens an issue.", source: "https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions" }),
-  planned({ id: "secret-in-steering", category: "security", defaultSeverity: "error", summary: "Steering file contains something shaped like an API key or private key", why: "Steering files are committed and sent to a model provider in every session. The message shows the key type and first 4 characters only.", source: "https://docs.github.com/en/code-security/secret-scanning/introduction/about-secret-scanning" }),
+  // Activated in 0.4.0 (lint.ts, checkSecrets).
+  rule({ id: "secret-in-steering", category: "security", defaultSeverity: "error", summary: "Steering file contains something shaped like an API key or private key", why: "Steering files are committed and sent to a model provider in every session. The message names the key type, line and column only, never any part of the key, and no fix diff is offered for a line that holds one.", source: "https://docs.github.com/en/code-security/secret-scanning/introduction/about-secret-scanning" }),
 ];
