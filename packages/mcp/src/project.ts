@@ -103,6 +103,8 @@ export interface CheckContext {
   report(path: string, issue: Issue, file?: ExtraFile): void;
   /** A one-line notice shown after the findings. */
   note(text: string): void;
+  /** The project's .asitisrc.json, for checks with options (ruleOptions in config.ts). Null without one. */
+  config: LoadedConfig | null;
 }
 
 export interface ProjectCheck {
@@ -227,6 +229,7 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
       r.issues.push(issue);
     },
     note: (text) => void notes.push(text),
+    config,
   };
   for (const check of PROJECT_CHECKS) {
     if (check.include && !include.has(check.include)) continue;

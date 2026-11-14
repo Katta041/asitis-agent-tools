@@ -44,9 +44,20 @@ export interface LengthOptions {
 }
 export const LENGTH_OPTIONS: ReadonlyArray<keyof LengthOptions> = ["claudeMdLines", "skillMdLines", "cursorRuleLines", "codexBytes", "windsurfChars", "memoryIndexLines"];
 
+/**
+ * Whole-number options of rules other than length, with the range each accepts. The defaults and
+ * what each one means live with the check that reads them (checks/skill-triggers.ts).
+ */
+export const RULE_OPTIONS: Readonly<Record<string, Readonly<Record<string, { min: number; max: number }>>>> = {
+  "skill-description-vague": { maxWords: { min: 1, max: 100 } },
+  "skill-description-overlap": { notePercent: { min: 1, max: 100 }, warnPercent: { min: 1, max: 100 }, minSharedWords: { min: 1, max: 100 }, maxSkills: { min: 2, max: 2000 } },
+  "skill-listing-budget": { budgetChars: { min: 100, max: 10_000_000 }, maxDescChars: { min: 1, max: 100_000 } },
+};
+
 export interface RuleSetting {
   severity: ConfigSeverity;
-  options?: LengthOptions;
+  /** LengthOptions for length; the keys in RULE_OPTIONS for the rules listed there. */
+  options?: Record<string, number>;
 }
 
 export interface Override {
@@ -321,8 +332,9 @@ function parseRules(n: JsonNode, file: string, at: string): Record<string, RuleS
     const setting: RuleSetting = { severity: severityOf(v.items[0]!, file, `${at}.${id}[0]`) };
     const opts = v.items[1];
     if (opts) {
-      if (id !== "length") throw new UserError(`${file} line ${opts.line}: ${at}.${id} takes no options; only "length" has options (${LENGTH_OPTIONS.join(", ")})`);
-      setting.options = parseLengthOptions(opts, file, `${at}.${id}[1]`);
+      if (id === "length") setting.options = parseLengthOptions(opts, file, `${at}.${id}[1]`) as Record<string, number>;
+      else if (RULE_OPTIONS[id]) setting.options = parseRuleOptions(id, opts, file, `${at}.${id}[1]`);
+      else throw new UserError(`${file} line ${opts.line}: ${at}.${id} takes no options; only ${["length", ...Object.keys(RULE_OPTIONS)].map((r) => `"${r}"`).join(", ")} have options`);
     }
     out[id] = setting;
   }
@@ -341,6 +353,31 @@ function parseLengthOptions(n: JsonNode, file: string, at: string): LengthOption
       throw new UserError(`${file} line ${v.line}: ${at}.${e.key} must be a whole number from 1 to ${MAX_THRESHOLD.toLocaleString("en-US")}, not ${showValue(v)}`);
     }
     out[e.key as keyof LengthOptions] = v.value;
+  }
+  return out;
+}
+
+/**
+ * The options .asitisrc.json gives a rule under "rules" (not overrides: these are project-wide
+ * thresholds), or {} when there are none.
+ */
+export function ruleOptions(config: LoadedConfig | null, id: string): Record<string, number> {
+  return { ...(config?.rules[id]?.options ?? {}) };
+}
+
+function parseRuleOptions(id: string, n: JsonNode, file: string, at: string): Record<string, number> {
+  const spec = RULE_OPTIONS[id]!;
+  const names = Object.keys(spec);
+  if (n.type !== "object") throw new UserError(`${file} line ${n.line}: ${at} must be an object such as {"${names[0]}": ${spec[names[0]!]!.min}}, not ${showValue(n)}`);
+  const out: Record<string, number> = {};
+  for (const e of n.entries) {
+    const range = spec[e.key];
+    if (!range) throw new UserError(`${file} line ${e.line}: unknown option ${quoteKey(e.key)} for ${id}${hint(e.key, names)}`);
+    const v = e.value;
+    if (v.type !== "number" || !Number.isInteger(v.value) || v.value < range.min || v.value > range.max) {
+      throw new UserError(`${file} line ${v.line}: ${at}.${e.key} must be a whole number from ${range.min.toLocaleString("en-US")} to ${range.max.toLocaleString("en-US")}, not ${showValue(v)}`);
+    }
+    out[e.key] = v.value;
   }
   return out;
 }
@@ -661,7 +698,7 @@ export async function applyConfig(config: LoadedConfig | null, run: ConfigRun): 
     const settings = config ? settingsFor(config, relOf(r, doc)) : new Map<string, RuleSetting>();
     const off = (id: string): boolean => settings.get(id)?.severity === "off";
     // 2. thresholds
-    const lengthOpts = settings.get("length")?.options;
+    const lengthOpts = settings.get("length")?.options as LengthOptions | undefined;
     if (doc && lengthOpts) r.issues = applyThresholds(doc, r.issues, lengthOpts);
     // 3. asitis-disable comments (markdown files only)
     if (doc) {
