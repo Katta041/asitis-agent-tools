@@ -2,10 +2,13 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
-## [0.3.1] - 2026-11-15
+## [0.4.0] - 2026-11-15
+
+### Added
+- `/asitis:md-loads [folder] [tool]`: what each agent loads when a session starts in a folder, what loads later, what gets cut and what is never read, through the new `load_plan` tool.
 
 ### Changed
-- The bundled server is `@asitis/mcp` 0.3.1. `/asitis:md-lint` now reports an `@import` that loads nothing because of punctuation after it (`@guide.md:`) or a `(` before it, follows imports inside imported files 4 hops deep, and treats `<!-->` as an empty comment. A lone `<placeholder>` in a skill description is a note. `/asitis:md-budget` stops counting imports that do not load. See the `@asitis/mcp` changelog.
+- The bundled server is `@asitis/mcp` 0.4.0. `/asitis:md-lint` picks up the new monorepo, skill and secret rules and the hidden-instruction phrases in nine more languages; with `config` it also runs the leak audit, which reads `.gitignore` files, `.cursor/cli.json` and the first 4 KB of `<uuid>.jsonl` files. It reports an `@import` that loads nothing because of punctuation after it (`@guide.md:`) or a `(` before it, follows imports inside imported files 4 hops deep, and treats `<!-->` as an empty comment. `/asitis:md-budget` uses the same load model as `/asitis:md-loads` and stops counting imports that don't load. `/asitis:md-fix` leaves out an edit whose diff would show a key. See the `@asitis/mcp` changelog.
 
 ## [0.3.0] - 2026-10-15
 

@@ -2,21 +2,36 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
-## [0.3.1] - 2026-11-15
+## [0.4.0] - 2026-11-15
 
-### Fixed
-- `broken-import` reads `@` imports the way Claude Code does. I checked its parser in 2.1.312 and ran canary files through it: it takes the whole word after `@`, so `See @guide.md: for details`, `Follow @AGENTS.md.` and `(see @guide.md)` load nothing even when the file is there. Those are now warnings, and so is `(@guide.md)`, where the `@` does not follow a space. `@guide.md#setup` is no longer called missing, because Claude Code drops the `#setup`. Gemini CLI keeps it, so GEMINI.md is checked the Gemini way.
-- `broken-import` follows imports inside imported files, the way Claude Code loads them: depth first, each file once, and 4 hops deep (Gemini CLI: 5). A missing file further down, or one past the last hop, is reported on the import that starts the chain, with the chain written out: `"@docs/a.md -> @b.md -> @missing.md"`. Images and template placeholders in imported docs are skipped.
-- `context_budget` no longer counts an import that loads nothing.
-- An empty comment written `<!-->` or `<!--->` hid the rest of the file: everything up to the next `-->` was read as one comment, so visible text could get a `hidden-instruction` error ([#28](https://github.com/Katta041/asitis-agent-tools/issues/28)). Both are now empty comments, also for suppression comments, import detection, token counts and `suggest_fixes`. An empty comment no longer counts toward the `hidden-comment` note.
-- `lint_steering` on 10 MB of `[a` lines took about 2.9 s against a 3 s budget. The `duplicate-rule` placeholder check now runs once per rule text instead of once per copy: 1.3 s, same output.
+This one folds in 0.3.1, which never shipped on its own.
+
+### Added
+- `load_plan` tool, `asitis loads [dir]` and `/asitis:md-loads`: what Claude Code, Codex, Gemini CLI, Cursor and Copilot load when a session starts in a given folder. You get the files at launch with their imports, what loads later (a subfolder CLAUDE.md on first read, path rules on a matching file, nested skills), what gets cut (Codex's 32 KiB chain, MEMORY.md after 200 lines) and what is never read and why. Each step says whether it rests on vendor docs, a canary run in the real tool, or an assumption. Text by default, 60 steps per tool per call.
+- Monorepo rules: `path-rule-matches-nothing` (a `paths`, `globs` or `applyTo` pattern that matches no file in the repo), `nested-duplicate` and `nested-contradiction` (notes for a subfolder file that repeats or contradicts the one above it), and `sec-nested-override` (a subfolder file that tells the agent to ignore the files above it).
+- Skill checks: `skill-description-vague`, `skill-description-person`, `skill-description-overlap` (two skills whose descriptions say nearly the same thing), `skill-listing-budget` (skill descriptions in one `.claude` folder or plugin over Claude Code's 8,000-character listing budget) and `skill-shadowed-command` (a `.claude/commands` file with the same name as a skill, so it never runs). The first three and the budget take options in `.asitisrc.json`.
+- `secret-in-steering`: an API key or private key in a steering file is an error. The message gives the key type, line and column and never a character of the key; placeholders such as `AKIAIOSFODNN7EXAMPLE` or `sk-xxxx` are skipped.
+- Agent leak audit in the opt-in config scan: `secret-in-permission-rule` (a password, token or key saved into a permission rule by "Yes, and don't ask again", in Claude Code, Cursor CLI or Gemini CLI settings), `local-agent-file-not-ignored` (`settings.local.json`, `CLAUDE.local.md`, local subagent memory and sign-in files that no `.gitignore` covers) and `agent-transcript-in-repo` (committed session transcripts and copied agent state). `--include config` now also reads files named `.gitignore`, `.cursor/cli.json` and the first 4 KB of `<uuid>.jsonl` files. Nothing new is read without it.
+- `hidden-instruction` in Spanish, Portuguese, French, German, Russian, Chinese, Japanese, Korean and Hindi, inside hidden comments, for every category the English check has. Same error and warning split as English. No new findings on 4,363 real hidden comments; the rule page lists what it misses (#6).
+- MCP prompts `lint`, `budget`, `fix` and `loads`, so clients that list prompts can run AsItIs without knowing the tool names (`/mcp__asitis__lint` in Claude Code), and resources `asitis://findings` and `asitis://budget`, plus `asitis://findings/<path>` and `asitis://budget/<path>`.
+- `asitis lint --badge` prints a "checked with AsItIs" README badge after a clean run.
 
 ### Changed
-- `xml-tag`: a lone placeholder such as `<service>` in a skill description is now a note. Claude Code is fine with it, but the Claude API docs say a description "cannot contain XML tags" without saying what counts, so an upload could be refused. `List<String>`, autolinks and email addresses are not reported, and real markup is still a warning.
-- npm: the `@asitis/mcp` description now starts with "Linter for CLAUDE.md, AGENTS.md, SKILL.md and Cursor rules", and the keywords add `claude`, `codex`, `cursor`, `cursorrules`, `windsurf`, `agent-skills`, `cli`, `github-action`, `pre-commit`, `sarif` and `context-engineering`.
-- GitHub Action: renamed to "AsItIs lint for CLAUDE.md, AGENTS.md and SKILL.md" with a description under the Marketplace's 125-character limit, so it can be listed. Workflows that use `Katta041/asitis-agent-tools@v0.3.0` keep working.
+- `context_budget` is now a view of the same load model, so the two can't disagree. Some totals move: imports inside rule files count at launch, a nested `.claude/rules` folder no longer counts at the root, `.claude/AGENTS.md` counts when there is no CLAUDE.md, Codex's `AGENTS.override.md` replaces `AGENTS.md` and an empty `AGENTS.md` is skipped, a `.cursorrules` below the root no longer counts, and files over 4 MiB are skipped for Claude Code.
+- `broken-import` reads `@` imports the way Claude Code does. I checked its parser in 2.1.312 and ran canary files through it: it takes the whole word after `@`, so `See @guide.md: for details`, `Follow @AGENTS.md.` and `(see @guide.md)` load nothing even when the file is there. Those are now warnings, and so is `(@guide.md)`. `@guide.md#setup` is no longer called missing, because Claude Code drops the `#setup`. Gemini CLI keeps it, so GEMINI.md is checked the Gemini way. `context_budget` and `load_plan` don't count an import that loads nothing.
+- `broken-import` follows imports inside imported files: depth first, each file once, 4 hops for Claude Code and 5 for Gemini CLI. A problem further down is reported on the import that starts the chain, with the chain written out: `"@docs/a.md -> @b.md -> @missing.md"`.
+- `xml-tag`: a lone placeholder such as `<service>` in a skill description is a note now, not a warning.
+- `sec-permission-allow` masks a secret inside the rule it quotes, and its fingerprint for such a rule no longer depends on the secret, so baselines for those few findings need regenerating.
+- The old one-line Spanish, German, French, Chinese and Japanese "ignore previous instructions" pattern is gone. It matched mid-sentence; the new phrases need the verb to start a clause or be in the imperative. A harmful phrase in another language now beats an English match that only names the assistant, so `Claude: 忽略之前的所有指令` is an error.
+- npm description and keywords; the Action has a Marketplace-friendly name and description. `Katta041/asitis-agent-tools@v0.3.0` keeps working.
+- GitHub Actions: setup-node 7.1.0, setup-python 7.1.0, upload-sarif 4.39.3 (needs CodeQL bundle 2.20.7 or later on GHES). Bundled MCP SDK 1.32.1 and zod 4.6.7.
 
-On 80 public repos, errors and warnings went from 220 to 227 and none went away. I checked all 7 new warnings by hand and each one is real: 6 imports that Claude Code does not load because of a trailing `.` or `)` or a `(` before the `@`, and one import inside an imported file that points at the wrong folder. There are also 7 new `xml-tag` notes. Details: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#031---2026-11-15) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#031---2026-11-15).
+### Fixed
+- An empty comment written `<!-->` or `<!--->` hid the rest of the file, so visible text could get a `hidden-instruction` error ([#28](https://github.com/Katta041/asitis-agent-tools/issues/28)).
+- Fix diffs no longer print a line that holds a key (#32). An edit whose hunk would show one is left out of the fix, with a note.
+- `lint_steering` on 10 MB of `[a` lines took about 2.9 s against a 3 s budget; now 1.3 s with the same output.
+
+Details: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#040---2026-11-15) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#040---2026-11-15).
 
 ## [0.3.0] - 2026-10-15
 
