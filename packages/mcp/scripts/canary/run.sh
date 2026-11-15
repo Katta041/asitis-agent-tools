@@ -2,6 +2,9 @@
 # Runs claude -p from several folders of the canary trees and records which canaries it sees.
 # Usage: scripts/canary/run.sh <tree folder> <output file>. Compare the output with load_plan for
 # the same folders, then record confirmed behaviours in src/load/sources.ts (CANARY_RUNS).
+# claude -p cannot answer the external-imports question, so an import outside the start folder never
+# loads here unless the project was approved in an interactive session. Check those by hand: start
+# claude in the folder, answer the dialog, ask for the canaries, and note the version and the answer.
 T=$1; OUT=$2
 : > "$OUT"
 ASK="Without using any tool, list every token that starts with CNRY- that appears anywhere in your context so far (system prompt, project instructions, rules, memory, skill listings, system reminders). Output only the tokens, one per line, sorted, nothing else. If there are none, output NONE."

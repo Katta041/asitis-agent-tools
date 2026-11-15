@@ -181,12 +181,48 @@ describe("load plan keeps the 0.3.1 import rules", () => {
     expect(counted).not.toContain("paren.md");
     expect(steps.find((s) => s.path === "d4.md")!.via).toEqual(["CLAUDE.md", "d1.md", "d2.md", "d3.md"]);
   });
-  test("from a subfolder, an ancestor import that loads nothing as written is not listed as unexpanded", async () => {
+  test("from a subfolder, an ancestor import waits for approval; one that loads nothing as written is not listed as waiting", async () => {
     const root = temp({ "CLAUDE.md": "# Root\n\nSee @guide.md: for setup.\n@real.md\n", "guide.md": "# G\n", "real.md": "# R\n", "pkg/CLAUDE.md": "# Pkg\n" }, [".git"]);
     const r = await cli(["loads", "pkg", "--tool", "claude-code"], root);
     expect(r.code).toBe(0);
-    expect(r.out).toContain("real.md: imported by CLAUDE.md, but Claude Code does not expand imports");
-    expect(r.out).not.toContain("guide.md: imported by");
+    expect(r.out).toContain("Only after you approve imports from outside the start folder (not counted)");
+    expect(r.out).toMatch(/real\.md, .*imported by CLAUDE\.md, after you approve external imports for this project/);
+    expect(r.out).toContain("1 import points outside pkg (real.md)");
+    expect(r.out).toContain("claude -p never asks");
+    expect(r.out).not.toContain("does not expand");
+    expect(r.out).not.toMatch(/guide\.md, .*after you approve/);
+  });
+  test("external means outside the start folder, not above it", async () => {
+    const root = temp({
+      "CLAUDE.md": "@AGENTS.md\n@pkg/inner.md\n\n# Root\n",
+      "AGENTS.md": "# Agents\n\n@pkg/via-agents.md\n",
+      "pkg/inner.md": "# Inner\n",
+      "pkg/via-agents.md": "# Via agents\n",
+      "pkg/CLAUDE.md": "# Pkg\n\n@../shared.md\n@local.md\n",
+      "pkg/local.md": "# Local\n",
+      "shared.md": "# Shared\n",
+    }, [".git"]);
+    type Step = { path: string; trigger: string; counted: boolean; basis: string; note?: string };
+    const steps = async (dir: string): Promise<Step[]> => {
+      const r = await cli(["loads", dir, "--tool", "claude-code", "--format", "json"], root);
+      expect(r.code).toBe(0);
+      return (JSON.parse(r.out) as { tools: Array<{ steps: Step[] }> }).tools[0]!.steps;
+    };
+    const pkg = await steps("pkg");
+    const at = (p: string): Step => pkg.find((s) => s.path === p)!;
+    // An ancestor's import of a file inside the start folder loads at launch.
+    expect(at("pkg/inner.md")).toMatchObject({ trigger: "launch", counted: true });
+    expect(at("pkg/local.md")).toMatchObject({ trigger: "launch", counted: true });
+    // Outside the start folder: waits, from an ancestor or from the start folder's own file.
+    expect(at("AGENTS.md")).toMatchObject({ trigger: "on-approval", counted: false, basis: "canary" });
+    expect(at("shared.md")).toMatchObject({ trigger: "on-approval", counted: false });
+    // Reached through an external file: waits too, even though it sits inside the start folder.
+    expect(at("pkg/via-agents.md")).toMatchObject({ trigger: "on-approval", counted: false });
+    expect(at("pkg/via-agents.md").note).toContain("through a file outside the start folder");
+    // From the root nothing is external, so the launch total is what context_budget counts.
+    const top = await steps(".");
+    expect(top.filter((s) => s.trigger === "on-approval")).toEqual([]);
+    expect(top.find((s) => s.path === "AGENTS.md")).toMatchObject({ trigger: "launch", counted: true });
   });
   test("only a CLAUDE.local.md hides AGENTS.md: the warning names CLAUDE.local.md, not a CLAUDE.md", async () => {
     const root = temp({ "CLAUDE.local.md": "# Mine\n", "AGENTS.md": "# Agents\n", "pkg/x.ts": "" }, [".git"]);

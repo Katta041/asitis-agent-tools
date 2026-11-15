@@ -35,6 +35,8 @@ Prefer pnpm.
 
 Put `@AGENTS.md` at the top of CLAUDE.md so Claude Code loads the shared file first, then the Claude-specific lines. Or make CLAUDE.md a symlink to AGENTS.md if there is nothing Claude-specific. Or delete CLAUDE.md, in which case Claude Code (2.1.277 and later) reads AGENTS.md on its own. If you only need it working on your machine, type `/config` in Claude Code and set Project instructions to `claude-md-and-agents-md`, which reads both. A sentence such as "read AGENTS.md" in CLAUDE.md does not count: it does not load the file.
 
+In a monorepo where people start Claude Code in a subfolder, the import is the weak spot: from `packages/api`, the root's `AGENTS.md` sits outside the start folder, so Claude Code asks once per project to approve it and loads it only after a yes, and `claude -p` (scripts, CI) never asks, so it loads there only if someone approved it interactively first. A symlink has no such step: a root `CLAUDE.md` that is a symlink to `AGENTS.md` loaded from a subfolder in `claude -p` on Claude Code 2.1.312 and 2.1.325. `asitis loads packages/api` shows which imports wait for that approval.
+
 ## Suppress or configure
 
 For one finding, put a comment on the line above it. The reason after `--` is optional but worth writing:

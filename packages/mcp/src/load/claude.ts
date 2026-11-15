@@ -12,8 +12,12 @@
 // - From v2.1.309 a file that loads on demand (subfolder CLAUDE.md and its imports, nested rules,
 //   path-scoped rules) is cut at 40,000 characters on a 200K window (DOC.claudeOnDemandCut). Our
 //   canary on 2.1.312 did not see that cut, so we warn instead of cutting.
-// - Canary on 2.1.312: @imports in files from folders above the start folder are not expanded
-//   (claude-code issue 78697), and @imports in rules are.
+// - An @import whose file resolves outside the start folder is external (DOC.claudeImports). The
+//   first time a project has one, an interactive session asks the user to approve external imports;
+//   the answer is stored per project and the dialog does not come back. Until approved they do not
+//   load, and claude -p never shows the dialog, so there they load only if approved earlier. This is
+//   what makes an ancestor CLAUDE.md's @AGENTS.md look unexpanded in a -p run (claude-code issue
+//   78697). Canary on 2.1.312 and 2.1.325 (2026-11-15), interactive and -p, both answers.
 // - A file over 4 MiB is skipped (DOC.claudeTooLarge).
 // - AGENTS.md (DOC.claudeAgentsMd): read only when no CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md
 //   sits in the working folder or above; then every AGENTS.md and .claude/AGENTS.md from there up
@@ -27,7 +31,6 @@ import path from "node:path";
 import type { Doc } from "../doc.js";
 import { inMemoryFolder } from "../kinds.js";
 import { VENDOR } from "../limits.js";
-import { importIntent, importTarget } from "../scan.js";
 import { approxTokens } from "../tokens.js";
 import type { LoadContext } from "./context.js";
 import {
@@ -39,7 +42,6 @@ import {
   countingFiles,
   dirOf,
   expandImports,
-  importsOf,
   join,
   missingImportWarnings,
   scopeOf,
@@ -95,43 +97,40 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
   const readWhen = (dir: string): string => `when Claude reads or edits a file in ${dir}`;
   const primary = ctx.docs.filter((d) => d.file.root === sandbox.primary);
 
+  // Imports whose file sits outside the start folder, and imports reached through one, wait for the
+  // external-imports approval. From the project root nothing in the project is outside.
+  const external: string[] = [];
+  const approvalNote = "outside the start folder: Claude Code asks you to approve external imports the first time, once per project. Until you say yes it does not load, and if you say no it stays off. claude -p never asks, so there it loads only if you approved it in an interactive session before";
   const pushImports = (hits: ImportHit[], trigger: Trigger, when: string, scope: string, counted: boolean, onDemand: boolean): void => {
     const b = behaviour(TOOL, "imports", "documented", DOC.claudeImports);
+    const gated: boolean[] = [];
     for (const h of hits) {
       const kind: LoadStep["kind"] = h.overflow ? "overflow" : h.missingFrom || h.tokens === 0 && /not counted/.test(h.note ?? "") ? "missing" : "import";
+      const depth = h.depth ?? 1;
+      const outside = h.rel !== undefined && !within(h.rel, cwd);
+      const wait = (depth > 1 && gated[depth - 1] === true) || outside;
+      gated[depth] = wait;
+      if (outside && kind === "import") external.push(h.path);
       const tokens = h.tokens;
-      if (onDemand && h.doc) {
+      if (onDemand && h.doc && !wait) {
         const w = onDemandLimit(stripBlockComments(h.doc), h.path);
         if (w) warnings.push(w);
       }
+      const ext = wait && kind === "import";
       steps.push({
         path: h.path,
         kind,
-        trigger,
-        when,
+        trigger: ext ? "on-approval" : trigger,
+        when: ext ? (trigger === "launch" ? "after you approve external imports for this project" : `${when}, after you approve external imports for this project`) : when,
         ...(h.via ? { via: h.via } : {}),
         ...(h.depth !== undefined ? { depth: h.depth } : {}),
         tokens,
         scope,
-        counted,
-        ...b,
-        ...(h.note ? { note: h.note } : {}),
+        counted: ext ? false : counted,
+        ...(ext ? behaviour(TOOL, "external-imports-approval", "documented", DOC.claudeImports) : b),
+        ...(ext ? { note: outside ? approvalNote : `imported through a file outside the start folder, so it waits for the same approval` } : h.note ? { note: h.note } : {}),
         ...(h.missingFrom ? { missingFrom: h.missingFrom } : {}),
       });
-    }
-  };
-
-  // Canary on 2.1.312 (claude-code issue 78697): @imports in a CLAUDE.md, AGENTS.md or rule from a
-  // folder above the start folder are not expanded. List each direct import as not loaded.
-  const unexpanded = async (d: Doc, dir: string): Promise<void> => {
-    for (const im of importsOf(d)) {
-      const want = importIntent(im, "claude");
-      // Only imports that would load as written: "@guide.md:" or "(@x.md)" load nothing anywhere.
-      const read = importTarget(im, "claude");
-      if (!want || want.startsWith("~") || read === null || (read !== want && read !== "")) continue;
-      const probe = await sandbox.probe(want, path.dirname(d.file.real));
-      if (probe.state !== "ok" || !probe.real || seen.has(probe.real)) continue;
-      skipped.push({ path: sandbox.display(probe.real), reason: `imported by ${d.path}, but Claude Code does not expand imports in files from ${where(dir)} when it starts in ${where(cwd)}, a folder below it`, ...behaviour(TOOL, "ancestor-imports-not-expanded", "assumed", "https://github.com/anthropics/claude-code/issues/78697") });
     }
   };
 
@@ -169,10 +168,6 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
     const note = usingClaude ? `project instructions${from}${stripped}` : `read because there is no CLAUDE.md (Claude Code 2.1.277 and later)${from}${stripped}`;
     steps.push({ path: d.path, kind: "file", trigger: "launch", when: launchWhen, tokens: t, scope: it.dir, counted: true, ...b, note });
     if (d.profile.lines > VENDOR.claudeMdTargetLines) warnings.push(`${d.path} is ${fmt(d.profile.lines)} lines; Claude Code recommends under ${VENDOR.claudeMdTargetLines}`);
-    if (it.dir !== cwd) {
-      await unexpanded(d, it.dir);
-      continue;
-    }
     const hits = await expandImports(sandbox, d, seen, 1, deadline);
     pushImports(hits, "launch", launchWhen, it.dir, true, false);
     warnings.push(...missingImportWarnings(hits));
@@ -219,10 +214,6 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
         const id = scope === "" ? "rules-no-paths-launch" : "ancestor-rules-launch";
         const b = behaviour(TOOL, id, scope === "" ? "documented" : "assumed", DOC.claudeRules);
         steps.push({ path: d.path, kind: "file", trigger: "launch", when: launchWhen, tokens: bodyTokens(d, true), scope, counted: true, ...b, note: "rule without paths, so it loads every session" });
-        if (scope !== cwd) {
-          await unexpanded(d, scope);
-          continue;
-        }
         const hits = await expandImports(sandbox, d, seen, 1, deadline);
         pushImports(hits, "launch", launchWhen, scope, true, false);
         warnings.push(...missingImportWarnings(hits));
@@ -401,7 +392,14 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
     if (reason) skipped.push({ path: rel, reason, ...behaviour(TOOL, "variants-never-read", "documented", /\.agents\/rules/.test(rel) ? DOC.antigravityRules : DOC.claudeAgentsMd) });
   }
 
+  if (external.length) {
+    const first = external.slice(0, 3).join(", ");
+    const one = external.length === 1;
+    warnings.push(`${external.length === 1 ? "1 import points" : `${external.length} imports point`} outside ${where(cwd)} (${first}${external.length > 3 ? ", ..." : ""}). Claude Code loads ${one ? "it" : "them"} only after you approve external imports, which it asks once per project in an interactive session; claude -p never asks, so in scripts and CI ${one ? "it loads" : "they load"} only if someone already said yes. Start Claude higher up, or move ${one ? "the file" : "the files"} inside ${where(cwd)}`);
+  }
+
   const notes = [
+    ...(external.length ? ["Your answer to Claude Code's external-imports question is stored in your own Claude Code config, which AsItIs does not read, so those imports are listed as waiting for it."] : []),
     "Files above the project folder and in your home folder (~/.claude/CLAUDE.md, personal skills, plugins) are not shown.",
     "claudeMdExcludes and the Project instructions setting live in settings files AsItIs does not read; this assumes the defaults.",
   ];

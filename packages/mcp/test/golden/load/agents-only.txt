@@ -18,7 +18,8 @@ setting (not counted) file AGENTS.md [documented]
 ## claude-code from svc
 launch file AGENTS.md [canary]
 launch file svc/AGENTS.md [canary]
-skipped notes.md: imported by AGENTS.md, but Claude Code does not expand imports in files from the project root when it starts in svc, a folder below it [canary]
+on-approval (not counted) import notes.md depth 1 [canary]
+warning 1 import points outside svc (notes.md). Claude Code loads it only after you approve external imports, which it asks once per project in an interactive session; claude -p never asks, so in scripts and CI it loads only if someone already said yes. Start Claude higher up, or move the file inside svc
 
 ## codex from svc
 launch file AGENTS.md [documented]

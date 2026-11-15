@@ -10,4 +10,5 @@ launch file .claude/rules/always.md [canary]
 launch file pkg/.claude/rules/pkg.md [canary]
 on-match (not counted) file .claude/rules/nomatch.md matches 0 [canary]
 on-match (not counted) file .claude/rules/scoped.md matches 1 [canary]
-skipped docs/rule-extra.md: imported by .claude/rules/always.md, but Claude Code does not expand imports in files from the project root when it starts in pkg, a folder below it [canary]
+on-approval (not counted) import docs/rule-extra.md depth 1 [canary]
+warning 1 import points outside pkg (docs/rule-extra.md). Claude Code loads it only after you approve external imports, which it asks once per project in an interactive session; claude -p never asks, so in scripts and CI it loads only if someone already said yes. Start Claude higher up, or move the file inside pkg

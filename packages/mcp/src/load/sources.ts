@@ -70,8 +70,18 @@ export const CANARY_RUNS: readonly CanaryRun[] = [
       "sibling-claude-md",
       "variants-never-read", // AGENTS.override.md, AGENTS.local.md, .agents/rules
       "agents-skills-not-read",
-      "ancestor-imports-not-expanded",
     ],
+  },
+  {
+    // An ancestor CLAUDE.md with @AGENTS.md, started in a subfolder: an interactive session (driven in a
+    // pseudo-terminal) asks to allow external imports; yes loads AGENTS.md in that and later sessions,
+    // -p included; no keeps it off and the question does not come back; -p alone never loads it. An
+    // ancestor import of a file inside the start folder loads without asking; a start-folder import of
+    // ../x.md waits like an ancestor's. The 2026-11-14 run used -p only, which read as "not expanded".
+    tool: "claude-code",
+    version: "2.1.312 and 2.1.325",
+    date: "2026-11-15",
+    confirmed: ["external-imports-approval"],
   },
 ];
 

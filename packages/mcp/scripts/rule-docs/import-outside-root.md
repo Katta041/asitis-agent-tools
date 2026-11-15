@@ -7,7 +7,7 @@ An `@path` import that reaches outside the project: a home-folder path such as `
 
 @~/.claude/my-preferences.md
 ```
-Claude Code treats an import outside the working directory as external and shows an approval dialog the first time; if the person declines, the import stays off. Teammates do not have the file at all, so the project instructions differ from one machine to the next.
+Claude Code treats an import outside the working directory as external and shows an approval dialog the first time; if the person declines, the import stays off. Teammates do not have the file at all, so the project instructions differ from one machine to the next. `claude -p` never shows the dialog, so in scripts and CI the import loads only if someone already approved it in an interactive session.
 
 ## Good
 ```markdown

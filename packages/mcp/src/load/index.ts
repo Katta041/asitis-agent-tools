@@ -24,7 +24,7 @@ function planSimple(ctx: LoadContext, tool: "windsurf" | "cline", cwd: string): 
   return { tool, cwd, steps, skipped: [], warnings: [], notes: [] };
 }
 
-const GROUP: Record<string, number> = { launch: 0, "on-read": 2, "on-match": 2, "on-invoke": 3, setting: 4 };
+const GROUP: Record<string, number> = { launch: 0, "on-read": 2, "on-match": 2, "on-invoke": 3, "on-approval": 4, setting: 5 };
 
 /** Launch steps first (counted, then listed only), then later ones; load order is kept inside each group. */
 function ordered(p: LoadPlan): LoadPlan {

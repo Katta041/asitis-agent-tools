@@ -112,7 +112,7 @@ function fixPrompt(path: string | undefined): string {
 export const LOADS_STEPS = `Report the result to the user in this order, and keep it short:
 
 1. One line per tool: what loads at launch and its token total, largest first.
-2. Anything cut or not loaded that the user probably expects to load (for example an AGENTS.md that Claude Code skips because of a CLAUDE.md, a nested AGENTS.md past Codex's 32 KiB, a subfolder CLAUDE.md over 40,000 characters, skills in \`.agents/skills\`), with the reason the tool gave.
+2. Anything cut or not loaded that the user probably expects to load (for example an AGENTS.md that Claude Code skips because of a CLAUDE.md, a nested AGENTS.md past Codex's 32 KiB, a subfolder CLAUDE.md over 40,000 characters, skills in \`.agents/skills\`, an import that waits for approval because it sits outside the start folder), with the reason the tool gave.
 3. What loads later and when, in one or two lines, if it matters for the folder the user asked about.
 4. Steps marked (assumed): say these are not confirmed yet.`;
 

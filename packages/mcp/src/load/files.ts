@@ -195,6 +195,8 @@ export interface ImportHit {
   via?: string[];
   /** The parsed file, when it was read. */
   doc?: Doc;
+  /** Display path of the real imported file (root-relative POSIX in the primary root), when found. */
+  rel?: string;
 }
 
 const MAX_IMPORTS_LISTED = 200;
@@ -257,16 +259,17 @@ export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string
         note: secret ? "WARNING: a secrets or settings file is imported into context; estimated from size, not read" : "not markdown; estimated from file size, not read",
         depth,
         via,
+        rel: sandbox.display(probe.real),
       });
       continue;
     }
     try {
       const f = await sandbox.open(probe.real);
       const child = analyse(f, sandbox.displayFile(f));
-      out.push({ path: child.path, tokens: bodyTokens(child, true), note: depth === 1 ? "imported" : `imported, ${depth} hops deep`, depth, via, doc: child });
+      out.push({ path: child.path, tokens: bodyTokens(child, true), note: depth === 1 ? "imported" : `imported, ${depth} hops deep`, depth, via, doc: child, rel: sandbox.display(probe.real) });
       out.push(...(await expandImports(sandbox, child, seen, depth + 1, deadline, maxHops, tool, [...via, child.path])));
     } catch (e) {
-      out.push({ path: sandbox.display(probe.real), tokens: 0, note: e instanceof UserError ? e.message : "could not be read", depth, via });
+      out.push({ path: sandbox.display(probe.real), tokens: 0, note: e instanceof UserError ? e.message : "could not be read", depth, via, rel: sandbox.display(probe.real) });
     }
   }
   return out;

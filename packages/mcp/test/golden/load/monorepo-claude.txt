@@ -22,9 +22,10 @@ launch file CLAUDE.md [canary]
 launch file packages/api/CLAUDE.md [canary]
 launch import packages/api/api-guide.md depth 1 [canary]
 on-read (not counted) file packages/api/src/db/CLAUDE.md [canary]
-skipped docs/root-guide.md: imported by CLAUDE.md, but Claude Code does not expand imports in files from the project root when it starts in packages/api, a folder below it [canary]
+on-approval (not counted) import docs/root-guide.md depth 1 [canary]
 skipped packages/web/AGENTS.md: in packages/web, which is not the start folder, above it or below it [canary]
 skipped packages/web/CLAUDE.md: in packages/web, which is not the start folder, above it or below it [canary]
+warning 1 import points outside packages/api (docs/root-guide.md). Claude Code loads it only after you approve external imports, which it asks once per project in an interactive session; claude -p never asks, so in scripts and CI it loads only if someone already said yes. Start Claude higher up, or move the file inside packages/api
 
 ## codex from packages/api
 skipped packages/web/AGENTS.md: in packages/web, which is not on the path from the project root to the start folder [documented]
@@ -39,11 +40,12 @@ skipped packages/web/AGENTS.md: in packages/web, which is not the workspace fold
 ## claude-code from packages/web/src
 launch file CLAUDE.md [canary]
 launch file packages/web/CLAUDE.md [canary]
-skipped docs/root-guide.md: imported by CLAUDE.md, but Claude Code does not expand imports in files from the project root when it starts in packages/web/src, a folder below it [canary]
+on-approval (not counted) import docs/root-guide.md depth 1 [canary]
 skipped packages/web/AGENTS.md: packages/web/CLAUDE.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it [canary]
 skipped packages/api/CLAUDE.md: in packages/api, which is not the start folder, above it or below it [canary]
 skipped packages/api/src/db/CLAUDE.md: in packages/api/src/db, which is not the start folder, above it or below it [canary]
 warning Claude Code ignores packages/web/AGENTS.md here: there is a CLAUDE.md in this folder or above and none imports it. Add the line @AGENTS.md to a CLAUDE.md next to it if both should share instructions
+warning 1 import points outside packages/web/src (docs/root-guide.md). Claude Code loads it only after you approve external imports, which it asks once per project in an interactive session; claude -p never asks, so in scripts and CI it loads only if someone already said yes. Start Claude higher up, or move the file inside packages/web/src
 
 ## codex from packages/web/src
 launch file packages/web/AGENTS.md [documented]

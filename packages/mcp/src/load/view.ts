@@ -68,13 +68,14 @@ function toolView(p: LoadPlan, opts: ViewOptions): { lines: string[]; json: Reco
   const offset = Math.min(opts.offset ?? 0, p.steps.length);
   const page = p.steps.slice(offset, offset + MAX_STEPS);
   const next = offset + page.length < p.steps.length ? offset + page.length : null;
-  const head = `${toolName(p.tool)}: ${t.launchSteps ? `${fmtTokens(t.launchTokens)} at launch from ${plural(t.launchSteps, "file")}` : "nothing counted at launch"}${t.laterSteps ? `; ${plural(t.laterSteps, "more file")} can load later (${fmtTokens(t.laterTokens).replace(/^about /, "up to about ")})` : ""}${t.conditionalSteps ? `; ${plural(t.conditionalSteps, "file")} depending on settings or not counted` : ""}${t.cutSteps ? `; ${plural(t.cutSteps, "file")} cut` : ""}${t.skipped ? `; ${n(t.skipped)} not loaded` : ""}`;
+  const head = `${toolName(p.tool)}: ${t.launchSteps ? `${fmtTokens(t.launchTokens)} at launch from ${plural(t.launchSteps, "file")}` : "nothing counted at launch"}${t.laterSteps ? `; ${plural(t.laterSteps, "more file")} can load later (${fmtTokens(t.laterTokens).replace(/^about /, "up to about ")})` : ""}${t.conditionalSteps ? `; ${plural(t.conditionalSteps, "file")} depending on ${p.steps.some((s) => s.trigger === "on-approval") ? "settings or your approval," : "settings"} or not counted` : ""}${t.cutSteps ? `; ${plural(t.cutSteps, "file")} cut` : ""}${t.skipped ? `; ${n(t.skipped)} not loaded` : ""}`;
   const lines: string[] = ["", head];
   const groups: Array<[string, (s: LoadStep) => boolean]> = [
     ["At launch", (s) => s.trigger === "launch" && s.counted],
     ["At launch, but not counted in the total", (s) => s.trigger === "launch" && !s.counted],
     ["Later, when the agent works in a folder or on matching files", (s) => s.trigger === "on-read" || s.trigger === "on-match"],
     ["Only when picked (by description or by you)", (s) => s.trigger === "on-invoke"],
+    ["Only after you approve imports from outside the start folder (not counted)", (s) => s.trigger === "on-approval"],
     ["Only if a setting is on (not counted)", (s) => s.trigger === "setting"],
   ];
   for (const [title, pick] of groups) {

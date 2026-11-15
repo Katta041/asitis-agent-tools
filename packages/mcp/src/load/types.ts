@@ -13,8 +13,10 @@ export const PLAN_TOOLS: readonly ToolId[] = ["claude-code", "codex", "gemini-cl
  * - on-match: when the agent works with a file matching the step's patterns.
  * - on-invoke: when the agent or the user picks it (a description-only rule, an @-mention).
  * - setting: only when a setting whose default we cannot see is on.
+ * - on-approval: only after the user approves it in the tool (Claude Code's dialog for imports from
+ *   outside the start folder). The answer is stored per project, so we cannot see it.
  */
-export type Trigger = "launch" | "on-read" | "on-match" | "on-invoke" | "setting";
+export type Trigger = "launch" | "on-read" | "on-match" | "on-invoke" | "setting" | "on-approval";
 
 /**
  * Why we believe it.
@@ -89,7 +91,7 @@ export interface PlanTotals {
   launchSteps: number;
   laterTokens: number;
   laterSteps: number;
-  /** Steps that load only when a setting we cannot see is on, or that load at launch but are not counted. */
+  /** Steps that load only when a setting we cannot see is on or after an approval, or that load at launch but are not counted. */
   conditionalSteps: number;
   cutSteps: number;
   skipped: number;
@@ -108,7 +110,7 @@ export function totals(p: LoadPlan): PlanTotals {
     if (s.trigger === "launch" && s.counted) {
       launchTokens += s.tokens;
       launchSteps++;
-    } else if (s.trigger === "setting" || s.trigger === "launch") {
+    } else if (s.trigger === "setting" || s.trigger === "on-approval" || s.trigger === "launch") {
       conditionalSteps++;
     } else {
       laterTokens += s.tokens;
