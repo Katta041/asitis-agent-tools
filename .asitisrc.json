@@ -1,0 +1,4 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Katta041/asitis-agent-tools/main/packages/mcp/schema/asitisrc-1.json",
+  "ignore": ["examples/**"]
+}
