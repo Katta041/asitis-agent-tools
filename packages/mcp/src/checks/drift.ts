@@ -20,16 +20,15 @@
 //   deeper files are dropped.
 
 import path from "node:path";
-import { analyse, type Doc } from "../doc.js";
+import type { Doc } from "../doc.js";
 import { dp, q } from "../escape.js";
 import { CAPS, VENDOR } from "../limits.js";
 import { forEachRule, type Issue } from "../lint.js";
-import type { OpenedFile, Sandbox } from "../paths.js";
 import type { CheckContext, ExtraFile, ProjectCheck } from "../project.js";
 import { preview } from "../redact.js";
-import { extractImports } from "../scan.js";
 import { lineOfByte } from "../text.js";
 import { notProjectInstructions } from "../places.js";
+import { bringsIn, CodexChain, codexFile, countingFiles, dirOf, FileIndex as Files, importTargets, join, parentOf } from "../load/files.js";
 
 export interface DriftOptions {
   /**
@@ -45,11 +44,6 @@ export interface DriftOptions {
 }
 
 export const DRIFT_DEFAULTS: DriftOptions = { jaccard: 0.5, minShared: 3, maxPerPair: 10 };
-
-/** Claude Code follows @imports up to four hops (memory docs, "Import additional files"). */
-const MAX_IMPORT_HOPS = 4;
-/** Files the check opens beyond the linted ones (ancestor CLAUDE.md files, imports, overrides). */
-const MAX_EXTRA_OPENS = 400;
 
 type Tool = "claude" | "agents" | "gemini" | "copilot" | "cursor";
 
@@ -70,19 +64,13 @@ interface Member {
   full: boolean;
 }
 
-interface Rules {
+export interface Rules {
   /** Normalised rule text to its first line and preview. */
   all: Map<string, { line: number; preview: string }>;
   pos: Map<string, { line: number; preview: string }>;
   neg: Map<string, { line: number; preview: string }>;
 }
 
-const dirOf = (rel: string): string => {
-  const d = path.posix.dirname(rel);
-  return d === "." ? "" : d;
-};
-const join = (dir: string, name: string): string => (dir ? `${dir}/${name}` : name);
-const parentOf = (dir: string): string | null => (dir === "" ? null : dirOf(dir));
 const fmt = (x: number): string => x.toLocaleString("en-US");
 const quote = (text: string): string => q(preview(text, 80), 80);
 
@@ -109,7 +97,7 @@ function memberOf(doc: Doc): Member | null {
   return null;
 }
 
-function rulesOf(doc: Doc): Rules {
+export function rulesOf(doc: Doc): Rules {
   const r: Rules = { all: new Map(), pos: new Map(), neg: new Map() };
   forEachRule(doc, (u) => {
     if (!u.rule && !u.pol) return;
@@ -122,166 +110,6 @@ function rulesOf(doc: Doc): Rules {
   return r;
 }
 
-/** Per-call file access: folder listings and opened files, each done once. */
-class Files {
-  private readonly lists = new Map<string, Map<string, "file" | "dir" | "symlink" | "other"> | null>();
-  private readonly opened = new Map<string, Doc | null>();
-  private readonly reals = new Map<string, string | null>();
-  private extra = 0;
-  readonly byRel = new Map<string, Doc>();
-  readonly byReal = new Map<string, Doc>();
-
-  constructor(
-    private readonly sandbox: Sandbox,
-    docs: readonly Doc[],
-  ) {
-    for (const d of docs) {
-      if (d.file.root.extra) continue;
-      this.byRel.set(d.file.rel, d);
-      this.byReal.set(d.file.real, d);
-    }
-  }
-
-  private abs(rel: string): string {
-    return rel ? path.join(this.sandbox.primary.real, ...rel.split("/")) : this.sandbox.primary.real;
-  }
-
-  async list(dir: string): Promise<Map<string, "file" | "dir" | "symlink" | "other"> | null> {
-    if (this.lists.has(dir)) return this.lists.get(dir)!;
-    let out: Map<string, "file" | "dir" | "symlink" | "other"> | null = null;
-    try {
-      const l = await this.sandbox.listDir(this.abs(dir));
-      out = new Map(l.entries.map((e) => [e.name, e.type]));
-    } catch {
-      out = null;
-    }
-    this.lists.set(dir, out);
-    return out;
-  }
-
-  /** Whether a regular file (or a symlink to one inside the root) with this exact name is in the folder. */
-  async hasFile(dir: string, name: string): Promise<boolean> {
-    const t = (await this.list(dir))?.get(name);
-    if (t === "file") return true;
-    if (t !== "symlink") return false;
-    return (await this.real(join(dir, name))) !== null;
-  }
-
-  /** The real path of a root-relative file, or null when it is missing, outside the root or not a file. */
-  async real(rel: string): Promise<string | null> {
-    if (this.reals.has(rel)) return this.reals.get(rel)!;
-    const known = this.byRel.get(rel);
-    let out: string | null = known ? known.file.real : null;
-    if (!known) {
-      const p = await this.sandbox.probe(this.abs(rel), this.sandbox.primary.real).catch(() => null);
-      out = p?.state === "ok" && p.real && p.size !== undefined && !(await this.isDir(rel)) ? p.real : null;
-    }
-    this.reals.set(rel, out);
-    return out;
-  }
-
-  private async isDir(rel: string): Promise<boolean> {
-    const parent = dirOf(rel);
-    const t = (await this.list(parent))?.get(rel.slice(rel.lastIndexOf("/") + 1));
-    if (t === "dir") return true;
-    if (t !== "symlink") return false;
-    return (await this.list(rel)) !== null;
-  }
-
-  private readonly skillDirs = new Map<string, boolean>();
-
-  /**
-   * Whether a folder is inside a skill (it or a folder above it holds SKILL.md). Files there, such
-   * as the AGENTS.md some published skills ship as their reference, are skill material that loads
-   * with the skill, not project instructions.
-   */
-  async inSkill(dir: string): Promise<boolean> {
-    const hit = this.skillDirs.get(dir);
-    if (hit !== undefined) return hit;
-    const parent = parentOf(dir);
-    const out = (await this.hasFile(dir, "SKILL.md")) || (parent !== null && (await this.inSkill(parent)));
-    this.skillDirs.set(dir, out);
-    return out;
-  }
-
-  /** The linted doc for a path, or the file opened and parsed here; null when it cannot be read. */
-  async doc(rel: string): Promise<Doc | null> {
-    const known = this.byRel.get(rel);
-    if (known) return known;
-    if (this.opened.has(rel)) return this.opened.get(rel)!;
-    let out: Doc | null = null;
-    if (this.extra < MAX_EXTRA_OPENS) {
-      this.extra++;
-      try {
-        const f: OpenedFile = await this.sandbox.open(this.abs(rel));
-        out = analyse(f, this.sandbox.displayFile(f));
-      } catch {
-        out = null;
-      }
-    }
-    this.opened.set(rel, out);
-    return out;
-  }
-}
-
-/** Root-relative targets of a file's @imports that stay inside the root. */
-function importTargets(doc: Doc): string[] {
-  const dir = dirOf(doc.file.rel);
-  const out: string[] = [];
-  for (const im of extractImports(doc.lines, doc.fence, doc.frontmatter.present ? doc.frontmatter.endLine : -1)) {
-    const p = im.path;
-    if (p.startsWith("~") || p.startsWith("/") || /^[A-Za-z]:/.test(p)) continue;
-    const t = path.posix.normalize(join(dir, p));
-    if (t === ".." || t.startsWith("../")) continue;
-    out.push(t);
-  }
-  return out;
-}
-
-/**
- * Whether a CLAUDE.md gives Claude Code this AGENTS.md: it is the same file (symlink), a copy with
- * the same text (some repos keep two identical files), or imports it within four hops.
- */
-async function bringsIn(files: Files, claudeRel: string, agents: Doc): Promise<boolean | null> {
-  const agentsReal = agents.file.real;
-  const start = await files.real(claudeRel);
-  if (start === null) return null;
-  if (start === agentsReal) return true;
-  let frontier = [claudeRel];
-  const seen = new Set<string>([start]);
-  for (let hop = 0; hop < MAX_IMPORT_HOPS && frontier.length; hop++) {
-    const next: string[] = [];
-    for (const rel of frontier) {
-      const d = await files.doc(rel);
-      if (!d) {
-        if (hop === 0) return null; // the CLAUDE.md itself cannot be read: do not guess
-        continue;
-      }
-      if (hop === 0 && d.text.trim() === agents.text.trim()) return true;
-      for (const t of importTargets(d)) {
-        const real = await files.real(t);
-        if (real === null || seen.has(real)) continue;
-        if (real === agentsReal) return true;
-        seen.add(real);
-        if (/\.md$/i.test(t)) next.push(t);
-      }
-    }
-    frontier = next;
-  }
-  return false;
-}
-
-/** Files that switch off Claude Code's AGENTS.md fallback, from this folder up to the root, nearest first. */
-async function countingFiles(files: Files, dir: string): Promise<string[]> {
-  const out: string[] = [];
-  for (let d: string | null = dir; d !== null; d = parentOf(d)) {
-    for (const name of ["CLAUDE.md", "CLAUDE.local.md"]) if (await files.hasFile(d, name)) out.push(join(d, name));
-    const dotClaude = (await files.list(d))?.get(".claude");
-    if ((dotClaude === "dir" || dotClaude === "symlink") && (await files.hasFile(join(d, ".claude"), "CLAUDE.md"))) out.push(join(d, ".claude/CLAUDE.md"));
-  }
-  return out;
-}
-
 /**
  * One cause often hits many files at once (a root CLAUDE.md shadowing 60 nested AGENTS.md files, or
  * a long root AGENTS.md cutting every package file). Up to GROUP_MAX files of a group get a
@@ -289,13 +117,13 @@ async function countingFiles(files: Files, dir: string): Promise<string[]> {
  */
 const GROUP_MAX = 3;
 
-interface Pending {
+export interface Pending {
   path: string;
   issue: Issue;
   extra?: ExtraFile;
 }
 
-function emitGroup(ctx: CheckContext, items: Pending[], groupMessage: (others: string) => string): void {
+export function emitGroup(ctx: CheckContext, items: Pending[], groupMessage: (others: string) => string): void {
   items.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   if (items.length <= GROUP_MAX) {
     for (const it of items) ctx.report(it.path, it.issue, it.extra);
@@ -467,35 +295,11 @@ async function checkVariants(ctx: CheckContext, files: Files, dirs: Iterable<str
   }
 }
 
-/** Bytes Codex takes from the file it reads in this folder, which file, or null when there is none. */
-async function codexFile(files: Files, dir: string): Promise<{ rel: string; bytes: number; doc: Doc | null } | null> {
-  for (const name of ["AGENTS.override.md", "AGENTS.md"]) {
-    if (!(await files.hasFile(dir, name))) continue;
-    const d = await files.doc(join(dir, name));
-    // Codex picks the first name that exists, then skips it if it is empty (agents_md.rs).
-    if (!d) return null;
-    return { rel: join(dir, name), bytes: d.text.trim() ? d.file.buf.length : 0, doc: d };
-  }
-  return null;
-}
-
 async function checkCodexChain(ctx: CheckContext, files: Files, agentsDocs: Doc[]): Promise<void> {
   const budget = VENDOR.codexAgentsMdBytes;
-  const chainCache = new Map<string, Array<{ rel: string; bytes: number }>>();
-  // Codex files from the root down to (but not including) this folder.
-  const above = async (dir: string): Promise<Array<{ rel: string; bytes: number }>> => {
-    const hit = chainCache.get(dir);
-    if (hit) return hit;
-    const parent = parentOf(dir);
-    let out: Array<{ rel: string; bytes: number }> = [];
-    if (parent !== null) {
-      const up = await above(parent);
-      const here = await codexFile(files, parent);
-      out = here && here.bytes ? [...up, { rel: here.rel, bytes: here.bytes }] : up;
-    }
-    chainCache.set(dir, out);
-    return out;
-  };
+  // Codex files from the root down to (but not including) each folder, shared through a cache.
+  const codexChain = new CodexChain(files);
+  const above = (dir: string): Promise<Array<{ rel: string; bytes: number }>> => codexChain.above(dir);
   const seen = new Set<string>();
   // Files cut or dropped for the same reason: the same files above them.
   const groups = new Map<string, { names: string; used: number; dropped: boolean; items: Pending[] }>();

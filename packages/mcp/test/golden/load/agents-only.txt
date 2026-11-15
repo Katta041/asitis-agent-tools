@@ -1,0 +1,33 @@
+## claude-code from (root)
+launch file AGENTS.md [canary]
+launch import notes.md depth 1 [canary]
+on-read (not counted) file svc/AGENTS.md [canary]
+
+## codex from (root)
+launch file AGENTS.md [documented]
+skipped svc/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+on-read (not counted) file svc/AGENTS.md [documented]
+
+## copilot from (root)
+on-read (not counted) file svc/AGENTS.md [documented]
+setting (not counted) file AGENTS.md [documented]
+
+## claude-code from svc
+launch file AGENTS.md [canary]
+launch file svc/AGENTS.md [canary]
+skipped notes.md: imported by AGENTS.md, but Claude Code does not expand imports in files from the project root when it starts in svc, a folder below it [canary]
+
+## codex from svc
+launch file AGENTS.md [documented]
+launch file svc/AGENTS.md [documented]
+
+## cursor from svc
+launch (not counted) file svc/AGENTS.md [assumed]
+skipped AGENTS.md: in the project root, outside the opened folder [assumed]
+
+## copilot from svc
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file svc/AGENTS.md [documented]

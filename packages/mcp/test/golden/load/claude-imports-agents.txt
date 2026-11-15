@@ -1,0 +1,13 @@
+## claude-code from (root)
+launch file CLAUDE.md [canary]
+launch import AGENTS.md depth 1 [canary]
+
+## codex from (root)
+launch file AGENTS.md [assumed]
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+
+## copilot from (root)
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file CLAUDE.md [documented]

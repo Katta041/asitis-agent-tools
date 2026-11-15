@@ -21,9 +21,9 @@ const lintOne = async (p: string): Promise<FileLint> => {
 const rules = (f: FileLint): string[] => f.issues.map((i) => i.rule);
 
 describe("tool list", () => {
-  test("exactly six read-only tools, no write or patch tool", async () => {
+  test("exactly seven read-only tools, no write or patch tool", async () => {
     const { tools } = await c.client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["context_budget", "find_steering_files", "lint_steering", "outline", "read_markdown", "suggest_fixes"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["context_budget", "find_steering_files", "lint_steering", "load_plan", "outline", "read_markdown", "suggest_fixes"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint, t.name).toBe(true);
       expect(t.annotations?.destructiveHint, t.name).toBe(false);

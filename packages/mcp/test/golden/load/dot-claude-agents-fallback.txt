@@ -1,0 +1,13 @@
+## claude-code from (root)
+launch file AGENTS.md [canary]
+launch file .claude/AGENTS.md [canary]
+
+## codex from (root)
+launch file AGENTS.md [assumed]
+skipped .claude/AGENTS.md: Codex reads AGENTS.md in each folder, not .claude/AGENTS.md [documented]
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+
+## copilot from (root)
+setting (not counted) file AGENTS.md [documented]

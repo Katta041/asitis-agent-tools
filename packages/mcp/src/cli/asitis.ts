@@ -2,6 +2,7 @@
 //
 //   asitis lint [paths...] [options]    lint steering files, exit 0, 1, 2 or 3
 //   asitis budget [file] [options]      what each agent loads every session
+//   asitis loads [dir] [options]        what each agent loads when it starts in a folder, in order
 //
 // Exit codes: 0 clean, 1 findings at or above --fail-on, 2 something the user can fix (one line on
 // stderr, nothing on stdout), 3 a bug in asitis (one line, stack only with ASITIS_DEBUG=1). The
@@ -21,7 +22,10 @@ import { formatText } from "../format/text.js";
 import { Sandbox, UserError } from "../paths.js";
 import { lintProject } from "../project.js";
 import { VERSION } from "../version.js";
-import { parse, type BudgetArgs, type FailOn, type LintArgs } from "./args.js";
+import { parse, type BudgetArgs, type FailOn, type LintArgs, type LoadsArgs } from "./args.js";
+import { loadContext, plan, PLAN_TOOLS, type ToolId } from "../load/index.js";
+import { resolveCwd, viewPlans } from "../load/view.js";
+import { walkCutNote } from "../project.js";
 import { fileBudgetReport, projectBudgetReport } from "./budget.js";
 
 /** Exit codes. 2 is anything the user can fix; 3 is a bug in asitis. */
@@ -41,6 +45,7 @@ Read-only: it never writes a file and makes no network calls.
 Usage:
   asitis lint [paths...] [options]   lint the given files, or every steering file under the root
   asitis budget [file] [options]     tokens each agent loads at the start of every session
+  asitis loads [dir] [options]       what each agent loads when a session starts in dir, in order
   asitis --version | --help
 
 Options for lint:
@@ -61,6 +66,7 @@ Options for lint:
                            exit 1 when .asitisrc.json or the baseline hides or lowers a security finding
 
 Options for budget: --root, --format text|json, --max-file-mb, --allow-broad-root.
+Options for loads: --root, --tool <list>, --format text|json, --max-file-mb, --allow-broad-root.
 
 Exit codes: 0 no findings at or above --fail-on, 1 findings, 2 usage or input error, 3 internal error.
 Docs: https://github.com/Katta041/asitis-agent-tools/blob/main/docs/cli-contract.md
@@ -96,6 +102,21 @@ every session, largest first. With a file, counts that file and what it imports.
 estimates. Exits 0 when the count ran, 2 on a usage or input error.
 
   --root <dir>             the one folder asitis may read (default: the current folder)
+  --format <f>             text (default) or json
+  --max-file-mb <n>        largest file analysed, 1 to 64 (default 16)
+  --allow-broad-root       allow your home folder or the filesystem root as --root
+`;
+
+export const HELP_LOADS = `asitis loads [dir] [options]
+
+Shows what each agent loads when a session starts in dir (default: the root), in order: files at
+launch with their @imports, files that load later (subfolder instruction files, rules on matching
+files, nested skills), what gets cut, what is never read and why, and token totals. Steps marked
+(assumed) are not backed by vendor docs or a canary run yet. Exits 0 when it ran, 2 on a usage error.
+
+  --root <dir>             the one folder asitis may read (default: the current folder); pass the
+                           repository root so files above dir count
+  --tool <list>            claude-code, codex, gemini-cli, cursor, copilot (comma-separated; default all)
   --format <f>             text (default) or json
   --max-file-mb <n>        largest file analysed, 1 to 64 (default 16)
   --allow-broad-root       allow your home folder or the filesystem root as --root
@@ -342,6 +363,35 @@ async function budget(a: BudgetArgs, io: CliIO): Promise<number> {
   return EXIT.ok;
 }
 
+async function loads(a: LoadsArgs, io: CliIO): Promise<number> {
+  const { sandbox } = await openSandbox(a.root, io, a);
+  const deadline = new Deadline(RUN_BUDGET_MS);
+  let start = "";
+  if (a.dir !== undefined) {
+    const display = shown(relativeShown(a.dir, io));
+    if (!a.dir.trim()) throw usage("got an empty folder; pass the folder a session starts in, or leave it out for the root");
+    if (!sandbox.lexical(path.resolve(io.cwd, a.dir))) throw usage(`${display}: outside the root folder; pass a folder inside it, or change --root`);
+    try {
+      start = await resolveCwd(sandbox, path.resolve(io.cwd, a.dir));
+    } catch (e) {
+      if (!(e instanceof UserError)) throw e;
+      if (/^Folder not found/.test(e.message)) throw usage(`${display}: folder not found`);
+      if (/^Not a folder/.test(e.message)) throw usage(`${display}: not a folder; pass the folder a session starts in`);
+      throw usage(`${display}: ${userLine(e)}`);
+    }
+  }
+  const ctx = await loadContext(sandbox, deadline);
+  if (deadline.expired) throw usage(`stopped at the ${RUN_BUDGET_MS / 60_000}-minute time limit; pass a smaller --root`);
+  const plans = [];
+  for (const t of (a.tools.length ? a.tools : PLAN_TOOLS) as ToolId[]) plans.push(await plan(ctx, start, t));
+  const v = viewPlans(plans, { forModel: false, walkNote: ctx.walk.truncated ? walkCutNote(ctx.walk) : "" });
+  io.out(a.format === "json" ? `${JSON.stringify({ schemaVersion: 1, tool: { name: "asitis", version: VERSION }, ...v.json, truncated: ctx.walk.truncated }, null, 2)}\n` : `${v.text}\n`);
+  if (a.format === "text" && !(await sandbox.listDir(sandbox.primary.real).then((l) => l.entries.some((e) => e.name === ".git"), () => true))) {
+    io.err("asitis: no .git folder in the root; if this is inside a repository, pass --root <repository root> so files above it count\n");
+  }
+  return EXIT.ok;
+}
+
 /** Runs one command and returns the exit code. Never throws. */
 export async function run(argv: string[], given?: CliIO): Promise<number> {
   let io: CliIO;
@@ -361,7 +411,7 @@ export async function run(argv: string[], given?: CliIO): Promise<number> {
     const parsed = parse(argv);
     switch (parsed.command) {
       case "help":
-        io.out(parsed.topic === "lint" ? HELP_LINT : parsed.topic === "budget" ? HELP_BUDGET : HELP);
+        io.out(parsed.topic === "lint" ? HELP_LINT : parsed.topic === "budget" ? HELP_BUDGET : parsed.topic === "loads" ? HELP_LOADS : HELP);
         return EXIT.ok;
       case "version":
         io.out(`${VERSION}\n`);
@@ -370,6 +420,8 @@ export async function run(argv: string[], given?: CliIO): Promise<number> {
         return await budget(parsed, io);
       case "lint":
         return await lint(parsed, io);
+      case "loads":
+        return await loads(parsed, io);
     }
   } catch (e) {
     if (e instanceof Failure) {

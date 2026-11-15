@@ -1,0 +1,66 @@
+## claude-code from (root)
+launch file AGENTS.md [canary]
+on-read (not counted) file pkg/AGENTS.md [canary]
+on-read (not counted) file pkg/deep/AGENTS.md [canary]
+warning AGENTS.md is 1,000 lines; Claude Code recommends under 200
+
+## codex from (root)
+launch file AGENTS.md [documented]
+skipped pkg/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+skipped pkg/deep/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+on-read (not counted) file pkg/AGENTS.md [documented]
+on-read (not counted) file pkg/deep/AGENTS.md [documented]
+
+## copilot from (root)
+on-read (not counted) file pkg/AGENTS.md [documented]
+on-read (not counted) file pkg/deep/AGENTS.md [documented]
+setting (not counted) file AGENTS.md [documented]
+
+## claude-code from pkg
+launch file AGENTS.md [canary]
+launch file pkg/AGENTS.md [canary]
+on-read (not counted) file pkg/deep/AGENTS.md [canary]
+warning AGENTS.md is 1,000 lines; Claude Code recommends under 200
+warning pkg/AGENTS.md is 300 lines; Claude Code recommends under 200
+
+## codex from pkg
+launch file AGENTS.md [documented]
+launch file pkg/AGENTS.md cut at 3878 bytes [documented]
+skipped pkg/deep/AGENTS.md: below the start folder (pkg); Codex stops at the folder it starts in [documented]
+warning pkg/AGENTS.md is cut after 3,878 bytes: the AGENTS.md files above it use 28,890 of Codex's 32,768-byte (32 KiB) budget
+
+## cursor from pkg
+launch (not counted) file pkg/AGENTS.md [assumed]
+on-read (not counted) file pkg/deep/AGENTS.md [documented]
+skipped AGENTS.md: in the project root, outside the opened folder [assumed]
+
+## copilot from pkg
+on-read (not counted) file pkg/deep/AGENTS.md [documented]
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file pkg/AGENTS.md [documented]
+
+## claude-code from pkg/deep
+launch file AGENTS.md [canary]
+launch file pkg/AGENTS.md [canary]
+launch file pkg/deep/AGENTS.md [canary]
+warning AGENTS.md is 1,000 lines; Claude Code recommends under 200
+warning pkg/AGENTS.md is 300 lines; Claude Code recommends under 200
+
+## codex from pkg/deep
+launch file AGENTS.md [documented]
+launch file pkg/AGENTS.md cut at 3878 bytes [documented]
+skipped pkg/deep/AGENTS.md: dropped: the files above it already use 32,768 of the 32,768-byte (32 KiB) budget [documented]
+warning pkg/AGENTS.md is cut after 3,878 bytes: the AGENTS.md files above it use 28,890 of Codex's 32,768-byte (32 KiB) budget
+
+## cursor from pkg/deep
+launch (not counted) file pkg/deep/AGENTS.md [assumed]
+skipped AGENTS.md: in the project root, outside the opened folder [assumed]
+skipped pkg/AGENTS.md: in pkg, outside the opened folder [assumed]
+
+## copilot from pkg/deep
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file pkg/AGENTS.md [documented]
+setting (not counted) file pkg/deep/AGENTS.md [documented]

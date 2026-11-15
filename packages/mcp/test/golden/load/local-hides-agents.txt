@@ -1,0 +1,14 @@
+## claude-code from (root)
+launch file CLAUDE.local.md [canary]
+skipped AGENTS.md: CLAUDE.local.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it [canary]
+warning Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions
+
+## codex from (root)
+launch file AGENTS.md [assumed]
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+
+## copilot from (root)
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file CLAUDE.local.md [documented]

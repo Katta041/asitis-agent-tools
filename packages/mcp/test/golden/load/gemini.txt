@@ -1,0 +1,19 @@
+## gemini-cli from (root)
+launch file GEMINI.md [documented]
+launch import g1.md depth 1 [documented]
+launch import g2.md depth 2 [documented]
+launch import g3.md depth 3 [documented]
+launch import g4.md depth 4 [documented]
+launch import g5.md depth 5 [documented]
+on-read (not counted) file pkg/GEMINI.md [documented]
+on-read (not counted) file pkg/deep/GEMINI.md [documented]
+
+## gemini-cli from pkg
+launch file GEMINI.md [documented]
+launch import g1.md depth 1 [documented]
+launch import g2.md depth 2 [documented]
+launch import g3.md depth 3 [documented]
+launch import g4.md depth 4 [documented]
+launch import g5.md depth 5 [documented]
+launch file pkg/GEMINI.md [documented]
+on-read (not counted) file pkg/deep/GEMINI.md [documented]

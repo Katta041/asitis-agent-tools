@@ -1,0 +1,13 @@
+## claude-code from (root)
+launch file AGENTS.md [canary]
+warning AGENTS.md is 1,500 lines; Claude Code recommends under 200
+
+## codex from (root)
+launch file AGENTS.md cut at 32768 bytes [documented]
+warning AGENTS.md is 52,890 bytes; Codex reads only the first 32,768 bytes (32 KiB), a budget shared with any nested AGENTS.md it loads
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+
+## copilot from (root)
+setting (not counted) file AGENTS.md [documented]

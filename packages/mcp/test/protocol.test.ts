@@ -30,9 +30,9 @@ describe("stdio server (bundled dist/asitis-mcp.mjs)", () => {
     expect(s.client.getInstructions()).toMatch(/cannot write, execute or reach the network/);
   });
 
-  test("lists the six read-only tools with input schemas", async () => {
+  test("lists the seven read-only tools with input schemas", async () => {
     const { tools } = await s.client.listTools();
-    expect(tools).toHaveLength(6);
+    expect(tools).toHaveLength(7);
     for (const t of tools) {
       expect(t.inputSchema.type).toBe("object");
       expect(t.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: false });

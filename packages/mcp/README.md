@@ -2,7 +2,7 @@
 
 **Read-only MCP server for markdown and AI agent steering files.** From [AsItIs](https://asitis.app/?ref=npm), the markdown editor that never rewrites your file. MIT licensed. Source, issues and the Claude Code plugin: [github.com/Katta041/asitis-agent-tools](https://github.com/Katta041/asitis-agent-tools).
 
-It gives your coding agent six tools to read, outline, lint, budget and suggest fixes for `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `SKILL.md`, subagents, commands, rules, Cursor `.mdc` rules, Copilot instructions and memory files, without being able to change any of them. The same package has an `asitis` command for CI and pre-commit.
+It gives your coding agent seven tools to read, outline, lint, budget and suggest fixes for `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `SKILL.md`, subagents, commands, rules, Cursor `.mdc` rules, Copilot instructions and memory files, without being able to change any of them. The same package has an `asitis` command for CI and pre-commit.
 
 - **No writes.** There is no write, patch or delete tool, and no write code in the package.
 - **No network.** No telemetry, no update check, no remote calls. It speaks MCP over stdio only.
@@ -132,6 +132,7 @@ npx -y -p @asitis/mcp@0.3.1 asitis lint CLAUDE.md AGENTS.md  # only these files
 npx -y -p @asitis/mcp@0.3.1 asitis lint --format sarif > asitis.sarif
 npx -y -p @asitis/mcp@0.3.1 asitis lint --fix-preview=safe | git apply   # apply the safe fixes yourself
 npx -y -p @asitis/mcp@0.3.1 asitis budget                    # tokens each agent loads every session
+npx -y -p @asitis/mcp@0.3.1 asitis loads packages/api        # what each agent loads when it starts in packages/api
 ```
 
 Formats: `text`, `json`, `sarif` (the standard report format GitHub code scanning reads) and `github` (pull request annotations). With `github`, only errors and warnings become annotations; add `--annotate-notes` to annotate notes as well. It never writes a file; `--fix-preview` prints a diff and you decide whether to apply it. `asitis lint --help` and `asitis budget --help` list each command's options.
@@ -219,6 +220,7 @@ Every rule has a page with examples: [`docs/rules/`](https://github.com/Katta041
 | `outline` | ATX and setext headings with line numbers, skipping frontmatter and fenced code. |
 | `lint_steering` | Frontmatter on line 1 and valid YAML; required `name` and `description` for SKILL.md and subagents; unknown keys; length against vendor limits; broken relative links and `@path` imports; zero-width, bidi and other invisible characters; hidden HTML comments that read like instructions; text hidden with inline styles; duplicate and contradictory-looking rules; across files, an AGENTS.md that Claude Code never reads, mirrored files that drift apart, and Codex's shared 32 KiB budget. With no path, lints every steering file in the folder. Applies `.asitisrc.json` and suppression comments. `include: ["skills"]` also scans the scripts in skill folders, and `include: ["config"]` audits `.claude/settings.json` and MCP config files. |
 | `context_budget` | Approximate tokens per file and per tool for what loads every session: Claude Code (CLAUDE.md plus `@imports` up to 4 hops, or AGENTS.md when there is no CLAUDE.md; rules without `paths`; MEMORY.md first 200 lines when you add your memory folder as a second root; the skill and subagent listing), Codex (root AGENTS.md, first 32 KiB), Gemini CLI (GEMINI.md plus imports up to 5 levels), Cursor always-applied rules, Copilot repository instructions, Windsurf and Cline rules. Long lists are cut; totals still count every file. |
+| `load_plan` | What each agent loads when a session starts in a folder (`cwd`), in order: files at launch with their `@imports`, files that load later and when (a subfolder CLAUDE.md on first read, rules on matching files, nested skills), what gets cut (Codex's shared 32 KiB, MEMORY.md 200 lines), what is never read and why, and totals. Each step says whether it rests on vendor docs, a canary run against the real tool, or an assumption. `tool` picks one agent; 60 steps per agent per call, `offset` pages. |
 | `find_steering_files` | Every steering file, grouped by when it loads: every session, on match (`paths`, `globs`, `applyTo`), on invocation (skills, commands, agents, prompts), on demand (nested instruction files), memory. |
 | `suggest_fixes` | Fixes for mechanical findings (invisible characters, frontmatter not on line 1, skill name fields, trailing whitespace, a missing final newline, instruction-like HTML comments) as a unified diff, plus the old and new text for each edit. Each fix is marked safe or review. It never writes; your assistant applies the edits you accept. |
 

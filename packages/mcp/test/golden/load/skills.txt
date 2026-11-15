@@ -1,0 +1,17 @@
+## claude-code from (root)
+launch listing Skill listing (3 entries) [canary]
+on-read (not counted) listing Skill listing from other/.claude/skills (1 entry) [canary]
+on-read (not counted) listing Skill listing from pkg/.claude/skills (1 entry) [canary]
+skipped skills/d/SKILL.md: SKILL.md outside .claude/skills/ (a plugin, or an Agent Skills repository); Claude Code does not load it from here [documented]
+skipped .agents/skills/c/SKILL.md: .agents/skills is a shared skills folder that Copilot and Antigravity read; Claude Code reads skills only from .claude/skills [canary]
+skipped pkg/.claude/commands/y.md: command in a nested .claude folder (pkg); Claude Code loads these from the start folder and the folders above it only [assumed]
+warning 2 skills sit in a nested .claude/skills folder and load only once Claude works in that folder; not counted
+warning 1 command or subagent sits in a nested .claude folder; Claude Code does not load it in a session started at the project root; not counted
+warning 2 SKILL.md files are outside .claude/skills/, so Claude Code does not load them from here (for example a plugin or an Agent Skills repository); not counted
+
+## claude-code from pkg
+launch listing Skill listing (5 entries) [canary]
+skipped skills/d/SKILL.md: SKILL.md outside .claude/skills/ (a plugin, or an Agent Skills repository); Claude Code does not load it from here [documented]
+skipped .agents/skills/c/SKILL.md: .agents/skills is a shared skills folder that Copilot and Antigravity read; Claude Code reads skills only from .claude/skills [canary]
+skipped other/.claude/skills/e/SKILL.md: in other/.claude, which is not the start folder, above it or below it [documented]
+warning 2 SKILL.md files are outside .claude/skills/, so Claude Code does not load them from here (for example a plugin or an Agent Skills repository); not counted

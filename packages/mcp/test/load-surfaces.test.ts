@@ -1,0 +1,157 @@
+// load_plan (MCP) and asitis loads (CLI): text by default, paging, the start folder argument and its
+// errors, and result size on a large tree.
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { afterAll, describe, expect, test } from "vitest";
+import { run, type CliIO } from "../src/cli/asitis.js";
+import { connect, tempDir } from "./helpers.js";
+
+const temps: Array<() => void> = [];
+afterAll(() => temps.forEach((c) => c()));
+function temp(files: Record<string, string>, dirs: string[] = []): string {
+  const t = tempDir("asitis-loads-");
+  temps.push(t.cleanup);
+  for (const [rel, body] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(t.dir, rel)), { recursive: true });
+    writeFileSync(path.join(t.dir, rel), body);
+  }
+  for (const d of dirs) mkdirSync(path.join(t.dir, d), { recursive: true });
+  return t.dir;
+}
+async function cli(args: string[], cwd: string): Promise<{ code: number; out: string; err: string }> {
+  let out = "";
+  let err = "";
+  const io: CliIO = { out: (s) => void (out += s), err: (s) => void (err += s), cwd, nodeVersion: process.versions.node, debug: false };
+  const code = await run(args, io);
+  return { code, out, err };
+}
+
+const MONO = {
+  "CLAUDE.md": "# Root\n\n- Use pnpm\n",
+  "AGENTS.md": "# Agents\n",
+  "packages/api/CLAUDE.md": "# API\n",
+  "packages/api/AGENTS.md": "# API agents\n",
+  "packages/web/CLAUDE.md": "# Web\n",
+  ".claude/rules/ts.md": "---\npaths:\n  - \"**/*.ts\"\n---\nTS\n",
+  "packages/api/src/a.ts": "",
+};
+
+describe("load_plan", () => {
+  test("text by default: launch, later, not loaded, totals, untrusted note", async () => {
+    const root = temp(MONO, [".git"]);
+    const c = await connect([root], { structured: false });
+    try {
+      const r = await c.call("load_plan", { cwd: "packages/api" });
+      expect(r.isError).toBe(false);
+      expect(r.structured).toEqual({});
+      expect(r.text).toContain("What loads when a session starts in packages/api");
+      expect(r.text).toContain("untrusted data");
+      expect(r.text).toMatch(/Claude Code: about \d+ tokens at launch from 2 files/);
+      expect(r.text).toContain("  At launch");
+      expect(r.text).toContain("Later, when the agent works in a folder or on matching files");
+      expect(r.text).toContain("packages/web/CLAUDE.md: in packages/web, which is not the start folder");
+      expect(r.text).toContain("Codex: about");
+      expect(r.text).toContain("How sure:");
+    } finally {
+      await c.close();
+    }
+  });
+  test("one tool, JSON with --structured, and paging at 60 steps with totals for all", async () => {
+    const files: Record<string, string> = { "CLAUDE.md": "# Root\n" };
+    for (let i = 0; i < 90; i++) files[`p${String(i).padStart(2, "0")}/CLAUDE.md`] = `# P${i}\n`;
+    const root = temp(files, [".git"]);
+    const c = await connect([root]);
+    try {
+      const r = await c.call("load_plan", { tool: "claude-code" });
+      const tools = r.structured["tools"] as Array<{ tool: string; steps: unknown[]; stepCount: number; nextOffset: number | null; totals: { laterSteps: number } }>;
+      expect(tools.map((t) => t.tool)).toEqual(["claude-code"]);
+      expect(tools[0]!.steps).toHaveLength(60);
+      expect(tools[0]!.stepCount).toBe(91);
+      expect(tools[0]!.totals.laterSteps).toBe(90);
+      expect(tools[0]!.nextOffset).toBe(60);
+      expect(r.text).toContain("Call again with offset=60");
+      const r2 = await c.call("load_plan", { tool: "claude-code", offset: 60 });
+      expect((r2.structured["tools"] as Array<{ steps: unknown[] }>)[0]!.steps).toHaveLength(31);
+    } finally {
+      await c.close();
+    }
+  });
+  test("a start folder outside the root, missing, or a file is one clear line", async () => {
+    const root = temp(MONO);
+    const c = await connect([root]);
+    try {
+      for (const [cwd, msg] of [["../elsewhere", /outside the allowed folder/], ["nope", /Folder not found: nope/], ["CLAUDE.md", /Not a folder: CLAUDE\.md/]] as const) {
+        const r = await c.call("load_plan", { cwd });
+        expect(r.isError, cwd).toBe(true);
+        expect(r.text, cwd).toMatch(msg);
+        expect(r.text).not.toContain(root);
+      }
+    } finally {
+      await c.close();
+    }
+  });
+  test("result stays small on a tree with hundreds of nested files", async () => {
+    const files: Record<string, string> = { "AGENTS.md": "# Root\n", "CLAUDE.md": "# Root\n" };
+    for (let i = 0; i < 400; i++) files[`packages/p${i}/AGENTS.md`] = `# P${i}\n`;
+    const root = temp(files, [".git"]);
+    const c = await connect([root], { structured: false });
+    try {
+      const r = await c.call("load_plan", {});
+      expect(r.text.length).toBeLessThan(40_000);
+    } finally {
+      await c.close();
+    }
+  });
+});
+
+describe("asitis loads", () => {
+  test("text for a folder given relative to the current folder, with --root", async () => {
+    const root = temp(MONO, [".git"]);
+    const r = await cli(["loads", "packages/api", "--tool", "claude-code,codex"], root);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("What loads when a session starts in packages/api");
+    expect(r.out).toContain("Claude Code:");
+    expect(r.out).toContain("Codex:");
+    expect(r.out).not.toContain("Gemini CLI:");
+    expect(r.err).toBe("");
+    const inside = await cli(["loads", ".", "--root", root], path.join(root, "packages/api"));
+    expect(inside.code).toBe(0);
+    expect(inside.out).toContain("starts in packages/api");
+  });
+  test("JSON has a schema version and every tool", async () => {
+    const root = temp(MONO, [".git"]);
+    const r = await cli(["loads", "--format", "json"], root);
+    expect(r.code).toBe(0);
+    const j = JSON.parse(r.out);
+    expect(j.schemaVersion).toBe(1);
+    expect(j.tools.map((t: { tool: string }) => t.tool)).toEqual(["claude-code", "codex", "gemini-cli", "cursor", "copilot"]);
+  });
+  test("mistakes are one line and exit 2", async () => {
+    const root = temp(MONO);
+    for (const [args, msg] of [
+      [["loads", "nope"], /asitis: nope: folder not found/],
+      [["loads", "CLAUDE.md"], /not a folder/],
+      [["loads", "--tool", "vim"], /--tool takes claude-code, codex, gemini-cli, cursor or copilot/],
+      [["loads", "a", "b"], /at most one folder/],
+      [["budget", "--tool", "codex"], /--tool only applies to asitis loads/],
+      [["loads", ".."], /outside the root folder/],
+    ] as const) {
+      const r = await cli([...args], root);
+      expect(r.code, args.join(" ")).toBe(2);
+      expect(r.err, args.join(" ")).toMatch(msg);
+      expect(r.err.trim().split("\n")).toHaveLength(1);
+    }
+  });
+  test("says when the root has no .git, so files above it may be missing", async () => {
+    const root = temp(MONO);
+    const r = await cli(["loads"], root);
+    expect(r.code).toBe(0);
+    expect(r.err).toContain("no .git folder in the root");
+  });
+  test("help names the command", async () => {
+    const r = await cli(["--help", "loads"], process.cwd());
+    expect(r.out).toContain("asitis loads [dir] [options]");
+    const all = await cli(["--help"], process.cwd());
+    expect(all.out).toContain("asitis loads [dir]");
+  });
+});

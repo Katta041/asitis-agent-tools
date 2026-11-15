@@ -1,0 +1,7 @@
+## gemini-cli from (root)
+launch file GEMINI.md [assumed]
+on-read (not counted) file pkg/GEMINI.md [documented]
+
+## gemini-cli from pkg
+launch file GEMINI.md [assumed]
+launch file pkg/GEMINI.md [documented]

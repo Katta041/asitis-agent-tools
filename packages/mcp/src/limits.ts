@@ -29,6 +29,14 @@ export const VENDOR = {
    * folder, filled root first; the file that crosses it is cut and deeper files are dropped.
    */
   codexAgentsMdBytes: 32 * 1024,
+  /**
+   * Claude Code memory docs, "Claude ignores the end of my subdirectory CLAUDE.md" (read 15 November
+   * 2026): from v2.1.309 a CLAUDE.md or rules file that loads on demand is cut at 40,000 characters
+   * on a 200K context window (150,000 to 200,000 on 1M). Files that load at launch are not cut.
+   */
+  claudeOnDemandChars: 40000,
+  /** Claude Code memory docs, "My CLAUDE.md is too large": "Claude Code skips a file over 4 MiB". */
+  claudeMaxFileBytes: 4 * 1024 * 1024,
   /** Cursor rules docs: keep rules under 500 lines. */
   cursorRuleLines: 500,
   /** Windsurf (Devin Desktop) memories docs: rule files limited to 12,000 characters. */

@@ -4,10 +4,11 @@
 
 | Part | What it does |
 |---|---|
-| MCP server `asitis` | Six read-only tools: `read_markdown`, `outline`, `lint_steering`, `context_budget`, `find_steering_files`, `suggest_fixes`. See [`@asitis/mcp`](https://github.com/Katta041/asitis-agent-tools/blob/main/packages/mcp/README.md). |
+| MCP server `asitis` | Seven read-only tools: `read_markdown`, `outline`, `lint_steering`, `context_budget`, `load_plan`, `find_steering_files`, `suggest_fixes`. See [`@asitis/mcp`](https://github.com/Katta041/asitis-agent-tools/blob/main/packages/mcp/README.md). |
 | Skill `markdown-byte-clean` | Teaches Claude to edit minimal ranges, never rewrite whole markdown files, and keep frontmatter, line endings, BOM and trailing spaces exactly as they are. |
 | `/asitis:md-lint [path] [skills] [config]` | Lints steering files: frontmatter on line 1, YAML, required fields, limits, broken links and `@imports`, invisible characters, hidden instructions, and drift between AGENTS.md, CLAUDE.md and the other agents' files. Add `skills` to also scan the scripts in skill folders, and `config` to audit `.claude/settings.json` and the MCP config files. |
 | `/asitis:md-budget [path]` | Shows approximately how many tokens load every session, per tool, and what to cut. |
+| `/asitis:md-loads [folder] [tool]` | Shows what each agent loads when it starts in a folder, what loads later, what gets cut and what is never read. |
 | `/asitis:md-fix [path]` | Shows mechanical fixes (invisible characters, frontmatter, skill names, trailing spaces, final newline) as a diff, asks, and applies only the ones you accept. |
 | Guard hook (optional) | Warns before a Write, Edit or MultiEdit that would change line endings, strip trailing spaces that make a line break, drop a BOM or break frontmatter in an existing markdown file. |
 | `asitis` CLI | The same linter for scripts and CI, bundled at `server/asitis.mjs`: `node server/asitis.mjs lint`. See [CLI and CI](https://github.com/Katta041/asitis-agent-tools#cli-and-ci). |

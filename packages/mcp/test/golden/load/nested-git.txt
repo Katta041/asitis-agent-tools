@@ -1,0 +1,39 @@
+## claude-code from (root)
+launch file AGENTS.md [canary]
+on-read (not counted) file libs/x/AGENTS.md [canary]
+
+## codex from (root)
+launch file AGENTS.md [documented]
+skipped libs/x/AGENTS.md: below the start folder; Codex stops at the folder it starts in [documented]
+
+## gemini-cli from (root)
+launch file GEMINI.md [documented]
+on-read (not counted) file libs/x/GEMINI.md [documented]
+
+## cursor from (root)
+launch (not counted) file AGENTS.md [assumed]
+on-read (not counted) file libs/x/AGENTS.md [documented]
+
+## copilot from (root)
+on-read (not counted) file libs/x/AGENTS.md [documented]
+setting (not counted) file AGENTS.md [documented]
+
+## claude-code from libs/x
+launch file AGENTS.md [canary]
+launch file libs/x/AGENTS.md [canary]
+
+## codex from libs/x
+launch file libs/x/AGENTS.md [documented]
+skipped AGENTS.md: above libs/x, the Git root where Codex starts its walk [documented]
+
+## gemini-cli from libs/x
+launch file libs/x/GEMINI.md [documented]
+skipped GEMINI.md: above libs/x, the Git root where Gemini CLI stops looking [documented]
+
+## cursor from libs/x
+launch (not counted) file libs/x/AGENTS.md [assumed]
+skipped AGENTS.md: in the project root, outside the opened folder [assumed]
+
+## copilot from libs/x
+setting (not counted) file AGENTS.md [documented]
+setting (not counted) file libs/x/AGENTS.md [documented]

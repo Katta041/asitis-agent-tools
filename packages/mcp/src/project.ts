@@ -92,6 +92,8 @@ export interface CheckContext {
   deadline: Deadline;
   /** True when the whole folder was walked, false when the caller named files. */
   discovered: boolean;
+  /** The folder walk, with every file name (names only), when discovered is true. */
+  walk?: WalkResult;
   /**
    * Targets the caller named that are not markdown (a pre-commit run passes changed scripts).
    * Only set when include is not empty. A check that handles one calls claim(); the rest are
@@ -147,8 +149,11 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
   let walkNote = "";
   const cut = { depth: false, size: false, time: false };
   let unreadable: string[] = [];
+  let walked: WalkResult | undefined;
   if (!targets.length) {
-    const found = await walk(sandbox, { deadline });
+    // Names too (not read), so checks can match path globs against the tree.
+    const found = await walk(sandbox, { deadline, collectNames: true });
+    walked = found;
     // A folder an ignore pattern covers was not wanted anyway.
     unreadable = found.unreadable.filter((d) => !(config?.ignore.length && d !== "." && matchesAny(config.ignore, d)));
     discovered = true;
@@ -215,6 +220,7 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
     include,
     deadline,
     discovered,
+    ...(walked ? { walk: walked } : {}),
     otherTargets,
     claim: (t) => void claimed.add(t),
     report: (p, issue, file) => {

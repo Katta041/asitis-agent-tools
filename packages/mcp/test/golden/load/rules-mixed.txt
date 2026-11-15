@@ -1,0 +1,13 @@
+## claude-code from (root)
+launch file .claude/rules/always.md [canary]
+launch import docs/rule-extra.md depth 1 [canary]
+on-match (not counted) file .claude/rules/nomatch.md matches 0 [canary]
+on-match (not counted) file .claude/rules/scoped.md matches 1 [canary]
+on-read (not counted) file pkg/.claude/rules/pkg.md [canary]
+
+## claude-code from pkg
+launch file .claude/rules/always.md [canary]
+launch file pkg/.claude/rules/pkg.md [canary]
+on-match (not counted) file .claude/rules/nomatch.md matches 0 [canary]
+on-match (not counted) file .claude/rules/scoped.md matches 1 [canary]
+skipped docs/rule-extra.md: imported by .claude/rules/always.md, but Claude Code does not expand imports in files from the project root when it starts in pkg, a folder below it [canary]
