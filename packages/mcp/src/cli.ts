@@ -11,7 +11,8 @@ import { VERSION } from "./version.js";
 const HELP = `asitis-mcp ${VERSION}: read-only MCP server for markdown and agent steering files.
 
 Usage: asitis-mcp --root <folder> [--root <folder>...] [options]
-  (with npx: npx -y @asitis/mcp@${VERSION} --root <folder>)
+  (with npx: npx -y @asitis/mcp@${VERSION} --root <folder>
+   or, on any version: npx -y -p @asitis/mcp@${VERSION} asitis-mcp --root <folder>)
 
   --root <folder>      Folder the server may read (repeatable). Default: the current folder.
   --footer             Add one line linking to asitis.app to the first result of the session. Off by default.
@@ -24,7 +25,7 @@ Usage: asitis-mcp --root <folder> [--root <folder>...] [options]
 
 Environment: ASITIS_MCP_ROOT (folders separated by "${path.delimiter}"), ASITIS_MCP_FOOTER=1 to add that line,
 ASITIS_MCP_STRUCTURED=1 for --structured.
-Tools: read_markdown, outline, lint_steering, context_budget, find_steering_files, suggest_fixes. No writes, no network.
+Tools: read_markdown, outline, lint_steering, context_budget, load_plan, find_steering_files, suggest_fixes. No writes, no network.
 Docs: https://github.com/Katta041/asitis-agent-tools/tree/main/packages/mcp`;
 
 function fail(message: string): never {

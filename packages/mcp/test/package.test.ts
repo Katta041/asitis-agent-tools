@@ -75,7 +75,31 @@ describe("npm package", () => {
     expect(p).toMatchObject({ registryType: "npm", identifier: pkg.name, version: pkg.version, transport: { type: "stdio" } });
     expect(p.packageArguments.map((a: { name: string }) => a.name)).toEqual(["--root"]);
   });
-  test("two bins: the MCP server and the asitis CLI", () => expect(pkg.bin).toEqual({ "asitis-mcp": "dist/asitis-mcp.mjs", asitis: "dist/asitis.mjs" }));
+  test("bins: the MCP server, the asitis CLI, and mcp so plain npx @asitis/mcp starts the server", () => {
+    // npx with no bin named runs the bin called after the unscoped package name ("mcp"). Without it,
+    // `npx -y @asitis/mcp` failed with "could not determine executable to run" from 0.3.0 to 0.4.1.
+    expect(pkg.bin).toEqual({ "asitis-mcp": "dist/asitis-mcp.mjs", asitis: "dist/asitis.mjs", mcp: "dist/asitis-mcp.mjs" });
+    expect(pkg.name.split("/").pop()).toBe("mcp");
+  });
+  test("every npx line in the docs uses a form npx can resolve", () => {
+    const docs = ["README.md", "packages/mcp/README.md", "docs/ci.md", "docs/cli-contract.md", "action/README.md"];
+    let seen = 0;
+    for (const f of docs) {
+      for (const line of read(path.join(REPO, f)).split("\n")) {
+        for (const m of line.matchAll(/npx -y (-p )?@asitis\/mcp@(\S+) ?(\S*)/g)) {
+          seen++;
+          expect(m[2], `${f}: ${line}`).toBe(pkg.version);
+          // With -p the next word must name a bin; without it npx runs the "mcp" bin.
+          if (m[1]) expect(Object.keys(pkg.bin), `${f}: ${line}`).toContain(m[3]);
+        }
+        for (const m of line.matchAll(/"-y", "(-p", ")?@asitis\/mcp@([^"]+)"/g)) {
+          seen++;
+          expect(m[2], `${f}: ${line}`).toBe(pkg.version);
+        }
+      }
+    }
+    expect(seen).toBeGreaterThan(20);
+  });
   test("provenance on, public access", () => expect(pkg.publishConfig).toEqual({ access: "public", provenance: true }));
   test("the published tarball contains only the bundle, notices and docs", () => {
     const r = npm(["pack", "--dry-run", "--json", "--ignore-scripts"], PKG);
