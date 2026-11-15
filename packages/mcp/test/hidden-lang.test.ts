@@ -2,7 +2,7 @@
 // Korean and Hindi (lang/hidden-phrases.ts, issue #6).
 //
 // Negatives are real maintainer text. Most are hidden comments from public issue and PR templates,
-// AGENTS.md and CLAUDE.md files and translated docs (a 0.4.0 corpus of 74 repos plus 2,400 files
+// AGENTS.md and CLAUDE.md files and translated docs (a 0.4.0 corpus of 74 repos plus 2,900 files
 // found by code search). Hindi hidden comments are rare enough that we found under 30, so its
 // negatives are lines from Hindi docs, which is what a commented-out section would hold.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
