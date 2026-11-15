@@ -1,6 +1,6 @@
 # Third-party notices
 
-@asitis/mcp 0.4.0 bundles the following packages.
+@asitis/mcp 0.4.1 bundles the following packages.
 
 ## @modelcontextprotocol/sdk 1.32.1 (MIT)
 

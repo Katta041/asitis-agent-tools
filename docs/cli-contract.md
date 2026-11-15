@@ -1,4 +1,4 @@
-# asitis CLI contract (0.4.0)
+# asitis CLI contract (0.4.1)
 
 This is the fixed contract for the `asitis` command, its output formats and the code seams behind them. The CLI (WP1), the GitHub Action and pre-commit hook (WP3), config and baseline (WP2) and fixes (WP7) build against it. If something here is wrong or missing, ask the WP0 owner to change this file; do not work around it in a track.
 
@@ -9,7 +9,7 @@ Types named here live in `packages/mcp/src/findings.ts` and `packages/mcp/src/pr
 - A second bin, `asitis`, in `@asitis/mcp`: `"bin": { "asitis-mcp": "dist/asitis-mcp.mjs", "asitis": "dist/asitis.mjs" }`.
 - Entry: `packages/mcp/src/cli/asitis.ts`. Built by `scripts/build.mjs` as a second bundle, `dist/asitis.mjs`, with the same banner, target and minify settings as the server bundle.
 - Copies, each pinned by SHA-256 in a `VERSION` file next to it: `plugins/asitis/server/asitis.mjs` and `action/asitis.mjs`. `npm run sync-plugin` writes all three; CI checks all three pins.
-- Run without installing: `npx -y -p @asitis/mcp@0.4.0 asitis lint`.
+- Run without installing: `npx -y -p @asitis/mcp@0.4.1 asitis lint`.
 - `asitis-mcp` does not get a `lint` subcommand. It treats positionals as root folders and that stays.
 - The bundle follows the server's rules: no write, exec or network code, no `child_process`, `net`, `http`, `https`, `http2`, `dns`, `tls`, `dgram`, `worker_threads` or `cluster`. It may import the Node modules the server bundle already imports (`node:fs`, `node:path`, `node:crypto`, `node:os`, `node:util`, `node:process`) and nothing else. Output goes to stdout and stderr only; files come from shell redirects.
 
