@@ -2,7 +2,7 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
-## [0.4.1] - 2026-11-16
+## [0.4.1] - 2026-11-15
 
 ### Fixed
 - Claude Code load model (`src/load/claude.ts`): an @import whose file resolves outside the start folder, and anything imported through it, is a step with the new trigger `on-approval`, not counted at launch, basis canary (2.1.312 and 2.1.325, 2026-11-15). This replaces 0.4.0's "not loaded" entry for imports in a CLAUDE.md, AGENTS.md or rule above the start folder (`ancestor-imports-not-expanded` is gone). The real behaviour, checked by driving the interactive TUI in a pty as well as with `claude -p`: Claude Code asks once per project to allow external imports; yes loads them in that and later sessions, `-p` included; no keeps them off; `-p` never asks. The rule is "outside the start folder", not "in a file above it", so an ancestor's import of a file inside the start folder now loads at launch and a start-folder file's `@../x.md` now waits. One warning per plan lists those imports, and the text view groups them under "Only after you approve imports from outside the start folder (not counted)". No documented project setting pre-approves them (the config key put in `.claude/settings.json` was ignored); the answer lives in the user's own Claude Code config, which AsItIs doesn't read.
