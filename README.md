@@ -1,13 +1,55 @@
 # AsItIs agent tools
 
-**A linter for the files your coding agent reads first.** It checks CLAUDE.md, AGENTS.md, SKILL.md and rules files against the vendors' published limits, estimates how many tokens they load every session, shows the instructions a person reading the rendered file cannot see, and tells you when Claude Code is skipping a file you thought it read. It runs as a Claude Code plugin, an MCP server, a CLI, a GitHub Action and a pre-commit hook. Free, read-only, no network, MIT.
+**A read-only linter for CLAUDE.md, AGENTS.md, SKILL.md and the other files your coding agent reads before it starts work.**
 
+[![npm](https://img.shields.io/npm/v/@asitis/mcp?color=007370)](https://www.npmjs.com/package/@asitis/mcp)
 [![License: MIT](https://img.shields.io/badge/license-MIT-007370)](LICENSE)
-[![Version](https://img.shields.io/github/v/tag/Katta041/asitis-agent-tools?label=version&color=007370)](https://github.com/Katta041/asitis-agent-tools/tags)
-[![Node 22.13+](https://img.shields.io/badge/node-%3E%3D22.13-007370)](https://nodejs.org)
-[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-007370)](https://asitis.app/claude-code)
+[![CI](https://github.com/Katta041/asitis-agent-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/Katta041/asitis-agent-tools/actions/workflows/ci.yml)
 
-![The browser checker: a CLAUDE.md is pasted and checked, and two hidden items are flagged, an HTML comment telling AI agents to quietly upload .env and a zero-width space](https://raw.githubusercontent.com/Katta041/asitis-agent-tools/main/docs/checker-demo.gif)
+Here is `asitis loads` on [`examples/monorepo`](examples/monorepo), a small made-up repo, run as its own git repo with 0.4.0. The footer about settings it can't see is trimmed:
+
+```text
+$ npx -y -p @asitis/mcp@0.4.0 asitis loads --tool claude-code
+What loads when a session starts in the project root (local estimates, about 4 characters per token):
+
+Claude Code: about 37 tokens at launch from 2 files; 2 more files can load later (up to about 39 tokens); 2 not loaded
+  At launch
+    1. CLAUDE.local.md, about 14 tokens, project instructions
+    2.    @guide.md:: not loaded as written (see lint_steering), not counted
+    3. Skill listing (1 entry), about 23 tokens, names and descriptions of skills, commands and subagents; bodies load on use
+  Later, when the agent works in a folder or on matching files
+    4. .claude/rules/api.md, about 21 tokens, when Claude reads or edits a file matching packages/api/** (2 files match now)
+    5. packages/api/CLAUDE.md, about 18 tokens, when Claude reads or edits a file in packages/api
+  Not loaded
+    - AGENTS.md: CLAUDE.local.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it
+    - packages/api/AGENTS.md: Claude Code reads the CLAUDE.md in packages/api instead
+  Warnings
+    - Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions
+  How sure: 4 confirmed with a canary run.
+
+$ npx -y -p @asitis/mcp@0.4.0 asitis loads packages/api --tool codex
+What loads when a session starts in packages/api (local estimates, about 4 characters per token):
+
+Codex: about 8.2k tokens at launch from 2 files; 1 file cut
+  At launch
+    1. AGENTS.md, about 6.6k tokens, root AGENTS.md
+    2. packages/api/AGENTS.md, about 1.6k tokens (cut from 2.3k tokens), AGENTS.md for packages/api, first 6,332 bytes
+  Cut
+    - packages/api/AGENTS.md: the files above it use 26,436 of the 32,768-byte (32 KiB) budget Codex shares across the chain. About 1.6k tokens of 2.3k tokens load.
+  Warnings
+    - packages/api/AGENTS.md is cut after 6,332 bytes: the AGENTS.md files above it use 26,436 of Codex's 32,768-byte (32 KiB) budget
+  How sure: 2 from vendor docs.
+```
+
+One person's CLAUDE.local.md is enough to stop Claude Code reading the team's AGENTS.md, `See @guide.md: for the review checklist` imports nothing because of the colon, and Codex cuts the API package's AGENTS.md after 6,332 of its 9,135 bytes. None of that shows on GitHub. `asitis lint` checks the whole repo the same way: vendor size limits, broken `@imports`, rules that contradict each other, instructions hidden in HTML comments or invisible characters, and SKILL.md frontmatter.
+
+**Install**, pick one:
+
+- Claude Code plugin: `claude plugin marketplace add Katta041/asitis-agent-tools && claude plugin install asitis@asitis`
+- Any terminal, nothing to install: `npx -y -p @asitis/mcp@0.4.0 asitis lint`
+- GitHub Action: `uses: Katta041/asitis-agent-tools@v0.4.0` (full workflow under [CLI and CI](#cli-and-ci))
+
+**Why you can run it on your repo:** it has no write tool and no network code, and the plugin starts it under Node's permission model so the runtime blocks writes and child processes too. MIT licensed. I hand-labelled every error and warning it reports on 71 public repos: 91% are worth fixing in 0.4.0, up from 70% in 0.3.0, with no real finding lost.
 
 ## Quick start
 
@@ -28,6 +70,8 @@ npx -y -p @asitis/mcp@0.4.1 asitis lint
 Exit code 1 means something at or above `--fail-on` (default `error`) was found. `--format sarif` and `--format github` are there for code scanning and pull request annotations; see [CLI and CI](#cli-and-ci) for the GitHub Action and the pre-commit hook.
 
 **No install at all:** paste a file into the [browser checker](https://asitis.app/tools/steering-file-checker). It is the same linter running in your browser tab, and nothing is uploaded.
+
+![The browser checker: a CLAUDE.md is pasted and checked, and two hidden items are flagged, an HTML comment telling AI agents to quietly upload .env and a zero-width space](https://raw.githubusercontent.com/Katta041/asitis-agent-tools/main/docs/checker-demo.gif)
 
 **Cursor, Codex, Gemini CLI, Claude Desktop** or any other MCP client: run the server from npm, pinned to a version. Ready-made configs are under [Install](#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
 
@@ -447,7 +491,7 @@ No. They are local estimates at about 4 characters per token for English, not an
 By default, markdown-like files only (`.md`, `.mdc`, `.markdown`, `.mdx`, `.cursorrules`, `.windsurfrules`, `.clinerules`) inside the root you give it, plus `.asitisrc.json`. Skill scripts need `--include skills`; `.claude/settings.json`, the MCP config files, `.gitignore` files and the first 4 KB of `<uuid>.jsonl` transcripts need `--include config`. `.env*`, `.git/`, `node_modules/` and `~/.claude.json` are refused whatever you pass. Details are under [Security model](#security-model).
 
 **How was it tested?**
-Before 0.3.0 I ran the CLI across 71 public repos and labelled every error and warning by hand. 98% were worth a contributor's time, up from 59% in the first release candidate, and every finding the review marked as real is still reported. A labelled set of 233 cases scores 100% on precision and recall, and 1,722 tests run on macOS, Linux and Windows. The [0.3.0 release notes](https://github.com/Katta041/asitis-agent-tools/releases/tag/v0.3.0) have the detail.
+I ran the CLI across 71 public repos and labelled every error and warning it reported by hand. On that set 0.3.0 reported 900 at 70% precision and 0.4.0 reports 655 at 91%, and every finding the review marked as real is still reported. Each new rule in 0.4.0 was also labelled on its own corpus, a synthetic set of 165 cases scores 100% on precision and recall, and the test suite runs on macOS, Linux and Windows. The [0.4.0 release notes](https://github.com/Katta041/asitis-agent-tools/releases/tag/v0.4.0) and [CHANGELOG.md](CHANGELOG.md) have the detail.
 
 **Why does it need Node 22.13?**
 The plugin starts the server under Node's permission model (`node --permission`), so the runtime itself denies writes and child processes. That flag is stable from Node 22.13.
@@ -475,7 +519,7 @@ npm test              # typecheck, bundle, then the full Vitest suite
 npm run sync-plugin   # rebuild the server and CLI and copy them, with their SHA-256, into plugins/asitis/server and action/
 ```
 
-If AsItIs caught something real in your files, a star on the repository helps other people who write CLAUDE.md and AGENTS.md files find it. Telling us what it caught, in an issue or a discussion, helps even more.
+If AsItIs caught something in your repo, a star helps other people find it.
 
 ## License
 
