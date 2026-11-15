@@ -350,6 +350,8 @@ Six read-only MCP tools:
 | `find_steering_files` | Every steering file, grouped by when it loads: every session, on match (`paths`, `globs`, `applyTo`), on invocation (skills, commands, agents, prompts), on demand (nested instruction files), memory. |
 | `suggest_fixes` | Fixes for mechanical findings (invisible characters, frontmatter not on line 1, skill name fields, trailing whitespace, a missing final newline, instruction-like HTML comments) as a unified diff, plus the old and new text for each edit. Each fix is marked safe or review. It never writes; your assistant applies the edits you accept. |
 
+It also has MCP prompts (`lint`, `budget`, `fix`), so clients that list prompts can run a check without knowing the tool names, and two small resources, `asitis://findings` and `asitis://budget`. Details in the [package README](packages/mcp/README.md#prompts-and-resources).
+
 Vendor limits, with sources cited in [`packages/mcp/src/limits.ts`](packages/mcp/src/limits.ts):
 
 | File | Limit |

@@ -1,7 +1,8 @@
-// The MCP server: seven read-only tools. There is no write, patch, exec or
-// network code anywhere in this package; tests assert that.
+// The MCP server: seven read-only tools, prompts that ask the model to call them, and two
+// resources built from the same reports. There is no write, patch, exec or network code
+// anywhere in this package; tests assert that.
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { fileBudget, missingImportWarnings, projectBudget, type BudgetEntry } from "./budget.js";
@@ -12,6 +13,7 @@ import { KIND_LABEL, LOAD_GROUP_LABEL, LOAD_SHORT, TOOL_NAME, type Kind, type Lo
 import { CAPS } from "./limits.js";
 import type { Issue, LintResult } from "./lint.js";
 import { outline } from "./outline.js";
+import { registerPrompts } from "./prompts.js";
 import { dp, esc, q, UNTRUSTED_NOTE } from "./escape.js";
 import { UserError, type Sandbox } from "./paths.js";
 import { INCLUDE_VALUES, lintProject, walkCutNote, type Include } from "./project.js";
@@ -38,6 +40,13 @@ export interface ServerOptions {
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
 type Content = { type: "text"; text: string };
+interface LintArgs {
+  path?: string | undefined;
+  paths?: string[] | undefined;
+  include?: Include[] | undefined;
+  trustRepoConfig?: boolean | undefined;
+}
+
 interface ToolResult {
   [k: string]: unknown;
   content: Content[];
@@ -105,7 +114,7 @@ function formatIssues(issues: Issue[]): string[] {
 }
 
 export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
-  const server = new McpServer({ name: "asitis", version: VERSION }, { instructions: INSTRUCTIONS, capabilities: { tools: {} } });
+  const server = new McpServer({ name: "asitis", version: VERSION }, { instructions: INSTRUCTIONS, capabilities: { tools: {}, prompts: {}, resources: {} } });
 
   // The footer goes on the first successful result of a session only: repeated on
   // every call it is noise in the model's context, and it never belongs on an error.
@@ -153,6 +162,141 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
   const open = async (p: string): Promise<Doc> => {
     const f = await sandbox.open(p);
     return analyse(f, sandbox.displayFile(f));
+  };
+
+  /** The lint_steering report; the findings resource reuses it with a smaller cap. */
+  const lintReport = async ({ path: p, paths, include, trustRepoConfig }: LintArgs, deadline: Deadline, maxLines = LINT_MAX_LINES): Promise<ToolResult> => {
+    const targets: string[] = [];
+    if (p) targets.push(p);
+    if (paths) targets.push(...paths);
+    // A repo's config can never widen what is read (include comes from the call), and without
+    // trustRepoConfig it cannot hide a security finding either (config.ts, HiddenSecurity).
+    const project = await lintProject(sandbox, { targets, deadline, trustRepoConfig: trustRepoConfig === true, ...(include ? { include } : {}) });
+    const { results, failures, discovered, foundCount, timedOut, walkNote, truncated } = project;
+    // Suppressed findings (config, baseline, asitis-disable comments) are counted, not listed.
+    const live = (r: LintResult): Issue[] => r.issues.filter((i) => !i.suppressed);
+    const count = (s: string): number => results.reduce((a, r) => a + r.issues.filter((i) => i.severity === s && !i.suppressed).length, 0);
+    const suppressed = results.reduce((a, r) => a + r.issues.filter((i) => i.suppressed).length, 0);
+    const errors = count("error");
+    const warnings = count("warning");
+    const notes = count("info");
+    const allClean = errors + warnings + notes === 0 && !failures.length;
+    const tail = [...(project.hiddenNote ? [esc(project.hiddenNote, 800)] : []), ...(suppressed ? [`${plural(suppressed, "suppressed finding")} not listed.`] : []), ...project.notes.map((t) => esc(t, 400))];
+    const summaryOf = (base: Record<string, unknown>): Record<string, unknown> => (suppressed ? { ...base, suppressed } : base);
+    // Say exactly what was not linted and how to get it, so nobody has to guess a total.
+    const cutParts: string[] = [];
+    if (discovered && foundCount > results.length + failures.length && !timedOut) {
+      cutParts.push(`That is ${n(results.length)} of the ${n(foundCount)} steering files found (at most ${n(CAPS.lintMaxFiles)} per call). Pass paths (up to ${CAPS.lintMaxPaths} per call) to lint the others; find_steering_files lists them.`);
+    }
+    if (timedOut) cutParts.push(`Stopped at the time limit after ${plural(results.length, "file")}; pass paths to lint the rest.`);
+    if (walkNote) cutParts.push(walkNote);
+    const cut = cutParts.length ? ` ${cutParts.join(" ")}` : "";
+    const lines: string[] = [
+      allClean && results.length === 1
+        ? `Linted ${dp(results[0]!.path)}: no issues found.${cut}`
+        : allClean && results.length
+          ? `Linted ${plural(results.length, "file")}: no issues found.${cut}`
+          : `Linted ${plural(results.length, "file")}: ${plural(errors, "error")}, ${plural(warnings, "warning")}, ${plural(notes, "note")}.${cut}`,
+    ];
+    if (allClean && results.length === 1) {
+      return { content: [{ type: "text", text: [lines[0]!, ...tail].join("\n") }], structuredContent: { summary: summaryOf({ files: 1, errors: 0, warnings: 0, info: 0, truncated }), files: results, failures } };
+    }
+    if (discovered && !results.length) lines.push("No steering files found under the allowed folder.");
+    // Most important first: files with errors, then warnings, then notes only; clean files go on one line at the end.
+    const rank = (r: LintResult): number => (live(r).some((i) => i.severity === "error") ? 0 : live(r).some((i) => i.severity === "warning") ? 1 : 2);
+    const withIssues = results.filter((r) => live(r).length).sort((a, b) => rank(a) - rank(b));
+    const clean = results.filter((r) => !live(r).length);
+    if (withIssues.length || failures.length || clean.length) lines.push(UNTRUSTED_NOTE);
+    // Keep the result well under client limits (Claude Code warns at about 10k tokens): list at most
+    // maxLines findings, most important files first, and count the rest.
+    let shownLines = 0;
+    let hiddenFindings = 0;
+    let hiddenFiles = 0;
+    for (const r of withIssues) {
+      if (shownLines >= maxLines) {
+        hiddenFindings += live(r).length;
+        hiddenFiles++;
+        continue;
+      }
+      const items = formatIssues(live(r));
+      const room = maxLines - shownLines;
+      lines.push("", `${dp(r.path)} (${kindLabel(r.kind)}, ${loadShort(r.load)})`);
+      lines.push(...items.slice(0, room));
+      if (items.length > room) lines.push(`  - and ${plural(items.length - room, "more finding")} in this file`);
+      shownLines += Math.min(items.length, room);
+    }
+    if (hiddenFiles) lines.push("", `${plural(hiddenFindings, "more finding")} in ${plural(hiddenFiles, "more file")} not listed; lint them with paths to see them.`);
+    if (failures.length) lines.push("");
+    for (const f of failures) lines.push(`${dp(f.path)}: not linted (${esc(f.error, 400)})`);
+    if (clean.length) {
+      const shown = clean.slice(0, 20).map((r) => dp(r.path)).join(", ");
+      lines.push("", `${withIssues.length ? `No issues in ${plural(clean.length, "file")}` : "Files"}: ${shown}${clean.length > 20 ? `, and ${n(clean.length - 20)} more` : ""}.`);
+    }
+    if (tail.length) lines.push("", ...tail);
+    return {
+      content: [{ type: "text", text: lines.join("\n") }],
+      structuredContent: { summary: summaryOf({ files: results.length, errors, warnings, info: notes, truncated }), files: results, failures },
+    };
+  };
+
+  /** The context_budget report; the budget resources reuse it. */
+  const budgetReport = async ({ path: p }: { path?: string | undefined }, deadline: Deadline): Promise<ToolResult> => {
+    // A file that was not counted shows why instead of "about 0 tokens".
+    // An overflow row's path is a sentence ("At least 1,800 more imports in X"), not a file name.
+    const name = (e: BudgetEntry): string => (e.overflow ? esc(e.path, 400) : dp(e.path));
+    const fmt = (e: BudgetEntry): string =>
+      e.tokens === 0 && e.note && /not counted|not listed/.test(e.note) ? `  - ${name(e)}: ${esc(e.note, 400)}` : `  - ${name(e)}: ${fmtTokens(e.tokens)}${e.note ? `, ${esc(e.note, 400)}` : ""}`;
+    if (p) {
+      const { doc, tokens, imports } = await fileBudget(sandbox, p, deadline);
+      const total = tokens + imports.reduce((a, e) => a + e.tokens, 0);
+      const overflow = imports.some((e) => e.overflow);
+      // The "N more imports" lines always show; the rest is capped.
+      const regular = imports.filter((e) => !e.overflow);
+      const shownImports = [...regular.slice(0, CAPS.listMaxFiles), ...imports.filter((e) => e.overflow)];
+      const missing = missingImportWarnings(imports);
+      const whole = approxTokens(doc.text);
+      const stripped = whole > tokens ? ` The whole file is ${fmtTokens(whole)}; block HTML comments are not counted because Claude Code strips them before loading.` : "";
+      const text = [
+        `${dp(doc.path)}: ${fmtTokens(tokens)} on its own, without its @imports (${kindLabel(doc.kind.kind)}, ${loadShort(doc.kind.load)}; ${plural(doc.profile.lines, "line")}, ${plural(doc.profile.bytes, "byte")}).${stripped}`,
+        ...(imports.length ? [`With its @imports: ${fmtTokens(total)}${overflow ? ", counting only the imports listed" : ""}.`, ...shownImports.map(fmt)] : []),
+        ...(regular.length > CAPS.listMaxFiles ? [`  - and ${plural(regular.length - CAPS.listMaxFiles, "more entry", "more entries")}, counted in the total but not listed`] : []),
+        ...missing.slice(0, 20).map((w) => `Warning: ${esc(w, 400)}`),
+        ...(missing.length > 20 ? [`Warning: and ${plural(missing.length - 20, "more missing import")}`] : []),
+        "Token counts are local estimates (about 4 characters per token for English).",
+      ].join("\n");
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: { path: doc.path, kind: doc.kind.kind, load: doc.kind.load, tokens, totalWithImports: total, imports: shownImports, importCount: imports.length, importsTruncated: overflow, approximate: true },
+      };
+    }
+    const b = await projectBudget(sandbox, deadline);
+    const loading = b.tools.filter((t) => t.tokens > 0).sort((x, y) => y.tokens - x.tokens);
+    const silent = b.tools.filter((t) => t.tokens === 0);
+    const lines = [
+      loading.length
+        ? `Context loaded at the start of every session, per tool (local estimates, largest first): ${loading.map((t) => `${TOOL_NAME[t.tool] ?? t.tool} ${fmtTokens(t.tokens).replace(/^about /, "")}`).join(", ")}.`
+        : "Nothing in this folder loads at the start of every session.",
+      UNTRUSTED_NOTE,
+    ];
+    for (const t of [...loading, ...silent]) {
+      lines.push("", `${TOOL_NAME[t.tool] ?? t.tool}: ${t.tokens > 0 ? fmtTokens(t.tokens) : "nothing counted"}`);
+      lines.push(...t.entries.slice(0, CAPS.listMaxFiles).map(fmt));
+      if (t.entries.length > CAPS.listMaxFiles) lines.push(`  - and ${plural(t.entries.length - CAPS.listMaxFiles, "more entry", "more entries")}, counted in the total but not listed`);
+      for (const w of t.warnings.slice(0, 20)) lines.push(`  - Warning: ${esc(w, 400)}`);
+      if (t.warnings.length > 20) lines.push(`  - and ${plural(t.warnings.length - 20, "more warning")}`);
+    }
+    if (b.files.length) {
+      lines.push("", b.files.length > 15 ? `Largest steering files (top 15 of ${n(b.files.length)}, whole file including comments):` : "Steering files by size (whole file including comments):");
+      lines.push(...b.files.slice(0, 15).map((e) => `  - ${dp(e.path)}: ${fmtTokens(e.tokens)}, ${esc(e.note ?? "", 200)}`));
+    }
+    if (b.skippedFiles.length) lines.push("", `Not read: ${b.skippedFiles.slice(0, 10).map((x) => esc(x, 400)).join("; ")}`);
+    if (b.walkNote) lines.push(b.walkNote);
+    lines.push("", "Project files only: user-level files such as ~/.claude/CLAUDE.md, personal skills and plugins are not counted.");
+    const listed = b.tools.map((t) => ({ ...t, entries: t.entries.slice(0, CAPS.listMaxFiles), entryCount: t.entries.length }));
+    return {
+      content: [{ type: "text", text: lines.join("\n") }],
+      structuredContent: { tools: listed, files: b.files.slice(0, CAPS.listMaxFiles), fileCount: b.files.length, skipped: b.skippedFiles.slice(0, 50), truncated: b.truncated, approximate: true },
+    };
   };
 
   server.registerTool(
@@ -290,79 +434,7 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
       },
       annotations: { title: "Lint steering files", ...READ_ONLY },
     },
-    guard(async ({ path: p, paths, include, trustRepoConfig }, deadline) => {
-      const targets: string[] = [];
-      if (p) targets.push(p);
-      if (paths) targets.push(...paths);
-      // A repo's config can never widen what is read (include comes from the call), and without
-      // trustRepoConfig it cannot hide a security finding either (config.ts, HiddenSecurity).
-      const project = await lintProject(sandbox, { targets, deadline, trustRepoConfig: trustRepoConfig === true, ...(include ? { include } : {}) });
-      const { results, failures, discovered, foundCount, timedOut, walkNote, truncated } = project;
-      // Suppressed findings (config, baseline, asitis-disable comments) are counted, not listed.
-      const live = (r: LintResult): Issue[] => r.issues.filter((i) => !i.suppressed);
-      const count = (s: string): number => results.reduce((a, r) => a + r.issues.filter((i) => i.severity === s && !i.suppressed).length, 0);
-      const suppressed = results.reduce((a, r) => a + r.issues.filter((i) => i.suppressed).length, 0);
-      const errors = count("error");
-      const warnings = count("warning");
-      const notes = count("info");
-      const allClean = errors + warnings + notes === 0 && !failures.length;
-      const tail = [...(project.hiddenNote ? [esc(project.hiddenNote, 800)] : []), ...(suppressed ? [`${plural(suppressed, "suppressed finding")} not listed.`] : []), ...project.notes.map((t) => esc(t, 400))];
-      const summaryOf = (base: Record<string, unknown>): Record<string, unknown> => (suppressed ? { ...base, suppressed } : base);
-      // Say exactly what was not linted and how to get it, so nobody has to guess a total.
-      const cutParts: string[] = [];
-      if (discovered && foundCount > results.length + failures.length && !timedOut) {
-        cutParts.push(`That is ${n(results.length)} of the ${n(foundCount)} steering files found (at most ${n(CAPS.lintMaxFiles)} per call). Pass paths (up to ${CAPS.lintMaxPaths} per call) to lint the others; find_steering_files lists them.`);
-      }
-      if (timedOut) cutParts.push(`Stopped at the time limit after ${plural(results.length, "file")}; pass paths to lint the rest.`);
-      if (walkNote) cutParts.push(walkNote);
-      const cut = cutParts.length ? ` ${cutParts.join(" ")}` : "";
-      const lines: string[] = [
-        allClean && results.length === 1
-          ? `Linted ${dp(results[0]!.path)}: no issues found.${cut}`
-          : allClean && results.length
-            ? `Linted ${plural(results.length, "file")}: no issues found.${cut}`
-            : `Linted ${plural(results.length, "file")}: ${plural(errors, "error")}, ${plural(warnings, "warning")}, ${plural(notes, "note")}.${cut}`,
-      ];
-      if (allClean && results.length === 1) {
-        return { content: [{ type: "text", text: [lines[0]!, ...tail].join("\n") }], structuredContent: { summary: summaryOf({ files: 1, errors: 0, warnings: 0, info: 0, truncated }), files: results, failures } };
-      }
-      if (discovered && !results.length) lines.push("No steering files found under the allowed folder.");
-      // Most important first: files with errors, then warnings, then notes only; clean files go on one line at the end.
-      const rank = (r: LintResult): number => (live(r).some((i) => i.severity === "error") ? 0 : live(r).some((i) => i.severity === "warning") ? 1 : 2);
-      const withIssues = results.filter((r) => live(r).length).sort((a, b) => rank(a) - rank(b));
-      const clean = results.filter((r) => !live(r).length);
-      if (withIssues.length || failures.length || clean.length) lines.push(UNTRUSTED_NOTE);
-      // Keep the result well under client limits (Claude Code warns at about 10k tokens): list at most
-      // LINT_MAX_LINES findings, most important files first, and count the rest.
-      let shownLines = 0;
-      let hiddenFindings = 0;
-      let hiddenFiles = 0;
-      for (const r of withIssues) {
-        if (shownLines >= LINT_MAX_LINES) {
-          hiddenFindings += live(r).length;
-          hiddenFiles++;
-          continue;
-        }
-        const items = formatIssues(live(r));
-        const room = LINT_MAX_LINES - shownLines;
-        lines.push("", `${dp(r.path)} (${kindLabel(r.kind)}, ${loadShort(r.load)})`);
-        lines.push(...items.slice(0, room));
-        if (items.length > room) lines.push(`  - and ${plural(items.length - room, "more finding")} in this file`);
-        shownLines += Math.min(items.length, room);
-      }
-      if (hiddenFiles) lines.push("", `${plural(hiddenFindings, "more finding")} in ${plural(hiddenFiles, "more file")} not listed; lint them with paths to see them.`);
-      if (failures.length) lines.push("");
-      for (const f of failures) lines.push(`${dp(f.path)}: not linted (${esc(f.error, 400)})`);
-      if (clean.length) {
-        const shown = clean.slice(0, 20).map((r) => dp(r.path)).join(", ");
-        lines.push("", `${withIssues.length ? `No issues in ${plural(clean.length, "file")}` : "Files"}: ${shown}${clean.length > 20 ? `, and ${n(clean.length - 20)} more` : ""}.`);
-      }
-      if (tail.length) lines.push("", ...tail);
-      return {
-        content: [{ type: "text", text: lines.join("\n") }],
-        structuredContent: { summary: summaryOf({ files: results.length, errors, warnings, info: notes, truncated }), files: results, failures },
-      };
-    }),
+    guard((args, deadline) => lintReport(args, deadline)),
   );
 
   server.registerTool(
@@ -374,64 +446,7 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
       inputSchema: { path: z.string().min(1).max(CAPS.maxPathChars).optional().describe("One file; omit for the whole folder") },
       annotations: { title: "Context budget", ...READ_ONLY },
     },
-    guard(async ({ path: p }, deadline) => {
-      // A file that was not counted shows why instead of "about 0 tokens".
-      // An overflow row's path is a sentence ("At least 1,800 more imports in X"), not a file name.
-      const name = (e: BudgetEntry): string => (e.overflow ? esc(e.path, 400) : dp(e.path));
-      const fmt = (e: BudgetEntry): string =>
-        e.tokens === 0 && e.note && /not counted|not listed/.test(e.note) ? `  - ${name(e)}: ${esc(e.note, 400)}` : `  - ${name(e)}: ${fmtTokens(e.tokens)}${e.note ? `, ${esc(e.note, 400)}` : ""}`;
-      if (p) {
-        const { doc, tokens, imports } = await fileBudget(sandbox, p, deadline);
-        const total = tokens + imports.reduce((a, e) => a + e.tokens, 0);
-        const overflow = imports.some((e) => e.overflow);
-        // The "N more imports" lines always show; the rest is capped.
-        const regular = imports.filter((e) => !e.overflow);
-        const shownImports = [...regular.slice(0, CAPS.listMaxFiles), ...imports.filter((e) => e.overflow)];
-        const missing = missingImportWarnings(imports);
-        const whole = approxTokens(doc.text);
-        const stripped = whole > tokens ? ` The whole file is ${fmtTokens(whole)}; block HTML comments are not counted because Claude Code strips them before loading.` : "";
-        const text = [
-          `${dp(doc.path)}: ${fmtTokens(tokens)} on its own, without its @imports (${kindLabel(doc.kind.kind)}, ${loadShort(doc.kind.load)}; ${plural(doc.profile.lines, "line")}, ${plural(doc.profile.bytes, "byte")}).${stripped}`,
-          ...(imports.length ? [`With its @imports: ${fmtTokens(total)}${overflow ? ", counting only the imports listed" : ""}.`, ...shownImports.map(fmt)] : []),
-          ...(regular.length > CAPS.listMaxFiles ? [`  - and ${plural(regular.length - CAPS.listMaxFiles, "more entry", "more entries")}, counted in the total but not listed`] : []),
-          ...missing.slice(0, 20).map((w) => `Warning: ${esc(w, 400)}`),
-          ...(missing.length > 20 ? [`Warning: and ${plural(missing.length - 20, "more missing import")}`] : []),
-          "Token counts are local estimates (about 4 characters per token for English).",
-        ].join("\n");
-        return {
-          content: [{ type: "text", text }],
-          structuredContent: { path: doc.path, kind: doc.kind.kind, load: doc.kind.load, tokens, totalWithImports: total, imports: shownImports, importCount: imports.length, importsTruncated: overflow, approximate: true },
-        };
-      }
-      const b = await projectBudget(sandbox, deadline);
-      const loading = b.tools.filter((t) => t.tokens > 0).sort((x, y) => y.tokens - x.tokens);
-      const silent = b.tools.filter((t) => t.tokens === 0);
-      const lines = [
-        loading.length
-          ? `Context loaded at the start of every session, per tool (local estimates, largest first): ${loading.map((t) => `${TOOL_NAME[t.tool] ?? t.tool} ${fmtTokens(t.tokens).replace(/^about /, "")}`).join(", ")}.`
-          : "Nothing in this folder loads at the start of every session.",
-        UNTRUSTED_NOTE,
-      ];
-      for (const t of [...loading, ...silent]) {
-        lines.push("", `${TOOL_NAME[t.tool] ?? t.tool}: ${t.tokens > 0 ? fmtTokens(t.tokens) : "nothing counted"}`);
-        lines.push(...t.entries.slice(0, CAPS.listMaxFiles).map(fmt));
-        if (t.entries.length > CAPS.listMaxFiles) lines.push(`  - and ${plural(t.entries.length - CAPS.listMaxFiles, "more entry", "more entries")}, counted in the total but not listed`);
-        for (const w of t.warnings.slice(0, 20)) lines.push(`  - Warning: ${esc(w, 400)}`);
-        if (t.warnings.length > 20) lines.push(`  - and ${plural(t.warnings.length - 20, "more warning")}`);
-      }
-      if (b.files.length) {
-        lines.push("", b.files.length > 15 ? `Largest steering files (top 15 of ${n(b.files.length)}, whole file including comments):` : "Steering files by size (whole file including comments):");
-        lines.push(...b.files.slice(0, 15).map((e) => `  - ${dp(e.path)}: ${fmtTokens(e.tokens)}, ${esc(e.note ?? "", 200)}`));
-      }
-      if (b.skippedFiles.length) lines.push("", `Not read: ${b.skippedFiles.slice(0, 10).map((x) => esc(x, 400)).join("; ")}`);
-      if (b.walkNote) lines.push(b.walkNote);
-      lines.push("", "Project files only: user-level files such as ~/.claude/CLAUDE.md, personal skills and plugins are not counted.");
-      const listed = b.tools.map((t) => ({ ...t, entries: t.entries.slice(0, CAPS.listMaxFiles), entryCount: t.entries.length }));
-      return {
-        content: [{ type: "text", text: lines.join("\n") }],
-        structuredContent: { tools: listed, files: b.files.slice(0, CAPS.listMaxFiles), fileCount: b.files.length, skipped: b.skippedFiles.slice(0, 50), truncated: b.truncated, approximate: true },
-      };
-    }),
+    guard((args, deadline) => budgetReport(args, deadline)),
   );
 
   server.registerTool(
@@ -548,8 +563,107 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
     }),
   );
 
-  strictProtocolErrors(server);
+  // Resources: the same reports as lint_steering and context_budget, for clients that attach
+  // context by reference (an @-mention, a "context" picker) instead of calling a tool. They go
+  // through the same queue, deadline and sandbox as the tools, never carry the footer, and stay
+  // small because a client puts the whole text into the model's context.
+  const readResource = async (uri: URL, cutHint: string, fn: (deadline: Deadline) => Promise<ToolResult>) => {
+    if (!(await acquire())) throw rpcError(ErrorCode.InternalError, `Busy: ${CAPS.maxConcurrentCalls} calls are running and ${CAPS.maxQueuedCalls} are waiting. Try again when they finish.`);
+    try {
+      const r = await fn(new Deadline(CAPS.callBudgetMs));
+      return { contents: [{ uri: uri.href, mimeType: "text/plain", text: capResource(r.content.map((c) => c.text).join("\n"), cutHint) }] };
+    } catch (e) {
+      if (e instanceof UserError) throw rpcError(ErrorCode.InvalidParams, esc(e.message, 600));
+      const fsm = fsMessage(e);
+      if (fsm) throw rpcError(ErrorCode.InvalidParams, fsm);
+      throw rpcError(ErrorCode.InternalError, esc(`Internal error in asitis-mcp ${VERSION}: ${scrubPaths((e as Error)?.message ?? String(e))}`, 600));
+    } finally {
+      release();
+    }
+  };
+  const lintHint = "Call the lint_steering tool for every finding.";
+  const budgetHint = "Call the context_budget tool for the full report.";
+  server.registerResource(
+    "findings",
+    "asitis://findings",
+    {
+      title: "AsItIs findings",
+      description: `Lint findings for every steering file in the project, worst first, re-run on each read (at most ${CAPS.resourceMaxFindings} listed)`,
+      mimeType: "text/plain",
+    },
+    (uri) => readResource(uri, lintHint, (d) => lintReport({}, d, CAPS.resourceMaxFindings)),
+  );
+  server.registerResource(
+    "budget",
+    "asitis://budget",
+    {
+      title: "AsItIs context budget",
+      description: "Approximate tokens each agent tool loads at the start of every session, per file",
+      mimeType: "text/plain",
+    },
+    (uri) => readResource(uri, budgetHint, (d) => budgetReport({}, d)),
+  );
+  server.registerResource(
+    "file-findings",
+    new ResourceTemplate("asitis://findings/{+path}", { list: undefined }),
+    { title: "AsItIs findings for one file", description: "Lint findings for one steering file, by path relative to the project", mimeType: "text/plain" },
+    (uri, vars) =>
+      readResource(uri, lintHint, async (d) => {
+        const p = templatePath(vars["path"]);
+        await sandbox.open(p); // the same refusals as read_markdown: outside the folder, symlinks out, not markdown
+        return lintReport({ path: p }, d, CAPS.resourceMaxFindings);
+      }),
+  );
+  server.registerResource(
+    "file-budget",
+    new ResourceTemplate("asitis://budget/{+path}", { list: undefined }),
+    { title: "AsItIs context budget for one file", description: "Approximate tokens for one steering file and its @imports", mimeType: "text/plain" },
+    (uri, vars) => readResource(uri, budgetHint, (d) => budgetReport({ path: templatePath(vars["path"]) }, d)),
+  );
+
+  const toolNames = registeredTools(server);
+  registerPrompts(server, (name) => toolNames.includes(name));
+
+  strictProtocolErrors(server, toolNames);
   return server;
+}
+
+/**
+ * A JSON-RPC error with a plain message. McpError puts "MCP error -32602:" into the message itself,
+ * and the SDK client adds the same prefix again, so the user would read it twice.
+ */
+function rpcError(code: number, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+/** The path in a resource URI, percent-decoded. The sandbox does every other check. */
+function templatePath(v: string | string[] | undefined): string {
+  const raw = Array.isArray(v) ? v.join("/") : (v ?? "");
+  let p: string;
+  try {
+    p = decodeURIComponent(raw);
+  } catch {
+    throw new UserError("The path in the resource URI is not valid percent-encoding.");
+  }
+  if (!p) throw new UserError("The resource URI has no path.");
+  return p;
+}
+
+/** A resource's text cut at a line break under CAPS.resourceMaxChars, with a line saying so. */
+export function capResource(text: string, hint: string): string {
+  const max = CAPS.resourceMaxChars;
+  if (text.length <= max) return text;
+  const room = max - 200;
+  const at = text.lastIndexOf("\n", room);
+  return `${text.slice(0, at > 0 ? at : room)}\n[Cut at ${n(max)} characters. ${hint}]`;
+}
+
+/** The seven tools this build always has; registeredTools reads the real list when the SDK exposes it. */
+const BASE_TOOLS = ["read_markdown", "outline", "lint_steering", "context_budget", "load_plan", "find_steering_files", "suggest_fixes"];
+
+function registeredTools(server: McpServer): string[] {
+  const reg = (server as unknown as { _registeredTools?: unknown })._registeredTools;
+  return reg && typeof reg === "object" ? Object.keys(reg) : BASE_TOOLS;
 }
 
 /** Findings listed in one lint_steering result; the summary line still counts all of them. */
@@ -568,12 +682,18 @@ function oneLineIssues(e: unknown): string | null {
  * result, and a request whose shape is wrong is -32602 with one line, not -32603 with a zod dump.
  * Wraps the SDK's request handlers; if the SDK ever stops exposing them, nothing changes.
  */
-function strictProtocolErrors(server: McpServer): void {
+function strictProtocolErrors(server: McpServer, tools: string[]): void {
   const handlers = (server.server as unknown as { _requestHandlers?: unknown })._requestHandlers;
   if (!(handlers instanceof Map)) return;
-  const tools = ["read_markdown", "outline", "lint_steering", "context_budget", "load_plan", "find_steering_files", "suggest_fixes"];
   for (const [method, fn] of [...handlers.entries()] as Array<[string, (req: any, extra: unknown) => Promise<unknown>]>) {
     handlers.set(method, async (req: any, extra: unknown) => {
+      if (method === "resources/read") {
+        const uri: unknown = req?.params?.uri;
+        // The SDK parses the URI with new URL() and would answer a bad one with -32603 and a raw TypeError.
+        if (typeof uri === "string" && (uri.length > CAPS.maxPathChars + 100 || !URL.canParse(uri))) {
+          throw rpcError(ErrorCode.InvalidParams, "Invalid resource URI. This server has asitis://findings and asitis://budget, plus asitis://findings/<path> and asitis://budget/<path> for one file");
+        }
+      }
       if (method === "tools/call") {
         const name: unknown = req?.params?.name;
         if (typeof name === "string" && !tools.includes(name)) {
