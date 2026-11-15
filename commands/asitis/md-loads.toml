@@ -1,0 +1,19 @@
+description = "Show what Gemini CLI, Codex, Claude Code, Cursor and Copilot load when a session starts in a folder"
+prompt = """
+Call the `load_plan` tool from the `asitis` MCP server.
+
+Arguments: "{{args}}".
+
+- If the arguments name a folder, pass it as `cwd`. If they also name one of gemini-cli, codex, claude-code, cursor or copilot, pass that as `tool`.
+- With no arguments, call it with no arguments (the workspace root, all five tools).
+- If the result says to call again with an offset, do that only when asked.
+
+Report, short:
+
+1. One line per tool: what loads at launch and its token total, largest first.
+2. Anything cut or not loaded that the user probably expects to load, with the reason the tool gave.
+3. What loads later and when, in one or two lines, if it matters.
+4. Steps marked (assumed): say they are not confirmed yet.
+
+Quote file names and reasons as the tool printed them. Say once that the numbers are local estimates. Do not edit any file unless asked.
+"""

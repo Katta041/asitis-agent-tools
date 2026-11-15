@@ -1,0 +1,20 @@
+{
+  "name": "asitis",
+  "version": "0.4.1",
+  "description": "Read-only linter for GEMINI.md, AGENTS.md, CLAUDE.md and SKILL.md: what each agent loads, token budgets, hidden instructions. Runs offline, never writes.",
+  "contextFileName": "gemini/asitis.md",
+  "mcpServers": {
+    "asitis": {
+      "command": "node",
+      "args": [
+        "${extensionPath}${/}plugins${/}asitis${/}server${/}launch.mjs",
+        "--permission",
+        "--allow-fs-read=${workspacePath}",
+        "--allow-fs-read=${extensionPath}${/}plugins${/}asitis",
+        "${extensionPath}${/}plugins${/}asitis${/}server${/}asitis-mcp.mjs",
+        "--root",
+        "${workspacePath}"
+      ]
+    }
+  }
+}

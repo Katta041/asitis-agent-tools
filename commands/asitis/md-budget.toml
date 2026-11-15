@@ -1,0 +1,14 @@
+description = "Estimate how many tokens your steering files load every session, per tool"
+prompt = """
+Call the `context_budget` tool from the `asitis` MCP server.
+
+Arguments: "{{args}}". With a path, call it with `path` set to that path. With no path, call it with no arguments for the whole workspace.
+
+Report, short:
+
+1. One line per tool with its every-session total, largest first.
+2. The three biggest contributors, and any warnings the tool printed.
+3. At most three concrete ways to cut context.
+
+Say once that the numbers are local estimates. If nothing loads every session, say so and stop. Do not edit any file unless asked.
+"""
