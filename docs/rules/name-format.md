@@ -2,7 +2,9 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| format | error | one file | review | yes |
+| format | error, varies (see below) | one file | review | yes |
+
+Severity: error; a warning for non-ASCII lowercase letters; a note for a plugin prefix before the folder name.
 
 ## What it catches
 
@@ -12,7 +14,7 @@ A skill `name` with uppercase letters, spaces, underscores, dots, or a hyphen at
 
 ## Why it matters
 
-The Claude API and claude.ai accept only a-z, 0-9 and hyphens. The Agent Skills spec also allows lowercase Unicode letters, which is reported as a warning.
+The Claude API and claude.ai accept only a-z, 0-9 and hyphens. The Agent Skills spec also allows lowercase Unicode letters, which is reported as a warning. A plugin prefix (name: my-plugin:review in a folder named review) is a form Claude Code documents for plugin skills, so it is a note.
 
 ## Bad example
 

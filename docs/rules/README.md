@@ -22,12 +22,12 @@ The file is not read the way its author expects: frontmatter, required fields, v
 | [missing-description](missing-description.md) | error | Required description field is missing |
 | [field-type](field-type.md) | error | A frontmatter field has the wrong type |
 | [name-too-long](name-too-long.md) | error | Skill name is longer than 64 characters |
-| [name-format](name-format.md) | error | Skill name is not lowercase letters, digits and single hyphens |
+| [name-format](name-format.md) | error, varies | Skill name is not lowercase letters, digits and single hyphens |
 | [name-dir-mismatch](name-dir-mismatch.md) | warning | Skill name does not match its folder name |
 | [name-reserved-word](name-reserved-word.md) | note | Skill name contains anthropic or claude |
 | [xml-tag](xml-tag.md) | warning | Skill name or description contains an XML tag |
 | [description-too-long](description-too-long.md) | error | Skill description is longer than 1,024 characters |
-| [compatibility-too-long](compatibility-too-long.md) | warning | compatibility is longer than 500 characters |
+| [compatibility-too-long](compatibility-too-long.md) | warning, varies | compatibility is longer than 500 characters |
 | [unknown-key](unknown-key.md) | note | A frontmatter key the reading tool ignores |
 | [memory-type](memory-type.md) | warning | Memory file type is not user, feedback, project or reference |
 | [never-applied](never-applied.md) | warning | Cursor rule has no alwaysApply, globs or description |

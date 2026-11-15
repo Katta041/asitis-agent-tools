@@ -230,6 +230,13 @@ function valueFits(key: string, v: unknown): boolean {
 }
 const isStrOrList = (v: unknown): boolean => typeof v === "string" || (Array.isArray(v) && v.every((x) => typeof x === "string"));
 
+/**
+ * Skill folders that Claude Code or another Agent Skills reader loads: .claude/skills and the same
+ * layout under .agents, .codex, .cursor, .github, .opencode and .gemini, a repository's top-level
+ * skills/, and a plugin's skills/ (plugins/<name>/skills/).
+ */
+const SPEC_SKILL_DIR = /(?:^|\/)\.(?:claude|agents|codex|cursor|github|opencode|gemini)\/skills\/|^skills\/|(?:^|\/)plugins\/[^/]+\/skills\//;
+
 function checkFrontmatter(doc: Doc, c: Collector): void {
   const fm = doc.frontmatter;
   for (const p of fm.problems) c.add(p.rule === "frontmatter-bom" || p.rule === "frontmatter-value-cut" ? "warning" : "error", p.rule, p.message, p.line);
@@ -251,7 +258,15 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
       } else {
         const n = String(name);
         if (n.length > VENDOR.skillNameMax) c.add("error", "name-too-long", `name is ${n.length} characters; the Agent Skills spec allows ${VENDOR.skillNameMax}`, line("name"));
-        if (!SKILL_NAME.test(n)) {
+        // "plugin:skill" where skill is the folder name: Claude Code documents this form for plugin
+        // skills (skills docs, "How a skill gets its command name", read 15 November 2026: a name that
+        // already starts with the plugin's prefix keeps it, v2.1.246 or later). Spec-strict readers
+        // still reject the colon, so a note, and the folder check compares the part after the prefix.
+        const ns = /^([a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(n);
+        const namespaced = !!ns && ns[2] === dir;
+        if (namespaced) {
+          c.add("info", "name-format", `name ${q(n, 80)} carries a plugin prefix. Claude Code accepts that in a plugin whose name is ${q(ns[1]!, 80)}, but the Agent Skills spec, claude.ai and the Claude API allow only a-z, 0-9 and hyphens, so other agents may skip this skill; ${q(ns[2]!, 80)} works everywhere`, line("name"));
+        } else if (!SKILL_NAME.test(n)) {
           const fix = suggestSkillName(n);
           // Agent Skills spec: "unicode lowercase alphanumeric characters" and hyphens (skills-ref NFKC-normalises).
           // The Claude API and claude.ai accept only a-z, 0-9 and hyphens.
@@ -264,7 +279,7 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
         // Only a skill that sits directly in a skills folder is installed under its folder name. A
         // SKILL.md nested inside another skill (a pipeline's stages) and a template folder meant to
         // be copied and renamed are left alone.
-        if (dir && dir !== "." && dir !== n && topLevelSkill(doc.file.rel) && !inTemplateFolder(doc.file.rel)) c.add("warning", "name-dir-mismatch", `name ${q(n, 80)} does not match its folder ${q(dir, 80)}; the spec expects them to match, so rename one`, line("name"));
+        if (dir && dir !== "." && dir !== n && !namespaced && topLevelSkill(doc.file.rel) && !inTemplateFolder(doc.file.rel)) c.add("warning", "name-dir-mismatch", `name ${q(n, 80)} does not match its folder ${q(dir, 80)}; the spec expects them to match, so rename one`, line("name"));
         const reserved = RESERVED_WORDS.find((w) => n.toLowerCase().includes(w));
         if (reserved) {
           // A note: only claude.ai and Claude API uploads reject it; Claude Code, Codex and the other
@@ -300,7 +315,12 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
         if (data[l] !== undefined && !isStrOrList(data[l])) c.add("error", "field-type", `${l} must be a string or a list of strings`, line(l));
       }
       const compat = str(data["compatibility"]);
-      if (compat && compat.length > VENDOR.skillCompatibilityMax) c.add("warning", "compatibility-too-long", `compatibility is ${compat.length} characters (max ${VENDOR.skillCompatibilityMax})`, line("compatibility"));
+      // Only Agent Skills readers enforce the limit (Claude Code does not read compatibility); a skill
+      // outside the folders they load from is read by the repo's own loader.
+      if (compat && compat.length > VENDOR.skillCompatibilityMax) {
+        const spec = SPEC_SKILL_DIR.test(doc.file.rel);
+        c.add(spec ? "warning" : "info", "compatibility-too-long", `compatibility is ${compat.length} characters (max ${VENDOR.skillCompatibilityMax})${spec ? "" : "; this skill is outside the folders Agent Skills readers load from, so this matters only if one of them reads it"}`, line("compatibility"));
+      }
     }
   } else if (kind === "claude-agent") {
     if (!fm.present && !fm.problems.length) c.add("error", "missing-frontmatter", "Subagent files need frontmatter with name and description");
@@ -345,7 +365,12 @@ function checkFrontmatter(doc: Doc, c: Collector): void {
       const near = nearestKey(k, known.keys);
       // A near miss is a typo only when the value is the kind the real key takes: "user_invocable:
       // true" is user-invocable, but a list under "modes:" is custom data, not a misspelt "model:".
-      if (near && valueFits(near, data[k])) {
+      if (near && valueFits(near, data[k]) && kind === "skill" && !SPEC_SKILL_DIR.test(doc.file.rel)) {
+        // Outside every folder a Claude Code or Agent Skills reader loads skills from (.qwen/skills,
+        // products/x/skills, src/skills/bundled), the repo's own loader reads the file and may use
+        // this spelling (Qwen Code reads allowedTools). A warning only where the spelling surely loses.
+        c.add("info", "unknown-key", `Frontmatter key ${q(k, 60)} is not read by ${known.reader}, which spell it ${q(near, 60)}. This skill is outside the folders they load skills from, so check whether your own loader reads this spelling`, line(k));
+      } else if (near && valueFits(near, data[k])) {
         c.add("warning", "unknown-key", `Frontmatter key ${q(k, 60)} is not read by ${known.reader}; did you mean ${q(near, 60)}? As written it is ignored`, line(k));
       } else if (kind === "skill") {
         // Claude Code skills docs (read 15 October 2026), "Frontmatter reference": claude.ai skill
@@ -380,7 +405,10 @@ function checkLength(doc: Doc, c: Collector, tokens: number): void {
   // and examples/app/CLAUDE.md belongs to the sample app.
   const material = notProjectInstructions(doc.file.rel);
   if (kind === "claude-md" && lines > VENDOR.claudeMdTargetLines && !material) {
-    const sev = lines > CLAUDE_MD_WARN_LINES ? "warning" : "info";
+    // A CLAUDE.md that is a symlink to an AGENTS.md: the file is reported under its own name (length
+    // or codex-chain-over-budget), and other agents read it too, so here the size is a note.
+    const toAgents = path.basename(doc.file.real) === "AGENTS.md";
+    const sev = lines > CLAUDE_MD_WARN_LINES && !toAgents ? "warning" : "info";
     c.add(sev, "length", `${lines} lines; Claude Code recommends under ${VENDOR.claudeMdTargetLines} per CLAUDE.md. Move path-specific parts into .claude/rules/ files with paths frontmatter`);
   }
   if (kind === "skill") {
@@ -551,10 +579,15 @@ function rulePreview(s: string): string {
   return trimEndChars(s.replace(LIST_MARKER, "").trim(), ".!;:, ");
 }
 
+/** Lowercases text outside inline code spans: `PULL_REQUEST_TEMPLATE.md` and `pull_request_template.md` are different paths. */
+function lowerOutsideCode(s: string): string {
+  if (!s.includes("`")) return s.toLowerCase();
+  return s.split("`").map((part, i) => (i % 2 ? part : part.toLowerCase())).join("`");
+}
+
 function normRule(s: string): string {
   return trimEndChars(
-    s
-      .toLowerCase()
+    lowerOutsideCode(s)
       .replace(LIST_MARKER, "")
       .replace(HTML_TAG, " ")
       .replace(/[*_`]/g, "")
@@ -817,7 +850,7 @@ function titleWords(title: string): string[] {
   return title.split(" ").filter((w) => w.length >= 3 && !TITLE_STOP.has(w) && !/^\d+$/.test(w));
 }
 
-type DupKind = "same-section" | "copied" | "elsewhere";
+type DupKind = "same-section" | "copied" | "elsewhere" | "shared";
 
 /**
  * How the sections of two copies of a rule relate. "same" when they sit in one section; "parallel"
@@ -838,6 +871,9 @@ function sectionRelation(a: SectionPath, b: SectionPath): "same" | "same-topic" 
   const wa = new Set(titleWords(ta));
   return titleWords(tb).some((w) => wa.has(w)) ? "parallel" : "other";
 }
+
+/** A task-list item: "[ ] Run the tests", "[x] Done". */
+const CHECKBOX = /^\[[ xX]\]\s/;
 
 /** A template line whose words are mostly placeholders ("- [Finding from Phase 1] -> [explains this choice]", "> [Example]"). */
 function placeholderOnly(text: string): boolean {
@@ -874,13 +910,31 @@ function checkRules(doc: Doc, c: Collector): void {
       else firstOf[j] = f;
     });
   }
+  // Units of each paragraph, to tell one shared sentence apart from a repeated paragraph.
+  const unitsOf = new Map<number, number[]>();
+  units.forEach((u, j) => {
+    const list = unitsOf.get(u.block);
+    if (list) list.push(j);
+    else unitsOf.set(u.block, [j]);
+  });
+  // The same sentence inside two different paragraphs of several sentences ("A failed check changes
+  // the verdict." closing two paragraphs about different checks) is a shared phrase, not a copied rule.
+  const sharedSentence = (j: number): boolean => {
+    const u = units[j]!;
+    const f = units[firstOf[j]!]!;
+    if (u.listItem || f.listItem || u.block === f.block) return false;
+    const a = unitsOf.get(u.block)!;
+    const b = unitsOf.get(f.block)!;
+    if (a.length < 2 || b.length < 2) return false;
+    return !(a.length === b.length && a.every((k) => firstOf[k]! >= 0 && units[firstOf[k]!]!.block === f.block));
+  };
   const copied = (j: number): boolean => {
     const f = firstOf[j]!;
     return (j > 0 && f > 0 && firstOf[j - 1] === f - 1) || (j + 1 < units.length && firstOf[j + 1]! >= 0 && firstOf[j + 1] === f + 1);
   };
   // The finding for each paragraph or list item: the strongest of its sentences.
   const best = new Map<number, { j: number; kind: DupKind }>();
-  const rank: Record<DupKind, number> = { "same-section": 2, copied: 2, elsewhere: 1 };
+  const rank: Record<DupKind, number> = { "same-section": 2, copied: 2, elsewhere: 1, shared: 0 };
   for (let j = 0; j < units.length; j++) {
     const f = firstOf[j]!;
     if (f < 0) continue;
@@ -891,9 +945,15 @@ function checkRules(doc: Doc, c: Collector): void {
     // heading or parent bullet. A short sub-item under a different parent bullet ("Feature PRs:" /
     // "Bugfix PRs:" each with "- Add a changelog entry") is a per-parent checklist, even when it is an instruction.
     const rel = sectionRelation(first.path, u.path);
-    const structural = u.listItem && u.norm.length < 40 && ((!rule && (rel !== "same" || u.nested)) || (u.nested && first.parent !== u.parent));
-    if (structural || placeholderOnly(u.preview) || rel === "parallel") continue;
-    const kind: DupKind = rel === "same" ? "same-section" : rel === "same-topic" && copied(j) ? "copied" : "elsewhere";
+    // A sub-item under two different parent bullets ("Use <param>" / "Use <returns>", each with "The
+    // description should be a noun phrase") belongs to its parent, at any length.
+    const perParent = u.nested && first.nested && first.parent !== u.parent;
+    const structural = perParent || (u.listItem && u.norm.length < 40 && ((!rule && (rel !== "same" || u.nested)) || (u.nested && first.parent !== u.parent)));
+    // Steps (numbered or checkbox items) repeat across procedures and loops on purpose ("Wait for
+    // execution to complete" in two test runs, "Repeat the tests" twice); a copied run of steps still counts.
+    const step = (x: RuleUnit): boolean => x.listItem && (x.ordered || CHECKBOX.test(x.preview));
+    if (structural || placeholderOnly(u.preview) || rel === "parallel" || (step(u) && step(first) && !copied(j))) continue;
+    const kind: DupKind = sharedSentence(j) ? "shared" : rel === "same" ? "same-section" : rel === "same-topic" && copied(j) ? "copied" : "elsewhere";
     const prev = best.get(u.block);
     if (!prev || rank[kind] > rank[prev.kind]) best.set(u.block, { j, kind });
   }
@@ -909,6 +969,8 @@ function checkRules(doc: Doc, c: Collector): void {
       c.add("warning", "duplicate-rule", `Same rule as line ${first.line}: ${quote}. Duplicates cost context and drift apart when one is edited; keep one`, u.line);
     } else if (kind === "copied") {
       c.add("warning", "duplicate-rule", `Same rule as line ${first.line}, in a block of text that repeats from there: ${quote}. Duplicates cost context and drift apart when one is edited; keep one copy`, u.line);
+    } else if (kind === "shared") {
+      c.add("info", "duplicate-rule", `Same sentence as line ${first.line}, inside a different paragraph: ${quote}. Fine when the two paragraphs are about different things; otherwise keep one`, u.line);
     } else {
       c.add("info", "duplicate-rule", `Same rule as line ${first.line}, under another heading: ${quote}. If one section summarises the other, or they never apply together, this can be on purpose; otherwise keep one`, u.line);
     }
@@ -1021,6 +1083,24 @@ function submodulesOf(sandbox: Sandbox): Promise<string[]> {
   return p;
 }
 
+/** A leading skill-folder placeholder: {baseDir}/, {skillDir}/, ${CLAUDE_SKILL_DIR}/, ${SKILL_DIR}/. */
+const SKILL_DIR_PLACEHOLDER = /^(?:\{(?:baseDir|basedir|base_dir|skillDir|skill_dir|SKILL_DIR)\}|\$\{(?:CLAUDE_SKILL_DIR|SKILL_DIR)\})(?:\/|$)/;
+
+/** Template extensions that render to the file name without them (x.md.j2 renders x.md). */
+const TEMPLATE_EXTS = [".j2", ".jinja", ".jinja2", ".tmpl", ".tpl", ".template", ".hbs", ".handlebars", ".mustache", ".ejs", ".njk", ".liquid", ".erb", ".eta"];
+
+/** Whether a missing link target has a template next to it that a build renders into it. */
+async function renderedFromTemplate(sandbox: Sandbox, t: string, dir: string): Promise<boolean> {
+  if (!/\.[A-Za-z0-9]{1,10}$/.test(t)) return false;
+  for (const ext of TEMPLATE_EXTS) {
+    if ((await sandbox.probe(t + ext, dir)).state === "ok") return true;
+  }
+  return false;
+}
+
+/** ../blob/<ref>/<path> or ../tree/<ref>/<path>: relative to a GitHub issue or pull request page. */
+const GITHUB_WEB_PATH = /^(?:\.\.\/)+(?:blob|tree)\/[^/]+\/(.+)$/;
+
 async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<void> {
   const dir = path.dirname(doc.file.real);
   const links = extractLinks(doc.lines, doc.fence);
@@ -1042,12 +1122,18 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
       continue;
     }
     if (isExternalTarget(l.target)) continue;
-    // Placeholders in examples and templates: [Title](URL), [run](${GITHUB_SERVER_URL}/...), [x]({{ link }}), [x](<path>).
-    if (/\$\{|\{\{|^<.*>$/.test(l.target) || /^[A-Z][A-Z0-9_]*$/.test(l.target)) continue;
-    // A single word with no dot or slash ("[Smith et al., 2025](url)", "[docs](link)") is a
+    // A skill-folder placeholder ({baseDir}/references/x.md, ${CLAUDE_SKILL_DIR}/x.md) stands for the
+    // folder that holds SKILL.md: check the rest of the path from there.
+    let target = l.target;
+    const skillDir = doc.kind.kind === "skill" ? SKILL_DIR_PLACEHOLDER.exec(target) : null;
+    if (skillDir) target = target.slice(skillDir[0].length) || ".";
+    // Placeholders in examples and templates: [Title](URL), [run](${GITHUB_SERVER_URL}/...), [x]({{ link }}),
+    // [x](<path>), [x]({repo}/docs), [x](<%= url %>), and "..." for a link left out of an example.
+    if (/\$\{|\{\{|\{[A-Za-z_][\w.-]{0,40}\}|<%|^%.*%$|^<.*>$/.test(target) || /^[A-Z][A-Z0-9_]*$/.test(target) || /^\.{3,}$|\u2026/.test(target)) continue;
+    // A single word with no dot or slash ("[Smith et al., 2025](url)", "[docs](link)", "[TEAM-1](<ticket url>)") is a
     // placeholder far more often than a file, unless it is a well-known file without an extension.
-    if (/^[\w-]{1,40}$/.test(l.target) && !EXTENSIONLESS_FILE.test(l.target)) continue;
-    let t = l.target;
+    if (/^[\w -]{1,40}$/.test(target) && !EXTENSIONLESS_FILE.test(target)) continue;
+    let t = target;
     const h = t.search(/[#?]/);
     const frag = h >= 0 && t[h] === "#" ? t.slice(h + 1) : "";
     if (h >= 0) t = t.slice(0, h);
@@ -1066,6 +1152,12 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
       // A link into a git submodule that is not checked out: a plain clone leaves the folder empty.
       const subs = await submodulesOf(sandbox);
       if (subs.some((m) => fromRoot === m || fromRoot.startsWith(m + "/"))) continue;
+      // Rendered at build time from a template next to it (references/x.md from references/x.md.j2).
+      if (await renderedFromTemplate(sandbox, t, dir)) continue;
+      // A GitHub page link written for an issue or PR comment ("../blob/main/CONTRIBUTING.md"):
+      // fine when the rest of the path exists from the repository root.
+      const web = GITHUB_WEB_PATH.exec(t.replace(/\\/g, "/"));
+      if (web && (await sandbox.probe(web[1]!, sandbox.primary.real)).state === "ok") continue;
       // Written from the repository root instead of from this file ("docs/x.md" in .cursor/rules/a.mdc):
       // an agent working from the root finds it, editors and Markdown viewers do not.
       if (!/^\.\.?\//.test(t) && path.posix.dirname(doc.file.rel) !== ".") {
@@ -1105,6 +1197,9 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
       c.add("warning", "import-outside-root", `${q("@" + im.path, 200)} imports from your home folder. Claude Code asks for approval of external imports; teammates will not have this file`, im.line);
       continue;
     }
+    // Template placeholders (@<CONTEXT_DIR>/team.md, @{dir}/x.md) and possessives in prose
+    // ("@babel/parser's output") name no file.
+    if (/[<>{}]/.test(im.path) || /['\u2019]s$/.test(im.path)) continue;
     const probe = await sandbox.probe(im.path, dir);
     if (probe.state === "missing") {
       // @scope/package (an npm name: one slash, no file extension, not ./ or ../) is far more often a package than a file.

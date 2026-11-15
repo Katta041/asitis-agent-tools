@@ -354,6 +354,9 @@ async function checkShadowed(ctx: CheckContext, files: Files, agentsDocs: Doc[])
   const nested = new Map<string, Pending[]>();
   for (const doc of agentsDocs) {
     if (ctx.deadline.expired) return result;
+    // Claude Code memory docs (read 15 November 2026), "When Claude Code reads AGENTS.md": nothing under
+    // a .agents/ folder is read, with or without a CLAUDE.md, so a CLAUDE.md is not what hides it.
+    if (/(?:^|\/)\.agents\//.test(doc.file.rel)) continue;
     let dir = dirOf(doc.file.rel);
     if (dir === ".claude" || dir.endsWith("/.claude")) dir = dirOf(dir);
     const counting = await countingFiles(files, dir);

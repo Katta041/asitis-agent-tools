@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | budget | warning, varies (see below) | one file | no | yes |
 
-Severity: warning in one section or a block copied under the same heading; a note under unrelated headings; nothing for parallel sibling sections.
+Severity: warning in one section or a block copied under the same heading; a note under unrelated headings or for one sentence shared by two different paragraphs; nothing for parallel sibling sections or for steps shared by two procedures.
 
 ## What it catches
 
