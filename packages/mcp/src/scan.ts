@@ -650,6 +650,8 @@ export function extractLinks(lines: LineIndex, fence: Uint8Array): LinkRef[] {
     pos = at + 2;
     const li = lines.lineOf(at);
     if (fence[li] || spans.inCode(li, at)) continue;
+    // "\[text\](...)": an escaped bracket is literal text, not a link.
+    if (at > 0 && s.charCodeAt(at - 1) === 92 && (at < 2 || s.charCodeAt(at - 2) !== 92)) continue;
     let p = at + 2;
     const lineEnd = lines.end(li);
     while (p < lineEnd && s.charCodeAt(p) === 32) p++;

@@ -8,6 +8,7 @@ Every setup below runs the same `asitis lint` command with the same exit codes. 
 | 1 | At least one finding at or above `--fail-on`. |
 | 2 | Something you can fix: an unknown flag, a missing path, a bad config or baseline, Node older than 22.13. One line on stderr says what. |
 | 3 | A bug in asitis. One line with a link to report it. |
+| 4 | Partial run: the repo was too big to search in full (more than 1,000 steering files, 200,000 folder entries, or the time limit). The files found are linted and reported, and one line says how to lint the rest (`--root` on a subfolder, or paths). Add `--allow-partial` to get 0 or 1 instead. |
 
 All of them need Node 22.13 or later. The full flag list is in [cli-contract.md](cli-contract.md).
 

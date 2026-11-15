@@ -3,7 +3,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { connect, tempDir, type Connected } from "./helpers.js";
+import { spawnSync } from "node:child_process";
+import { connect, PKG, tempDir, type Connected } from "./helpers.js";
+
+const CLI_BUNDLE = path.join(PKG, "dist/asitis.mjs");
 
 const MB = 1024 * 1024;
 const SIZE = 10 * MB;
@@ -70,6 +73,15 @@ const CASES: Record<string, () => string> = {
   "lang-unclosed": () => "<!-- " + fill(LANG_NEAR_MISS + " "),
   // An ordinary link title is classified too (scanRefComments keeps it only when it matches), with no cap.
   "lang-link-titles": () => fill(`[a]: https://x.test "${LANG_NEAR_MISS}"\n`),
+  // 0.4.0 precision changes: placeholder and template links, GitHub page links, escaped brackets,
+  // import placeholders, code-span case, shared sentences and checkbox steps.
+  "placeholder-links": () => fill("[a]({baseDir}/r/x.md) [b](...) [c](../blob/main/x.md) [d](<t u>) [e](<%= u %>) \\[f\\](#g) "),
+  "brace-openers": () => fill("]({"),
+  "blob-paths": () => fill("](../" + "../".repeat(300) + "blob/"),
+  "import-placeholders": () => fill(" @<D>/x.md @{d}/y.md @a/b's"),
+  "code-case": () => fill("- Check `A.md` now\n- Check `a.md` now\n"),
+  "shared-sentences": () => fill("One thing here today. A failed check changes the verdict.\n\n"),
+  "checkbox-steps": () => fill("- [ ] Wait for it to finish\n1. Wait for it to finish\n"),
 };
 
 let t: ReturnType<typeof tempDir>;
@@ -112,6 +124,20 @@ describe(`10 MB adversarial inputs, each tool call under ${BUDGET_MS} ms`, () =>
     const r = await c.call("lint_steering", {});
     expect(r.isError).toBe(false);
     expect(r.text.length).toBeLessThan(2 * MB);
+  }, 120_000);
+});
+
+describe("the CLI on a 10 MB single line", () => {
+  // 0.3.0 took about 70 s here: each finding normalised and hashed the whole 10 MB line again for
+  // its fingerprint. FingerprintCounter (findings.ts) does it once per line and rule.
+  test.each(["imports", "at-signs", "quoted-mentions"])("%s", (name) => {
+    const t0 = Date.now();
+    const r = spawnSync(process.execPath, [CLI_BUNDLE, "lint", "--root", path.join(t.dir, name), "--format", "json", "--fail-on", "never"], { encoding: "utf8", timeout: 120_000, maxBuffer: 1 << 26 });
+    const ms = Date.now() - t0;
+    expect(r.status, r.stderr).toBe(0);
+    expect(JSON.parse(r.stdout).summary.files).toBe(1);
+    // Process start and JSON output included, so a few times the per-call budget.
+    expect(ms, `${name} took ${ms} ms`).toBeLessThan(BUDGET_MS * 4);
   }, 120_000);
 });
 

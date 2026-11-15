@@ -2,7 +2,9 @@
 
 | Category | Severity | Decided from | Fix offered | Inline suppression |
 |---|---|---|---|---|
-| format | warning | one file | no | yes |
+| format | warning, varies (see below) | one file | no | yes |
+
+Severity: warning; a note for a skill outside the folders that Agent Skills readers load.
 
 ## What it catches
 

@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | budget | warning, varies (see below) | one file | no | yes |
 
-Severity: warning; a note for a CLAUDE.md of 201 to 300 lines.
+Severity: warning; a note for a CLAUDE.md of 201 to 300 lines, or one that is a symlink to an AGENTS.md.
 
 ## What it catches
 

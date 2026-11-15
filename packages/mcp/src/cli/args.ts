@@ -33,6 +33,8 @@ export interface LintArgs {
   failOnHiddenSecurity: boolean;
   /** Print the "checked with AsItIs" README badge after a clean run (text format only). */
   badge: boolean;
+  /** A walk cut by the file, entry or time limit exits 0 or 1 as usual instead of 4. */
+  allowPartial: boolean;
 }
 
 export interface BudgetArgs {
@@ -147,6 +149,7 @@ export function parse(argv: string[]): Parsed {
         "fail-on-hidden-security": { type: "boolean" },
         tool: { type: "string", multiple: true },
         badge: { type: "boolean" },
+        "allow-partial": { type: "boolean" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
       },
@@ -183,6 +186,7 @@ export function parse(argv: string[]): Parsed {
     if (v.quiet) throw new UserError("--quiet only applies to asitis lint");
     if (v["annotate-notes"]) throw new UserError("--annotate-notes only applies to asitis lint");
     if (v["fail-on-hidden-security"]) throw new UserError("--fail-on-hidden-security only applies to asitis lint");
+    if (v["allow-partial"]) throw new UserError("--allow-partial only applies to asitis lint");
     if (v.badge) throw new UserError("--badge only applies to asitis lint");
     if (command === "loads") {
       if (rest.length > 1) throw new UserError("asitis loads takes at most one folder, the one a session starts in");
@@ -234,5 +238,6 @@ export function parse(argv: string[]): Parsed {
     allowBroadRoot,
     failOnHiddenSecurity: !!v["fail-on-hidden-security"],
     badge: !!v.badge,
+    allowPartial: !!v["allow-partial"],
   };
 }

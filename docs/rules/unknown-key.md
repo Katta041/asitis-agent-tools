@@ -12,7 +12,7 @@ A frontmatter key that the tool reading the file does not know. When the key is 
 
 ## Why it matters
 
-An ignored key does nothing. When it is one or two letters away from a real key it is reported as a warning, because it is almost always a typo.
+An ignored key does nothing. When it is one or two letters away from a real key it is reported as a warning, because it is almost always a typo. A skill outside the folders Claude Code and Agent Skills readers load from is read by the repo's own loader, which may use that spelling, so there it stays a note.
 
 ## Bad example
 

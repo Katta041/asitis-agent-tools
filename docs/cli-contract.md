@@ -29,7 +29,7 @@ asitis lint [paths...] [--root <dir>] [--format text|json|sarif|github]
             [--baseline <file>] [--write-baseline] [--include <list>]
             [--fix-preview[=safe]] [--max-files <n>] [--max-file-mb <n>] [--quiet]
             [--annotate-notes]
-            [--fail-on-hidden-security] [--badge]
+            [--fail-on-hidden-security] [--badge] [--allow-partial]
 asitis budget [file] [--root <dir>] [--format text|json] [--max-file-mb <n>]
 asitis loads [dir] [--root <dir>] [--tool <list>] [--format text|json] [--max-file-mb <n>]
 asitis --version
@@ -39,7 +39,7 @@ asitis lint --help | asitis budget --help | asitis loads --help
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `paths...` | none | Files to lint. Relative paths resolve against the current folder and must be inside the root. With no paths, every steering file under the root is linted (up to `CAPS.walkMaxFiles`, 1,000). Pre-commit passes the changed files here. |
+| `paths...` | none | Files to lint. Relative paths resolve against the current folder and must be inside the root. With no paths, every steering file under the root is linted (up to `CAPS.walkMaxFiles`, 1,000, and `CAPS.walkMaxEntries`, 200,000 folder entries). Pre-commit passes the changed files here. |
 | `--root <dir>` | current folder | The one folder the CLI may read. Same confinement as the server: symlinks out of it, `.env*`, `.git`, `node_modules` and (unless `--include config`) settings files are refused. Home folder and filesystem root are refused unless `--allow-broad-root` is given. Only one `--root`. |
 | `--format` | `text` | Output format, below. |
 | `--fail-on` | `error` | Lowest severity that makes the exit code 1. `never` always exits 0 when the run itself worked. |
@@ -48,13 +48,14 @@ asitis lint --help | asitis budget --help | asitis loads --help
 | `--write-baseline` | off | Print a baseline for the current findings instead of the report. Needs `--format json`; any other format is exit 2. |
 | `--include <list>` | none | Comma-separated opt-in scans: `skills`, `config`, `config-local` (implies `config`). Unknown values are exit 2. Merged with `include` from the config file. |
 | `--fix-preview[=safe]` | off | Attach fixes. With `text` it prints one combined unified diff that `git apply` accepts, and nothing else. With `json` each fixable finding gets `fix`; with `sarif` results get `fixes[]`; with `github` it is ignored. `=safe` limits fixes to safe ones. There is no flag that writes. |
-| `--max-files <n>` | 1,000 | Most steering files linted when walking the root, 1 to 1,000 (`CAPS.walkMaxFiles`). A walk that finds more is exit 2. |
+| `--max-files <n>` | 1,000 | Most steering files linted when walking the root, 1 to 1,000 (`CAPS.walkMaxFiles`). A walk that finds more lints the first `n` and exits 4 (see Exit codes). |
 | `--max-file-mb <n>` | 16 | Largest markdown file analysed, 1 to 64. |
 | `--quiet` | off | `text` and `github` only: no summary line, no notices. Findings are still printed, and so is the line about security findings hidden by the config or baseline. |
 | `--annotate-notes` | off | `github` only (any other format is exit 2): also annotate findings of severity note. Without it only errors and warnings become annotations; notes still count in the summary line, and one more line says how many were left out. |
 | `--fail-on-hidden-security` | off | Exit 1 when `.asitisrc.json` (rules off, a lower severity, `ignore`) or the baseline hid or lowered at least one security finding. The Action turns it on by default. |
 | `--badge` | off | `text` only (any other format, `--fix-preview` or `--write-baseline` is exit 2). After a run with no unsuppressed error or warning, no hidden security finding and exit code 0, prints a "checked with AsItIs" README badge in Markdown after the summary. Otherwise prints one line on stderr saying why there is no badge yet. Does not change the exit code. |
 | `--allow-broad-root` | off | As in `asitis-mcp`. |
+| `--allow-partial` | off | A walk cut by the file, entry or time limit exits 0 or 1 as usual instead of 4. The line that says the run was partial is still printed. |
 
 `ASITIS_DEBUG=1` adds a stack trace to exit code 3. No other environment variable changes behaviour.
 
@@ -66,10 +67,11 @@ Unknown flags, a flag without its value, a bad enum value and a bad number are a
 |---|---|---|
 | 0 | The run worked and no unsuppressed finding is at or above `--fail-on`. | The report. |
 | 1 | The run worked and at least one unsuppressed finding is at or above `--fail-on`. | The report. |
-| 2 | Something the user can fix: an unknown flag or value, a path that does not exist or is outside the root or refused, an unreadable or invalid config or baseline, Node older than 22.13, or a run cut short by the file or time limit. | One line on stderr, starting `asitis: `, no stack trace. Nothing on stdout. |
+| 2 | Something the user can fix: an unknown flag or value, a path that does not exist or is outside the root or refused, an unreadable or invalid config or baseline, Node older than 22.13, or a lint cut short by the 5-minute time limit. | One line on stderr, starting `asitis: `, no stack trace. Nothing on stdout. |
 | 3 | A bug in asitis. | One line on stderr: `asitis: internal error in asitis <version>: <message without absolute paths>. Please report it at https://github.com/Katta041/asitis-agent-tools/issues`. Stack only with `ASITIS_DEBUG=1`. |
+| 4 | Partial run: the walk of the root stopped at the file, entry or time limit (0.4.0). The steering files it found were linted. Not used with `--allow-partial`. | The report, as for 0 and 1, with `summary.partial: true` in JSON, plus one line that says how many files were linted and how to lint the rest. |
 
-Precedence: 3 over 2 over 1 over 0.
+Precedence: 3 over 2 over 4 over 1 over 0.
 
 Examples of exit 2 lines:
 
@@ -78,12 +80,19 @@ asitis: .asitisrc.json line 3: unknown key "rulez" (did you mean "rules"?)
 asitis: docs/missing.md: file not found
 asitis: --fail-on must be error, warning, note or never, not "warn"
 asitis: Node 22.13 or later is needed (this is 20.11.0)
-asitis: stopped after 1,000 steering files; pass paths to lint the rest
 ```
 
 In code: `UserError` (from `paths.ts`) becomes exit 2 with its message; any other exception becomes exit 3. A file that was found by the walk but could not be read is a line on stderr (`asitis: <path>: not linted (<reason>)`) and does not change the exit code. A path the user named that cannot be read is exit 2.
 
-The CLI runs with a deadline of 5 minutes (`new Deadline(300_000)`). If `project.timedOut` is true, or the walk was cut by the file, entry or time limit, the exit code is 2 with the "stopped after" line, because a partial lint must never look like a clean one.
+The CLI runs with a deadline of 5 minutes (`new Deadline(300_000)`). If `project.timedOut` is true, the exit code is 2 with the "stopped at the time limit" line.
+
+A walk cut by the file, entry or time limit is a partial run (0.4.0; before that it was exit 2 with nothing on stdout, so a big monorepo got no results at all). The files the walk found are linted and reported as usual, and the exit code is 4, so a partial lint never looks like a clean one and a CI job that fails on any non-zero code still fails. The line that explains it is printed in every format and with `--quiet`: after the summary for `text`, as `::warning title=asitis: partial run::` for `github`, on stderr and in `toolExecutionNotifications` for `json` and `sarif`:
+
+```
+Found more than 1,000 steering files, so only the first 1,000 were linted. To lint the rest, run asitis lint --root on a subfolder or pass the files as paths. Exit code 4 marks a partial run; add --allow-partial to exit 0 or 1 as usual.
+```
+
+`--allow-partial` keeps the usual 0 or 1 for a run that is known to be big. Dependency, build and cache folders (`node_modules`, `dist`, `target`, `.venv`, `Pods`, `bazel-out` and the rest of `SKIP_DIRS` in `discover.ts`) are never searched, which keeps most monorepos (next.js, bun, node, rust, posthog) under the limits.
 
 The depth limit is the exception. Folders more than `CAPS.walkMaxDepth` levels deep are skipped the same way on every run (big monorepos such as next.js and vscode always reach it), so a walk cut only by depth is a notice, not exit 2: `Folders more than N levels deep were not searched; pass their files as paths to lint them.` The CLI decides this from `project.cut` (`{ depth, size, time }`), never by matching the text of `walkNote`.
 
@@ -174,6 +183,8 @@ interface LintReport {
     files: number; errors: number; warnings: number; notes: number; suppressed: number;
     // only when .asitisrc.json or the baseline hid or lowered security findings
     hiddenSecurity?: { config: number; baseline: number; rules: string[]; ignoredFiles: string[] };
+    // only when the walk stopped at a limit (exit code 4, see Exit codes)
+    partial?: true;
   };
   findings: Finding[];  // suppressed ones included, marked
 }
@@ -207,6 +218,10 @@ JSON Schema (draft 2020-12), to be vendored as `packages/mcp/schema/report-1.jso
         "warnings": { "type": "integer", "minimum": 0 },
         "notes": { "type": "integer", "minimum": 0 },
         "suppressed": { "type": "integer", "minimum": 0 },
+        "partial": {
+          "const": true,
+          "description": "Present only when the walk stopped at the file, entry or time limit, so some steering files under the root were not linted. The CLI exits 4 then, unless --allow-partial is given."
+        },
         "hiddenSecurity": {
           "type": "object",
           "description": "Present only when the repo's .asitisrc.json or baseline hid or lowered security findings.",
@@ -303,7 +318,7 @@ SARIF 2.1.0, one run, `JSON.stringify(log, null, 2) + "\n"`.
   - `partialFingerprints: { "asitis/v1": fingerprint }`.
   - `suppressions`: present only for suppressed findings, `[{ kind, justification? }]`. Suppressed results stay in the file.
   - `fixes`: with `--fix-preview`, `[{ description: { text: "<safety> fix for <ruleId>" }, artifactChanges: [{ artifactLocation (same as above), replacements: edits.map(e => ({ deletedRegion: { byteOffset: e.startByte, byteLength: e.endByte - e.startByte }, insertedContent: { text: e.replacement } })) }] }]`.
-- `runs[0].invocations`: `[{ executionSuccessful: true }]` (a run that would exit 2 or 3 prints no SARIF).
+- `runs[0].invocations`: `[{ executionSuccessful: true }]` (a run that would exit 2 or 3 prints no SARIF; a partial run, exit 4, prints it with the partial-run line in `toolExecutionNotifications`).
 
 ## GitHub format
 

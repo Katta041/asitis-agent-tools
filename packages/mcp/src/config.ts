@@ -19,7 +19,7 @@
 
 import type { Doc } from "./doc.js";
 import { q } from "./escape.js";
-import { INCLUDE_VALUES, findingPath, fingerprint, fingerprintTextOf, normaliseLineText, type FindingSource, type Include, type LineText } from "./findings.js";
+import { FingerprintCounter, INCLUDE_VALUES, findingPath, type FindingSource, type Include, type LineText } from "./findings.js";
 import { VENDOR } from "./limits.js";
 import type { Issue, LintResult, Severity } from "./lint.js";
 import { UserError, type Sandbox } from "./paths.js";
@@ -779,13 +779,10 @@ function markBaselined(sources: FindingSource[], baseline: ReadonlySet<string>, 
   if (!baseline.size) return 0;
   for (const s of sources) {
     const order = [...s.result.issues].sort((a, b) => a.line - b.line || (a.column ?? 1) - (b.column ?? 1));
-    const seen = new Map<string, number>();
+    const fp = new FingerprintCounter(s.path, s.lineText);
     for (const i of order) {
-      const text = fingerprintTextOf(i, s.lineText);
-      const key = `${i.rule}\0${normaliseLineText(text)}`;
-      const occurrence = seen.get(key) ?? 0;
-      seen.set(key, occurrence + 1);
-      if (i.suppressed || !baseline.has(fingerprint(i.rule, s.path, text, occurrence))) continue;
+      const print = fp.next(i);
+      if (i.suppressed || !baseline.has(print)) continue;
       if (isSecurity(i.rule)) {
         hiddenSecurity++;
         if (!trusted) continue;
