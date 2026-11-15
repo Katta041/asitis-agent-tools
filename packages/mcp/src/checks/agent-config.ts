@@ -29,6 +29,18 @@
 //   JFrog advisory https://research.jfrog.com/vulnerabilities/mcp-remote-command-injection-rce-jfsa-2025-001290844/
 // - npx installs without a prompt when stdin is not a TTY, which is how MCP clients start
 //   servers: https://docs.npmjs.com/cli/commands/npx
+//
+// Added in 0.4.0, read 15 November 2026:
+// - "Yes, and don't ask again" saves the approved Bash command as an allow rule in
+//   .claude/settings.local.json: https://code.claude.com/docs/en/settings
+// - Cursor CLI keeps allow and deny rules (Shell(...), Read(...), WebFetch(...), Mcp(...)) under
+//   "permissions" in .cursor/cli.json: https://cursor.com/docs/cli/reference/permissions
+// - Gemini CLI lists tools that skip confirmation in tools.allowed, and restricts or hides tools
+//   with tools.core and tools.exclude, entries like "run_shell_command(git status)"; older
+//   versions used allowedTools, coreTools and excludeTools at the top level:
+//   https://geminicli.com/docs/reference/configuration
+// - Codex writes approvals to ~/.codex/rules/default.rules in the user layer, not the project, so
+//   there is no Codex project file to check: https://learn.chatgpt.com/docs/agent-configuration/rules
 
 import { q } from "../escape.js";
 import { nodeAt, parseJsonMap, pointerKey, type JsonLocation, type JsonNode } from "../jsonmap.js";
@@ -38,14 +50,17 @@ import { AGENT_CONFIG_FILES, AGENT_CONFIG_LOCAL_FILE } from "../policy/agent-con
 import type { CheckContext, ProjectCheck } from "../project.js";
 import { normName, ownProject, type OwnProject } from "./own.js";
 import { findSecrets, redact, redactValue } from "../redact.js";
+import { auditLeakFiles } from "./agent-leaks.js";
+import { maskSecrets, permissionSecrets } from "./permission-secrets.js";
 
-type Tool = "claude-settings" | "claude-local" | "claude-mcp" | "cursor" | "vscode" | "gemini";
+type Tool = "claude-settings" | "claude-local" | "claude-mcp" | "cursor" | "cursor-cli" | "vscode" | "gemini";
 
 const TOOL_OF: Record<string, Tool> = {
   ".claude/settings.json": "claude-settings",
   ".claude/settings.local.json": "claude-local",
   ".mcp.json": "claude-mcp",
   ".cursor/mcp.json": "cursor",
+  ".cursor/cli.json": "cursor-cli",
   ".vscode/mcp.json": "vscode",
   ".gemini/settings.json": "gemini",
 };
@@ -55,6 +70,7 @@ const TOOL_NAME: Record<Tool, string> = {
   "claude-local": "Claude Code",
   "claude-mcp": "Claude Code",
   cursor: "Cursor",
+  "cursor-cli": "Cursor CLI",
   vscode: "VS Code",
   gemini: "Gemini CLI",
 };
@@ -65,6 +81,7 @@ const ENV_REF: Record<Tool, string> = {
   "claude-local": "your shell or ~/.claude/settings.json",
   "claude-mcp": "${NAME}",
   cursor: "${env:NAME}",
+  "cursor-cli": "your shell",
   vscode: "${input:name} or ${env:NAME}",
   gemini: "$NAME",
 };
@@ -72,7 +89,7 @@ const ENV_REF: Record<Tool, string> = {
 // VS Code reads mcp.json as JSON with comments. Gemini CLI strips comments from settings.json.
 // Cursor does not document its parser, so it gets the lenient mode too: a false
 // config-json-invalid would be worse than a missed one. Claude Code files are strict JSON.
-const JSONC: ReadonlySet<Tool> = new Set<Tool>(["vscode", "gemini", "cursor"]);
+const JSONC: ReadonlySet<Tool> = new Set<Tool>(["vscode", "gemini", "cursor", "cursor-cli"]);
 
 export const AGENT_CONFIG_CHECK: ProjectCheck = {
   id: "agent-config",
@@ -105,7 +122,7 @@ export const AGENT_CONFIG_CHECK: ProjectCheck = {
     for (const rel of wanted) {
       if (ctx.deadline.expired) {
         ctx.note("The agent config audit stopped at the time limit; some config files were not checked.");
-        return;
+        break;
       }
       let text: string;
       try {
@@ -121,12 +138,14 @@ export const AGENT_CONFIG_CHECK: ProjectCheck = {
       read.push(rel);
       const tool = TOOL_OF[rel.toLowerCase()]!;
       if (tool === "claude-settings" && envFiles === null) envFiles = await listEnvFiles(ctx);
-      if (tool !== "claude-settings" && tool !== "claude-local" && workspace === null) workspace = await listWorkspaceDirs(ctx);
+      if (tool !== "claude-settings" && tool !== "claude-local" && tool !== "cursor-cli" && workspace === null) workspace = await listWorkspaceDirs(ctx);
       auditFile(ctx, rel, tool, text, envFiles ?? [], workspace ?? new Set(), await ownProject(ctx));
     }
     // Say what was read, so a clean run is visibly a run (the skill scan does the same).
     if (read.length) ctx.note(`Config scan: ${read.length === 1 ? "1 file" : `${read.length} files`} read (${read.join(", ")}).`);
     else if (ctx.discovered) ctx.note(`Config scan: none of ${files.join(", ")} is in this folder, so there was nothing to check.`);
+    // Local agent files and transcripts that no .gitignore covers (checks/agent-leaks.ts).
+    if (!ctx.deadline.expired) await auditLeakFiles(ctx);
   },
 };
 
@@ -520,7 +539,9 @@ function auditFile(ctx: CheckContext, rel: string, tool: Tool, text: string, env
   }
   const doc = parsed.value;
   if (tool === "claude-settings" || tool === "claude-local") auditClaudeSettings(fc, doc, envFiles);
-  if (tool !== "claude-settings" && tool !== "claude-local") auditMcpServers(fc, doc);
+  else if (tool === "cursor-cli") auditRuleSecrets(fc, doc, [["permissions", "allow"], ["permissions", "deny"]]);
+  else auditMcpServers(fc, doc);
+  if (tool === "gemini") auditRuleSecrets(fc, doc, [["tools", "allowed"], ["tools", "core"], ["tools", "exclude"], ["allowedTools"], ["coreTools"], ["excludeTools"]]);
 }
 
 // --- Claude Code settings -------------------------------------------------------------------
@@ -530,6 +551,7 @@ function auditClaudeSettings(fc: FileCtx, doc: Obj, envFiles: readonly string[])
   auditHooks(fc, doc);
   auditSettingsCommands(fc, doc);
   auditPermissions(fc, doc);
+  auditRuleSecrets(fc, doc, [["permissions", "allow"], ["permissions", "ask"], ["permissions", "deny"]]);
   auditEnv(fc, doc);
 
   // settings-reference, enableAllProjectMcpServers: "Approve every MCP server defined in project
@@ -681,7 +703,10 @@ function auditPermissions(fc: FileCtx, doc: Obj): void {
   if (!Array.isArray(allow)) return;
   allow.forEach((entry, idx) => {
     if (typeof entry !== "string") return;
-    const r = entry.trim();
+    // A rule with a secret in it is quoted with the secret masked (secret-in-permission-rule reports it).
+    const secrets = permissionSecrets(entry);
+    const r = (secrets.length ? maskSecrets(entry, secrets) : entry).trim();
+    const fp = secrets.length ? { fingerprintText: `permissions.allow:${r}` } : {};
     const m = /^([A-Za-z][A-Za-z0-9_]*)(?:\((.*)\))?$/s.exec(r);
     if (!m) return;
     const toolName = m[1]!;
@@ -691,7 +716,7 @@ function auditPermissions(fc: FileCtx, doc: Obj): void {
     // the same shape. ":*" alone is the same trailing wildcard.
     if (toolName === "Bash" || toolName === "PowerShell") {
       if (spec === undefined || spec === "" || /^(?:\*|:\*|\s*\*\s*)$/.test(spec)) {
-        emit(fc, ptr, { severity: "error", rule: "sec-permission-allow", message: `${quote(r)} lets Claude run any ${toolName === "Bash" ? "shell" : "PowerShell"} command without asking, so text it reads can run commands on this machine; list the specific commands instead, such as "Bash(npm test)"` }, false);
+        emit(fc, ptr, { ...fp, severity: "error", rule: "sec-permission-allow", message: `${quote(r)} lets Claude run any ${toolName === "Bash" ? "shell" : "PowerShell"} command without asking, so text it reads can run commands on this machine; list the specific commands instead, such as "Bash(npm test)"` }, false);
         return;
       }
       if (!spec.includes("*")) return; // an exact command is a scoped grant
@@ -702,11 +727,11 @@ function auditPermissions(fc: FileCtx, doc: Obj): void {
       const two = `${bin} ${(words[1] ?? "").toLowerCase()}`;
       const netTwo = NET_TWO[two];
       if (netTwo && /\*/.test(spec.slice(first.length))) {
-        emit(fc, ptr, { severity: "warning", rule: "sec-permission-allow", message: `${quote(r)} lets Claude ${netTwo}; allow the exact commands you need instead` }, false);
+        emit(fc, ptr, { ...fp, severity: "warning", rule: "sec-permission-allow", message: `${quote(r)} lets Claude ${netTwo}; allow the exact commands you need instead` }, false);
         return;
       }
       if (NET_TOOLS.has(bin)) {
-        emit(fc, ptr, { severity: "warning", rule: "sec-permission-allow", message: `${quote(r)} lets Claude run ${bin} with any arguments without asking; injected text can use it to send files out (CVE-2025-55284 did this with ping and nslookup), so allow exact commands or use WebFetch(domain:...)` }, false);
+        emit(fc, ptr, { ...fp, severity: "warning", rule: "sec-permission-allow", message: `${quote(r)} lets Claude run ${bin} with any arguments without asking; injected text can use it to send files out (CVE-2025-55284 did this with ping and nslookup), so allow exact commands or use WebFetch(domain:...)` }, false);
         return;
       }
       // Only the bare wildcard after an interpreter: "python -m pytest *" is scoped and fine.
@@ -715,16 +740,52 @@ function auditPermissions(fc: FileCtx, doc: Obj): void {
       if (runner) {
         const ext = runner.startsWith("python") ? "py" : runner === "node" ? "js" : ["sh", "bash", "zsh"].includes(runner) ? "sh" : null;
         const fix = ext ? `allow the specific scripts instead, such as "Bash(${runner} scripts/check.${ext})"` : "allow the exact commands you need instead";
-        emit(fc, ptr, { severity: "warning", rule: "sec-permission-allow", message: `${quote(r)} lets Claude run any code through ${runner} without asking, which is the same as allowing every command; ${fix}` }, false);
+        emit(fc, ptr, { ...fp, severity: "warning", rule: "sec-permission-allow", message: `${quote(r)} lets Claude run any code through ${runner} without asking, which is the same as allowing every command; ${fix}` }, false);
       }
       return;
     }
     // permissions: a bare WebFetch and WebFetch(domain:*) both cover every URL.
     if (toolName === "WebFetch" && (spec === undefined || spec === "" || spec === "*" || /^domain:\s*\*$/.test(spec))) {
-      emit(fc, ptr, { severity: "warning", rule: "sec-permission-allow", message: `${quote(r)} lets Claude fetch any URL without asking, so injected text can send data to any host in the URL; list the domains instead, such as "WebFetch(domain:docs.example.com)"` }, false);
+      emit(fc, ptr, { ...fp, severity: "warning", rule: "sec-permission-allow", message: `${quote(r)} lets Claude fetch any URL without asking, so injected text can send data to any host in the URL; list the domains instead, such as "WebFetch(domain:docs.example.com)"` }, false);
     }
   });
 }
+
+/**
+ * secret-in-permission-rule: a password, token or key written into a permission rule. The message
+ * names the list, the entry index and the kind of secret, never the value or the rule text.
+ */
+function auditRuleSecrets(fc: FileCtx, doc: Obj, lists: ReadonlyArray<readonly string[]>): void {
+  for (const path of lists) {
+    let node: unknown = doc;
+    for (const k of path) node = isObj(node) ? node[k] : undefined;
+    if (!Array.isArray(node)) continue;
+    const listName = path.join(".");
+    node.forEach((entry, idx) => {
+      if (typeof entry !== "string") return;
+      const found = permissionSecrets(entry);
+      if (!found.length) return;
+      const kinds = [...new Set(found.map((x) => x.kind))];
+      const why =
+        fc.tool === "claude-local"
+          ? "Claude Code saved the whole approved command here, and this file is easy to commit or copy"
+          : `anyone who can read the repo can read it, and ${TOOL_NAME[fc.tool]} does not need it there`;
+      emit(
+        fc,
+        [...path, idx],
+        {
+          severity: "error",
+          rule: "secret-in-permission-rule",
+          message: `${listName}[${idx}] holds a secret in plain text (${kinds.slice(0, 3).join(", ")}${kinds.length > 3 ? ", ..." : ""}); ${why}. Rotate it, then delete the rule or rewrite it to read the value from an environment variable`,
+          // Fingerprints hash the line text; use the masked rule so a short password cannot be guessed from the hash.
+          fingerprintText: `${listName}:${maskSecrets(entry, found)}`,
+        },
+        false,
+      );
+    });
+  }
+}
+
 
 /** Anthropic API base URLs that send requests (and the key) somewhere else. */
 const BASE_URL_KEY = /^ANTHROPIC_[A-Z_]*BASE_URL$/;
