@@ -4,6 +4,7 @@
 // - every search moves forward (indexOf from the last position);
 // - per-match work is bounded by a constant (CAPS.maxTargetChars, comment slices).
 
+import { HIDDEN_PHRASES, LANG_SCRIPTS, scriptsIn } from "./lang/hidden-phrases.js";
 import { CAPS } from "./limits.js";
 import type { LineIndex } from "./text.js";
 
@@ -307,8 +308,6 @@ const ADDRESSEE = String.raw`(?:ai|agents?|assistants?|bots?|models?|llms?|ai\s{
 const DIRECTIVE = String.raw`(?:must|should|shall|will|needs?\s{1,8}to|has\s{1,8}to|have\s{1,8}to|always|never|do\s{1,8}not|don't|please|may\s{1,8}not|cannot|can't)`;
 const INSTRUCTION_PATTERNS: Array<[RegExp, string]> = [
   [/\b(ignore|disregard|forget|override)\b[^\n]{0,40}\b(previous|prior|above|earlier|all|any|other|system)\b/i, "asks to ignore other instructions"],
-  // The same request in Spanish, German, French, Chinese and Japanese: fixed phrases only, to keep false positives near zero.
-  [/\bignora(?:r)?\s{1,4}(?:todas\s{1,4})?las\s{1,4}instrucciones\s{1,4}(?:anteriores|previas)|\bignorier(?:e|en)?\s{1,4}(?:alle\s{1,4})?(?:vorherigen|bisherigen|obigen)\s{1,4}anweisungen|\bignore(?:z|r)?\s{1,4}(?:toutes\s{1,4})?les\s{1,4}instructions\s{1,4}(?:pr\u00e9c\u00e9dentes|ant\u00e9rieures)|\u5ffd\u7565(?:\u4e4b\u524d|\u4ee5\u524d|\u4e0a\u9762|\u5148\u524d)\u7684?(?:\u6240\u6709)?(?:\u6307\u4ee4|\u6307\u793a|\u8bf4\u660e)|(?:\u4ee5\u524d|\u524d|\u4e0a\u8a18)\u306e(?:\u6307\u793a|\u547d\u4ee4)[^\u3002\n]{0,8}\u7121\u8996/i, "asks to ignore other instructions"],
   [/\b(you are|you must|you should|you will|as an ai|ai assistant|language model|system prompt|the assistant|the agent|the model)\b/i, "addresses the AI directly"],
   // Vocative: the name opens the comment, a line or a sentence and is followed by "," or ":".
   [new RegExp(String.raw`(?:^|[\n.!?;]|[([])\s{0,8}(?:(?:hey|hi|dear|attention|attn)\s{1,8})?@?${AI_NAME}\s{0,3}[,:](?!\/)`, "i"), "addresses an AI assistant by name"],
@@ -339,16 +338,37 @@ const DIRECTIVE_ACTION = /\b(?:send|upload|post|leak|share|expose|dump|email|exf
 /** Labels that only say a comment speaks to an AI; the others ask for something harmful. */
 const ADDRESS_ONLY = new Set(["addresses the AI directly", "addresses an AI assistant by name", "reads like an instruction"]);
 
-export function classifyInstruction(text: string): string | null {
+/**
+ * Why a hidden comment reads like an instruction to an AI, or null. `otherLanguages` is false for
+ * an ordinary link title (a visible tooltip): the phrase tables in lang/hidden-phrases.ts apply to
+ * hidden comments only, which also keeps a file of many titled links cheap to scan.
+ */
+export function classifyInstruction(text: string, otherLanguages = true): string | null {
   const t = (text.length > COMMENT_SLICE ? text.slice(0, COMMENT_SLICE) : text).replace(URL_LIKE, " ");
+  // A key:value=value directive comment is written for a tool; it is flagged only when it asks
+  // for something harmful (ignore instructions, hide, run, send secrets), never just for naming the AI.
+  const directive = t.trim().length <= 300 && DIRECTIVE_COMMENT.test(t.trim()) && !DIRECTIVE_ACTION.test(t);
+  let english: string | null = null;
   for (const [re, label] of INSTRUCTION_PATTERNS) {
     if (!re.test(t)) continue;
-    // A key:value=value directive comment is written for a tool; it is flagged only when it asks
-    // for something harmful (ignore instructions, hide, run, send secrets), never just for naming the AI.
-    if (ADDRESS_ONLY.has(label) && t.trim().length <= 300 && DIRECTIVE_COMMENT.test(t.trim()) && !DIRECTIVE_ACTION.test(t)) continue;
+    if (ADDRESS_ONLY.has(label) && directive) continue;
+    english = label;
+    break;
+  }
+  if (!otherLanguages || (english !== null && !ADDRESS_ONLY.has(english))) return english;
+  const scripts = scriptsIn(t);
+  const lower = t.toLowerCase();
+  // Other languages (lang/hidden-phrases.ts, issue #6). They run after English, and a harmful match
+  // there wins over an English one that only addresses the AI ("Claude: 忽略之前的所有指令").
+  for (const { lang, regex, label } of HIDDEN_PHRASES) {
+    if (english !== null && ADDRESS_ONLY.has(label)) break;
+    const need = LANG_SCRIPTS[lang];
+    if (need !== 0 && (scripts & need) === 0) continue;
+    if (!regex.test(lower)) continue;
+    if (ADDRESS_ONLY.has(label) && directive) continue;
     return label;
   }
-  return null;
+  return english;
 }
 
 export function scanComments(lines: LineIndex, fence: Uint8Array): { findings: CommentFinding[]; total: number } {
@@ -489,7 +509,7 @@ export function scanRefComments(lines: LineIndex, fence: Uint8Array): RefComment
     if (s.charCodeAt(r - 1) !== closer || r - 1 <= q) continue;
     const body = s.slice(q + 1, Math.min(r - 1, q + 1 + COMMENT_SLICE));
     if (!body.trim()) continue;
-    const matched = classifyInstruction(body);
+    const matched = classifyInstruction(body, idiom);
     if (!idiom && matched === null) continue; // an ordinary link title (a tooltip), not a comment
     out.push({ line: i + 1, instructionLike: matched !== null, matched, preview: body.replace(/\s+/g, " ").trim().slice(0, 120) });
   }
