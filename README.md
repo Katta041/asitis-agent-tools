@@ -513,7 +513,7 @@ npm test              # typecheck, bundle, then the full Vitest suite
 npm run sync-plugin   # rebuild the server and CLI and copy them, with their SHA-256, into plugins/asitis/server and action/
 ```
 
-If AsItIs caught something real in your files, a star on the repository helps other people who write CLAUDE.md and AGENTS.md files find it. Telling us what it caught, in an issue or a discussion, helps even more.
+If AsItIs caught something in your repo, a star helps other people find it.
 
 ## License
 
