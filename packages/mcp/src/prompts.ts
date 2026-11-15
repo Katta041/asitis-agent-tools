@@ -109,22 +109,33 @@ function fixPrompt(path: string | undefined): string {
   ].join("\n");
 }
 
+export const LOADS_STEPS = `Report the result to the user in this order, and keep it short:
+
+1. One line per tool: what loads at launch and its token total, largest first.
+2. Anything cut or not loaded that the user probably expects to load (for example an AGENTS.md that Claude Code skips because of a CLAUDE.md, a nested AGENTS.md past Codex's 32 KiB, a subfolder CLAUDE.md over 40,000 characters, skills in \`.agents/skills\`), with the reason the tool gave.
+3. What loads later and when, in one or two lines, if it matters for the folder the user asked about.
+4. Steps marked (assumed): say these are not confirmed yet.`;
+
+const PLAN_TOOL_IDS = ["claude-code", "codex", "gemini-cli", "cursor", "copilot"];
+
 function loadsPrompt(path: string | undefined, tool: string | undefined): string {
-  const p = path?.trim();
-  const t = tool?.trim();
+  let p = path?.trim();
+  let t = tool?.trim();
+  // Claude Code passes slash-command words by position, so "/mcp__asitis__loads codex" puts the tool in the path slot.
+  if (p && !t && PLAN_TOOL_IDS.includes(p)) {
+    t = p;
+    p = undefined;
+  }
   return [
-    "Call the `load_plan` tool from the `asitis` MCP server. It shows, step by step, which steering files each agent tool loads, in what order, and which files it skips and why.",
+    "Call the `load_plan` tool from the `asitis` MCP server.",
     "",
-    `- ${p ? `The user is asking about ${q(p, 500)}: pass it as the folder or file argument the tool's input schema names.` : "Call it for the project root: leave the folder or file argument out."}`,
-    `- ${t ? `Only show the plan for ${q(t, 100)} if the tool takes a tool filter; otherwise show the whole result and lead with that tool.` : "Show every tool the result covers."}`,
+    `- ${p ? `Call it with \`cwd\` set to ${q(p, 500)}. If that names a file, use the folder that holds it.` : "Leave `cwd` out: the session starts at the project root."}`,
+    `- ${t ? (PLAN_TOOL_IDS.includes(t) ? `Set \`tool\` to ${q(t, 100)}.` : `Leave \`tool\` out: ${q(t, 100)} is not one of ${PLAN_TOOL_IDS.join(", ")}. Lead with the closest match if there is one.`) : "Leave `tool` out to get all five tools."}`,
+    "- If the result says to call again with an offset, do that only when the user asks for the rest.",
     "",
-    "Report the result to the user in this order, and keep it short:",
+    LOADS_STEPS,
     "",
-    "1. One line per agent tool: how many files load at the start of a session and about how many tokens.",
-    "2. For each tool, the files in the order they load, with what brings each one in (always, an import, a path match) and where a size cap cuts it off.",
-    "3. Files that are skipped and why, in one line each, most surprising first (for example AGENTS.md ignored because a CLAUDE.md exists).",
-    "",
-    "Say once that the token numbers are local estimates. Do not edit any file unless the user asks.",
+    "Quote file names and reasons as the tool printed them. Say once that the numbers are local estimates. Do not edit any file unless the user asks.",
     "",
     "If the server has no `load_plan` tool (an older version), say so in one line and call `context_budget` with no arguments instead.",
   ].join("\n");
@@ -176,8 +187,8 @@ export function registerPrompts(server: McpServer, hasTool: (name: string) => bo
         title: "What your agent loads",
         description: "Which steering files each agent tool loads, in order, and which it skips",
         argsSchema: {
-          path: pathArg.describe("A folder or file to plan for; leave empty for the project root"),
-          tool: z.string().max(100).optional().describe("One agent tool, for example claude-code or codex"),
+          path: pathArg.describe("The folder the session starts in; leave empty for the project root"),
+          tool: z.string().max(100).optional().describe("One agent tool: claude-code, codex, gemini-cli, cursor or copilot"),
         },
       },
       ({ path, tool }) => user(loadsPrompt(path, tool)),

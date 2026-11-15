@@ -228,7 +228,7 @@ Every tool is annotated `readOnlyHint: true`, `destructiveHint: false`, `openWor
 
 ### Prompts and resources
 
-So you don't need to know the tool names, the server also has MCP prompts: `lint`, `budget` and `fix` (plus `loads` when the server has the `load_plan` tool). They ask your assistant to call the matching tool and report the result the same way the plugin's `/asitis:md-*` commands do. In Claude Code they show up as `/mcp__asitis__lint`, `/mcp__asitis__budget` and `/mcp__asitis__fix`; `/mcp__asitis__lint skills config` adds the opt-in scans.
+So you don't need to know the tool names, the server also has MCP prompts: `lint`, `budget`, `fix` and `loads`. They ask your assistant to call the matching tool and report the result the same way the plugin's `/asitis:md-*` commands do. In Claude Code they show up as `/mcp__asitis__lint`, `/mcp__asitis__budget`, `/mcp__asitis__fix` and `/mcp__asitis__loads`; `/mcp__asitis__lint skills config` adds the opt-in scans, and `/mcp__asitis__loads packages/api codex` plans one folder for one tool.
 
 Two resources hold the same reports as text, for clients that attach context by reference: `asitis://findings` (lint findings for the whole folder, worst first, at most 40 listed) and `asitis://budget` (what each tool loads every session). `asitis://findings/<path>` and `asitis://budget/<path>` do the same for one file. Each read runs the check again. Resources go through the same folder limits as the tools, and anything over 12,000 characters is cut with a line saying which tool gives the rest.
 

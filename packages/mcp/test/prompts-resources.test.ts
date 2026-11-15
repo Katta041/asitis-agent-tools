@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { CAPS } from "../src/limits.js";
-import { BUDGET_STEPS, FIX_STEPS, LINT_STEPS, registerPrompts } from "../src/prompts.js";
+import { BUDGET_STEPS, FIX_STEPS, LINT_STEPS, LOADS_STEPS, registerPrompts } from "../src/prompts.js";
 import { capResource } from "../src/server.js";
 import { connect, FIXTURE_REPO, FOOTER, PLUGIN, tempDir, type Connected } from "./helpers.js";
 
@@ -56,9 +56,9 @@ describe("prompts", () => {
     expect(caps?.tools).toBeDefined();
   });
 
-  test("prompts/list has lint, budget and fix, and no loads without a load_plan tool", async () => {
+  test("prompts/list has lint, budget, fix and loads (the server has load_plan)", async () => {
     const { prompts } = await c.client.listPrompts();
-    expect(prompts.map((p) => p.name)).toEqual(["lint", "budget", "fix"]);
+    expect(prompts.map((p) => p.name)).toEqual(["lint", "budget", "fix", "loads"]);
     for (const p of prompts) {
       expect(p.description).toBeTruthy();
       expect(p.description!.length).toBeLessThan(140);
@@ -72,6 +72,7 @@ describe("prompts", () => {
       ["lint", "lint_steering"],
       ["budget", "context_budget"],
       ["fix", "suggest_fixes"],
+      ["loads", "load_plan"],
     ] as const) {
       const r = await c.client.getPrompt({ name, arguments: {} });
       expect(r.messages).toHaveLength(1);
@@ -115,8 +116,7 @@ describe("prompts", () => {
     expect(s.code).toBe(-32602);
   });
 
-  test("an unknown prompt is -32602, and loads is unknown here", async () => {
-    expect((await rpcFailure(c.client.getPrompt({ name: "loads", arguments: {} }))).code).toBe(-32602);
+  test("an unknown prompt is -32602", async () => {
     expect((await rpcFailure(c.client.getPrompt({ name: "rm", arguments: {} }))).code).toBe(-32602);
   });
 
@@ -125,6 +125,7 @@ describe("prompts", () => {
     expect(cmd("md-lint.md")).toContain(LINT_STEPS);
     expect(cmd("md-budget.md")).toContain(BUDGET_STEPS);
     expect(cmd("md-fix.md")).toContain(FIX_STEPS);
+    expect(cmd("md-loads.md")).toContain(LOADS_STEPS);
   });
 });
 
@@ -145,8 +146,13 @@ describe("the loads prompt follows the load_plan tool", () => {
     expect(prompts.map((p) => p.name)).toContain("loads");
     const text = promptText(await s.client.getPrompt({ name: "loads", arguments: { path: "packages/web", tool: "codex" } }));
     expect(text).toContain("`load_plan`");
-    expect(text).toContain('"packages/web"');
-    expect(text).toContain('"codex"');
+    expect(text).toContain('Call it with `cwd` set to "packages/web".');
+    expect(text).toContain('Set `tool` to "codex".');
+    const positional = promptText(await s.client.getPrompt({ name: "loads", arguments: { path: "codex" } }));
+    expect(positional).toContain('Set `tool` to "codex".');
+    expect(positional).toContain("Leave `cwd` out");
+    const odd = promptText(await s.client.getPrompt({ name: "loads", arguments: { tool: "vim" } }));
+    expect(odd).toContain('Leave `tool` out: "vim" is not one of');
     expect(text).toContain("call `context_budget` with no arguments instead");
     await s.close();
   });
