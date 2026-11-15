@@ -126,7 +126,9 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
   const unexpanded = async (d: Doc, dir: string): Promise<void> => {
     for (const im of importsOf(d)) {
       const want = importIntent(im, "claude");
-      if (!want || want.startsWith("~") || importTarget(im, "claude") === null) continue;
+      // Only imports that would load as written: "@guide.md:" or "(@x.md)" load nothing anywhere.
+      const read = importTarget(im, "claude");
+      if (!want || want.startsWith("~") || read === null || (read !== want && read !== "")) continue;
       const probe = await sandbox.probe(want, path.dirname(d.file.real));
       if (probe.state !== "ok" || !probe.real || seen.has(probe.real)) continue;
       skipped.push({ path: sandbox.display(probe.real), reason: `imported by ${d.path}, but Claude Code does not expand imports in files from ${where(dir)} when it starts in ${where(cwd)}, a folder below it`, ...behaviour(TOOL, "ancestor-imports-not-expanded", "assumed", "https://github.com/anthropics/claude-code/issues/78697") });

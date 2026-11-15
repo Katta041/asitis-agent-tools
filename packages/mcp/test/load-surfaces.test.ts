@@ -181,6 +181,13 @@ describe("load plan keeps the 0.3.1 import rules", () => {
     expect(counted).not.toContain("paren.md");
     expect(steps.find((s) => s.path === "d4.md")!.via).toEqual(["CLAUDE.md", "d1.md", "d2.md", "d3.md"]);
   });
+  test("from a subfolder, an ancestor import that loads nothing as written is not listed as unexpanded", async () => {
+    const root = temp({ "CLAUDE.md": "# Root\n\nSee @guide.md: for setup.\n@real.md\n", "guide.md": "# G\n", "real.md": "# R\n", "pkg/CLAUDE.md": "# Pkg\n" }, [".git"]);
+    const r = await cli(["loads", "pkg", "--tool", "claude-code"], root);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("real.md: imported by CLAUDE.md, but Claude Code does not expand imports");
+    expect(r.out).not.toContain("guide.md: imported by");
+  });
   test("Gemini CLI takes @guide.md: as written, so it is missing, not cut", async () => {
     const root = temp({ "GEMINI.md": "# G\n\n@guide.md:\n", "guide.md": "# Guide\n" }, [".git"]);
     const r = await cli(["loads", ".", "--tool", "gemini-cli", "--format", "json"], root);
