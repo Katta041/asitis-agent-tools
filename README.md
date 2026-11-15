@@ -88,7 +88,7 @@ codex plugin marketplace add Katta041/asitis-agent-tools && codex plugin add asi
 gemini extensions install https://github.com/Katta041/asitis-agent-tools
 ```
 
-**Cursor, Claude Desktop, VS Code** or any other MCP client: run the server from npm, pinned to a version. Ready-made configs are under [Install](#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
+**Cursor, Claude Desktop, VS Code** or any other MCP client: run the server from npm, pinned to a version. Ready-made configs are under [Install](#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli). Devin Desktop (Windsurf), Cline, Kiro, Zed, Goose, Continue, JetBrains and Docker are in [docs/install.md](docs/install.md).
 
 ```bash
 npx -y @asitis/mcp@0.4.1 --root /absolute/path/to/project
@@ -258,18 +258,22 @@ The server is published on npm as `@asitis/mcp`. Always pin the version; never u
 }
 ```
 
-**Cursor**: `.cursor/mcp.json` in the project (or `~/.cursor/mcp.json`).
+[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=asitis&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi1wIiwiQGFzaXRpcy9tY3BAMC40LjEiLCJhc2l0aXMtbWNwIiwiLS1yb290IiwiJHt3b3Jrc3BhY2VGb2xkZXJ9Il19)
+
+**Cursor**: `.cursor/mcp.json` in the project (or `~/.cursor/mcp.json`). The `-p` and `asitis-mcp` matter: the package has two commands, so `npx @asitis/mcp` on its own can't tell which one to run.
 
 ```json
 {
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.1", "--root", "${workspaceFolder}"]
+      "args": ["-y", "-p", "@asitis/mcp@0.4.1", "asitis-mcp", "--root", "${workspaceFolder}"]
     }
   }
 }
 ```
+
+There is also a Cursor plugin in [`plugins/asitis-cursor`](plugins/asitis-cursor) with the same server, a rule that lints a steering file after the agent edits it, and `/md-lint`, `/md-loads` and `/md-budget`.
 
 If your Cursor version does not expand `${workspaceFolder}`, use an absolute path. The server refuses a root that still contains `${...}` rather than guessing.
 
