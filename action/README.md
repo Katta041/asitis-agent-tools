@@ -29,17 +29,17 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - uses: Katta041/asitis-agent-tools@v0.3.1
+      - uses: Katta041/asitis-agent-tools@v0.4.0
         with:
           sarif-file: ""
 ```
 
 `actions/setup-node` is required: the linter needs Node 22.13 or later and the runner's own Node is often older. Without it the step stops with one line that says so.
 
-To pin this action to a commit as well, look up the commit the tag points to and use that SHA in place of `v0.3.1`. The tag is annotated, so ask for the peeled ref (`^{}`); the plain ref gives the tag object's SHA, which `uses:` does not accept:
+To pin this action to a commit as well, look up the commit the tag points to and use that SHA in place of `v0.4.0`. The tag is annotated, so ask for the peeled ref (`^{}`); the plain ref gives the tag object's SHA, which `uses:` does not accept:
 
 ```
-git ls-remote https://github.com/Katta041/asitis-agent-tools 'refs/tags/v0.3.1^{}'
+git ls-remote https://github.com/Katta041/asitis-agent-tools 'refs/tags/v0.4.0^{}'
 ```
 
 GitHub shows at most 10 annotations of each type (error, warning, notice) per step on the pull request. The step log has every finding, and the SARIF file below has them all in one place.
@@ -75,7 +75,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - uses: Katta041/asitis-agent-tools@v0.3.1
+      - uses: Katta041/asitis-agent-tools@v0.4.0
         with:
           upload-sarif: ${{ github.event_name == 'push' }}
 ```
@@ -115,11 +115,11 @@ The step fails on exit code 1, 2 or 3. When you want the numbers without failing
 Write a baseline once and commit it. Old findings then show as suppressed, and only new ones fail the check.
 
 ```
-npx -y -p @asitis/mcp@0.3.1 asitis lint --format json --write-baseline > .asitis-baseline.json
+npx -y -p @asitis/mcp@0.4.0 asitis lint --format json --write-baseline > .asitis-baseline.json
 ```
 
 ```yaml
-      - uses: Katta041/asitis-agent-tools@v0.3.1
+      - uses: Katta041/asitis-agent-tools@v0.4.0
         with:
           baseline: .asitis-baseline.json
 ```
