@@ -31,6 +31,8 @@ export interface LintArgs {
   allowBroadRoot: boolean;
   /** Exit 1 when the repo's config or baseline hides or lowers a security finding. */
   failOnHiddenSecurity: boolean;
+  /** A walk cut by the file, entry or time limit exits 0 or 1 as usual instead of 4. */
+  allowPartial: boolean;
 }
 
 export interface BudgetArgs {
@@ -130,6 +132,7 @@ export function parse(argv: string[]): Parsed {
         "annotate-notes": { type: "boolean" },
         "allow-broad-root": { type: "boolean" },
         "fail-on-hidden-security": { type: "boolean" },
+        "allow-partial": { type: "boolean" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
       },
@@ -165,6 +168,7 @@ export function parse(argv: string[]): Parsed {
     if (v.quiet) throw new UserError("--quiet only applies to asitis lint");
     if (v["annotate-notes"]) throw new UserError("--annotate-notes only applies to asitis lint");
     if (v["fail-on-hidden-security"]) throw new UserError("--fail-on-hidden-security only applies to asitis lint");
+    if (v["allow-partial"]) throw new UserError("--allow-partial only applies to asitis lint");
     if (rest.length > 1) throw new UserError("asitis budget takes at most one file; leave it out for the whole folder");
     return {
       command: "budget",
@@ -200,5 +204,6 @@ export function parse(argv: string[]): Parsed {
     annotateNotes: !!v["annotate-notes"],
     allowBroadRoot,
     failOnHiddenSecurity: !!v["fail-on-hidden-security"],
+    allowPartial: !!v["allow-partial"],
   };
 }

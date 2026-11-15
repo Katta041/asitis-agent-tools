@@ -61,6 +61,10 @@
           "type": "integer",
           "minimum": 0
         },
+        "partial": {
+          "const": true,
+          "description": "Present only when the walk stopped at the file, entry or time limit, so some steering files under the root were not linted. The CLI exits 4 then, unless --allow-partial is given."
+        },
         "hiddenSecurity": {
           "type": "object",
           "description": "Present only when the repo's .asitisrc.json or baseline hid or lowered security findings.",

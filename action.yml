@@ -58,7 +58,7 @@ inputs:
 
 outputs:
   exit-code:
-    description: Exit code of the lint run. 0 clean, 1 findings at or above fail-on, 2 a setup problem, 3 a bug in asitis.
+    description: Exit code of the lint run. 0 clean, 1 findings at or above fail-on, 2 a setup problem, 3 a bug in asitis, 4 a partial run (the folder was too big to search in full; the files found are still annotated).
     value: ${{ steps.lint.outputs.exit-code }}
   errors:
     description: Number of errors, suppressed ones not counted.

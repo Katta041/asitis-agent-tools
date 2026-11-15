@@ -193,10 +193,35 @@ describe("one-line errors (exit 2)", () => {
     const dir = tmp({ "package.json": "{}\n" });
     expectUserError(cli(["lint", "--root", dir, "package.json"], dir), /^asitis: [^\n]*package\.json[^\n]*\n$/, dir);
   });
-  test("--max-files cut is exit 2: a partial lint never looks clean", () => {
+  test("--max-files cut lints what was found and exits 4: a partial lint never looks clean", () => {
     const dir = tmp({ "CLAUDE.md": "# A\n\nRun the tests.\n", "AGENTS.md": "# B\n\nRun the tests too.\n" });
-    expectUserError(cli(["lint", "--root", dir, "--max-files", "1"]), /^asitis: stopped after 1 steering file; pass paths to lint the rest\n$/, dir);
+    const r = cli(["lint", "--root", dir, "--max-files", "1"]);
+    expect(r.code, r.err).toBe(4);
+    expect(r.out).toContain("Linted 1 file: ");
+    expect(r.out).toContain("Found more than 1 steering file, so only the first 1 were linted. To lint the rest, run asitis lint --root on a subfolder or pass the files as paths. Exit code 4 marks a partial run");
+    expect(r.out).not.toContain(dir);
     expect(cli(["lint", "--root", dir, "--max-files", "2"]).code).toBe(0);
+  });
+  test("a partial run: --quiet still says so, json marks it, --allow-partial keeps the usual exit code", () => {
+    const dir = tmp({ "CLAUDE.md": "# A\n\nRun the tests.\n", "AGENTS.md": "# B\n\nRun the tests too.\n" });
+    const quiet = cli(["lint", "--root", dir, "--max-files", "1", "--quiet"]);
+    expect(quiet.code).toBe(4);
+    expect(quiet.out).toMatch(/Exit code 4 marks a partial run/);
+    const json = cli(["lint", "--root", dir, "--max-files", "1", "--format", "json"]);
+    expect(json.code).toBe(4);
+    expect(JSON.parse(json.out).summary.partial).toBe(true);
+    expect(json.err).toMatch(/^asitis: Found more than 1 steering file/);
+    const whole = cli(["lint", "--root", dir, "--format", "json"]);
+    expect(JSON.parse(whole.out).summary.partial).toBeUndefined();
+    const allowed = cli(["lint", "--root", dir, "--max-files", "1", "--allow-partial"]);
+    expect(allowed.code).toBe(0);
+    expect(allowed.out).toMatch(/--allow-partial is set, so the exit code ignores this/);
+    const gh = cli(["lint", "--root", dir, "--max-files", "1", "--format", "github"]);
+    expect(gh.out).toMatch(/^::warning title=asitis%3A partial run::Found more than 1 steering file/m);
+    const sarif = cli(["lint", "--root", dir, "--max-files", "1", "--format", "sarif"]);
+    expect(sarif.code).toBe(4);
+    expect(JSON.parse(sarif.out).runs[0].invocations[0].toolExecutionNotifications[0].message.text).toMatch(/partial run/);
+    expectUserError(cli(["budget", "--allow-partial"]), /^asitis: --allow-partial only applies to asitis lint\n$/);
   });
 });
 

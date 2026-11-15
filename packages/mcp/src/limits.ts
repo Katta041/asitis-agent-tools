@@ -48,7 +48,7 @@ export const CAPS = {
   maxFrontmatterBytes: 64 * 1024,
   /** Directory walk limits for find_steering_files, lint_steering and context_budget. */
   walkMaxDepth: 12,
-  walkMaxEntries: 50000,
+  walkMaxEntries: 200000,
   walkMaxFiles: 1000,
   /** Files linted in one call when no path is given. */
   lintMaxFiles: 300,

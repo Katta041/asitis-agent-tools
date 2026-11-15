@@ -12,6 +12,7 @@ import { baselineOf } from "../baseline.js";
 import { hiddenTotal } from "../config.js";
 import { Deadline } from "../discover.js";
 import { esc } from "../escape.js";
+import { CAPS } from "../limits.js";
 import { SEVERITY_RANK, buildReport, type Finding } from "../findings.js";
 import { attachFixes, fixPreview } from "../fix.js";
 import { formatGithub } from "../format/github.js";
@@ -25,7 +26,7 @@ import { parse, type BudgetArgs, type FailOn, type LintArgs } from "./args.js";
 import { fileBudgetReport, projectBudgetReport } from "./budget.js";
 
 /** Exit codes. 2 is anything the user can fix; 3 is a bug in asitis. */
-export const EXIT = { ok: 0, findings: 1, usage: 2, internal: 3 } as const;
+export const EXIT = { ok: 0, findings: 1, usage: 2, internal: 3, partial: 4 } as const;
 
 export const ISSUES_URL = "https://github.com/Katta041/asitis-agent-tools/issues";
 
@@ -59,10 +60,12 @@ Options for lint:
   --allow-broad-root       allow your home folder or the filesystem root as --root
   --fail-on-hidden-security
                            exit 1 when .asitisrc.json or the baseline hides or lowers a security finding
+  --allow-partial          exit 0 or 1 as usual when the walk stops at a limit (default: exit 4)
 
 Options for budget: --root, --format text|json, --max-file-mb, --allow-broad-root.
 
-Exit codes: 0 no findings at or above --fail-on, 1 findings, 2 usage or input error, 3 internal error.
+Exit codes: 0 no findings at or above --fail-on, 1 findings, 2 usage or input error, 3 internal error,
+4 partial run (the walk stopped at a limit; what was found is reported).
 Docs: https://github.com/Katta041/asitis-agent-tools/blob/main/docs/cli-contract.md
 `;
 
@@ -85,8 +88,10 @@ Cursor rules, Copilot instructions, GEMINI.md, ...). Prints one line per finding
   --quiet, -q              text and github: findings only, no summary or notices
   --annotate-notes         github: also annotate notes (by default only errors and warnings are)
   --allow-broad-root       allow your home folder or the filesystem root as --root
+  --allow-partial          exit 0 or 1 as usual when the walk stops at a limit (default: exit 4)
 
-Exit codes: 0 no findings at or above --fail-on, 1 findings, 2 usage or input error, 3 internal error.
+Exit codes: 0 no findings at or above --fail-on, 1 findings, 2 usage or input error, 3 internal error,
+4 the folder was too big to search in full: what was found is linted and reported, the rest is not.
 `;
 
 export const HELP_BUDGET = `asitis budget [file] [options]
@@ -266,17 +271,25 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
     throw usage(`could not read the folder ${shown(u[0]!)}${u.length > 1 ? ` and ${u.length - 1} more` : ""} (permission denied), so the steering files in it were not linted; fix the permissions, or add it to ignore in .asitisrc.json`);
   }
   const notes = [...project.notes];
+  let partial = "";
   if (project.truncated) {
-    // walkCutNote (project.ts) says which limit stopped the walk. The file, entry and time limits
-    // leave files unlinted at random, so they exit 2. The depth limit is fixed and the same on
-    // every run (big monorepos such as next.js and vscode always reach it), so it is a notice.
+    // walkCutNote (project.ts) says which limit stopped the walk. The depth limit is fixed and the
+    // same on every run (big monorepos such as next.js and vscode always reach it), so it is a
+    // notice. The file, entry and time limits leave files unlinted: the files found are still linted
+    // and reported, and the run exits 4 (--allow-partial: 0 or 1), so a partial lint never looks clean.
     const note = project.walkNote;
     const depthOnly = project.foundCount <= a.maxFiles && project.cut.depth && !project.cut.size && !project.cut.time;
     if (!depthOnly) {
-      const why = project.foundCount > a.maxFiles ? `stopped after ${a.maxFiles.toLocaleString("en-US")} steering ${a.maxFiles === 1 ? "file" : "files"}` : note.replace(/\.$/, "").replace(/^\w/, (c) => c.toLowerCase());
-      throw usage(`${why}; pass paths to lint the rest`);
-    }
-    notes.push(`${note.replace(/\.$/, "")}; pass their files as paths to lint them.`);
+      const n = (x: number): string => x.toLocaleString("en-US");
+      const files = (x: number): string => `${n(x)} steering ${x === 1 ? "file" : "files"}`;
+      const why =
+        project.foundCount > a.maxFiles
+          ? `Found more than ${files(a.maxFiles)}, so only the first ${n(a.maxFiles)} were linted`
+          : project.cut.time
+            ? `The search stopped at the time limit after ${files(project.foundCount)}, and only those were linted`
+            : `The search stopped after ${n(CAPS.walkMaxEntries)} folder entries and ${files(project.foundCount)}, and only those were linted`;
+      partial = `${why}. To lint the rest, run asitis lint --root on a subfolder or pass the files as paths. ${a.allowPartial ? "--allow-partial is set, so the exit code ignores this." : "Exit code 4 marks a partial run; add --allow-partial to exit 0 or 1 as usual."}`;
+    } else notes.push(`${note.replace(/\.$/, "")}; pass their files as paths to lint them.`);
   }
   // A file the user named that could not be read is their mistake to fix. Files found by the walk
   // that could not be read are reported and skipped.
@@ -290,15 +303,19 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
   if (safety && a.format !== "text" && a.format !== "github") attachFixes(project, safety);
   const findings = project.findings();
   const report = buildReport(rootShown, project.results.length, findings, project.hiddenSecurity);
+  if (partial) report.summary.partial = true;
   const hiddenSec = hiddenTotal(project.hiddenSecurity);
-  const code = findings.some((f) => failsOn(f, a.failOn)) || (a.failOnHiddenSecurity && hiddenSec > 0) ? EXIT.findings : EXIT.ok;
-  // The hidden-security line is shown in every format, --quiet included: hiding a security
-  // finding is never silent.
+  const lintCode = findings.some((f) => failsOn(f, a.failOn)) || (a.failOnHiddenSecurity && hiddenSec > 0) ? EXIT.findings : EXIT.ok;
+  const code = partial && !a.allowPartial ? EXIT.partial : lintCode;
+  // The hidden-security line and the partial-run line are shown in every format, --quiet included:
+  // hiding a security finding or skipping files is never silent.
   const alerts = project.hiddenNote ? [project.hiddenNote + (a.failOnHiddenSecurity ? " --fail-on-hidden-security is set, so this run fails." : "")] : [];
+  const shownAlerts = partial ? [...alerts, partial] : alerts;
 
   if (a.writeBaseline) {
     io.out(`${JSON.stringify(baselineOf(findings.filter((f) => !f.suppressed)), null, 2)}\n`);
-    return EXIT.ok;
+    if (partial) io.err(`asitis: ${esc(partial, 800)}\n`);
+    return partial && !a.allowPartial ? EXIT.partial : EXIT.ok;
   }
 
   switch (a.format) {
@@ -307,20 +324,21 @@ async function lint(a: LintArgs, io: CliIO): Promise<number> {
         const diff = fixPreview(project, safety);
         if (diff) io.out(diff.endsWith("\n") ? diff : `${diff}\n`);
         else if (!a.quiet) io.err("asitis: no fixes to suggest for these findings.\n");
+        if (partial) io.err(`asitis: ${esc(partial, 800)}\n`);
         return code;
       }
-      io.out(formatText(report, { quiet: a.quiet, notes, alerts }));
+      io.out(formatText(report, { quiet: a.quiet, notes, alerts: shownAlerts }));
       break;
     case "json":
       io.out(formatJson(report));
-      for (const n of [...alerts, ...notes]) io.err(`asitis: ${esc(n, 800)}\n`);
+      for (const n of [...shownAlerts, ...notes]) io.err(`asitis: ${esc(n, 800)}\n`);
       break;
     case "sarif":
-      io.out(formatSarif(report, { alerts }));
-      for (const n of [...alerts, ...notes]) io.err(`asitis: ${esc(n, 800)}\n`);
+      io.out(formatSarif(report, { alerts: shownAlerts }));
+      for (const n of [...shownAlerts, ...notes]) io.err(`asitis: ${esc(n, 800)}\n`);
       break;
     case "github":
-      io.out(formatGithub(report, { quiet: a.quiet, notes, alerts, annotateNotes: a.annotateNotes }));
+      io.out(formatGithub(report, { quiet: a.quiet, notes, alerts, annotateNotes: a.annotateNotes, ...(partial ? { partial } : {}) }));
       break;
   }
   return code;

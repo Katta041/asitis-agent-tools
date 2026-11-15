@@ -7,10 +7,30 @@ import { classify, inMemoryFolder, isSteering } from "./kinds.js";
 import { CAPS } from "./limits.js";
 import { policyRefusal, type Root, type Sandbox } from "./paths.js";
 
+// Dependency, build and cache folders: large, generated, and never where a project keeps its own
+// steering files. Skipping them keeps big monorepos under the walk limits.
 const SKIP_DIRS = new Set([
   "node_modules", ".git", ".hg", ".svn", "dist", "build", "out", "target", "coverage", ".next", ".nuxt", ".turbo",
   ".cache", ".venv", "venv", "__pycache__", ".tox", "vendor", ".idea", ".gradle", ".terraform",
+  "bower_components", "jspm_packages", ".pnpm-store", ".yarn", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+  "site-packages", ".nox", "Pods", "DerivedData", ".svelte-kit", ".parcel-cache", ".angular", ".docusaurus",
+  ".output", ".vercel", ".expo", ".dart_tool", ".nyc_output", "bazel-bin", "bazel-out", "bazel-testlogs",
 ]);
+
+/**
+ * Skipped names that are also ordinary source folder names (bun keeps scripts/build/CLAUDE.md). Such
+ * a folder is searched when it holds an instruction file of its own; a real build output does not.
+ */
+const AMBIGUOUS_SKIP = new Set(["build", "out", "dist", "target", "coverage", "vendor"]);
+const INSTRUCTION_FILES = new Set(["CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "GEMINI.md"]);
+
+async function holdsInstructions(dir: string): Promise<boolean> {
+  try {
+    return (await fsp.readdir(dir)).some((n) => INSTRUCTION_FILES.has(n));
+  } catch {
+    return false;
+  }
+}
 
 export interface Found {
   /** Display path. */
@@ -92,7 +112,7 @@ export async function walk(sandbox: Sandbox, opts: { maxDepth?: number; includeA
           } else isFile = st.isFile();
         }
         if (isDir) {
-          if (SKIP_DIRS.has(e.name)) continue;
+          if (SKIP_DIRS.has(e.name) && !(AMBIGUOUS_SKIP.has(e.name) && (await holdsInstructions(path.join(dir, e.name))))) continue;
           if (depth + 1 > maxDepth) { out.truncated = true; out.cut.depth = true; continue; }
           queue.push({ dir: path.join(dir, e.name), rel: childRel, depth: depth + 1 });
           continue;

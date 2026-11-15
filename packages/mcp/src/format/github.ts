@@ -38,6 +38,8 @@ export interface GithubOptions {
   annotateNotes?: boolean;
   /** Shown as ::warning even with quiet: security findings the config or baseline hid. */
   alerts?: readonly string[];
+  /** Shown as ::warning even with quiet: the walk stopped at a limit, so some files were not linted. */
+  partial?: string;
 }
 
 
@@ -61,6 +63,7 @@ export function formatGithub(report: LintReport, opts: GithubOptions = {}): stri
     lines.push(`::${COMMAND[f.severity]} ${props}::${escapeData(esc(f.message, 1000))}`);
   }
   for (const a of opts.alerts ?? []) lines.push(`::warning title=${escapeProperty("asitis: security findings hidden")}::${escapeData(esc(a, 800))}`);
+  if (opts.partial) lines.push(`::warning title=${escapeProperty("asitis: partial run")}::${escapeData(esc(opts.partial, 800))}`);
   if (!opts.quiet) {
     for (const note of opts.notes ?? []) lines.push(`::notice::${escapeData(esc(note, 400))}`);
     lines.push(`asitis: ${summaryLine(report.summary)}`);
