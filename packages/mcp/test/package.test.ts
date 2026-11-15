@@ -252,17 +252,71 @@ describe("Codex plugin and Gemini CLI extension", () => {
   });
 });
 
-describe("docs run the server by its bin name", () => {
-  // The package has two bins (asitis and asitis-mcp) and neither is named "mcp", so
-  // `npx @asitis/mcp@x` fails with "could not determine executable to run".
-  const docs = [path.join(REPO, "README.md"), path.join(PKG, "README.md"), path.join(PLUGIN, "README.md")];
-  for (const doc of docs) {
-    test(path.relative(REPO, doc), () => {
-      const text = read(doc);
-      expect(text).not.toMatch(/npx -y @asitis\/mcp@/);
-      expect(text).not.toMatch(/"-y", "@asitis\/mcp@/);
-    });
-  }
+describe("Cursor plugin", () => {
+  const CURSOR = path.join(REPO, "plugins/asitis-cursor");
+  const manifest = JSON.parse(read(path.join(CURSOR, ".cursor-plugin/plugin.json")));
+  const market = JSON.parse(read(path.join(REPO, ".cursor-plugin/marketplace.json")));
+  const mcp = JSON.parse(read(path.join(CURSOR, "mcp.json")));
+  const frontmatter = (p: string): Record<string, string> => {
+    const m = /^---\n([\s\S]*?)\n---\n/.exec(read(p).replace(/\r\n/g, "\n"));
+    expect(m, p).not.toBeNull();
+    return Object.fromEntries(m![1]!.split("\n").filter((l) => l.includes(":")).map((l) => [l.slice(0, l.indexOf(":")).trim(), l.slice(l.indexOf(":") + 1).trim()]));
+  };
+
+  test("versions agree with the package", () => {
+    expect(manifest.version).toBe(pkg.version);
+    expect(market.metadata.version).toBe(pkg.version);
+  });
+  test("the MCP server is pinned to this exact version, never @latest", () => {
+    const s = mcp.mcpServers.asitis;
+    expect(s.command).toBe("npx");
+    // -p and the bin name: the package has two bins, so a bare `npx @asitis/mcp` cannot pick one.
+    expect(s.args).toEqual(["-y", "-p", `@asitis/mcp@${pkg.version}`, "asitis-mcp", "--root", "${workspaceFolder}"]);
+    expect(JSON.stringify(mcp)).not.toMatch(/@latest/);
+  });
+  test("marketplace entry points at the plugin folder and the names match", () => {
+    expect(market.owner.name).toBeTruthy();
+    expect(market.plugins).toHaveLength(1);
+    expect(market.plugins[0].name).toBe(manifest.name);
+    expect(market.plugins[0].source).toBe("./plugins/asitis-cursor");
+    expect(manifest.name).toMatch(/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/);
+    expect(existsSync(path.join(CURSOR, manifest.logo))).toBe(true);
+  });
+  test("every rule, skill and command has the frontmatter Cursor's marketplace review asks for", () => {
+    for (const f of files(path.join(CURSOR, "rules"))) expect(frontmatter(f)["description"], f).toBeTruthy();
+    for (const f of files(path.join(CURSOR, "skills")).filter((p) => p.endsWith("SKILL.md"))) {
+      const fm = frontmatter(f);
+      expect(fm["name"] && fm["description"], f).toBeTruthy();
+    }
+    for (const f of files(path.join(CURSOR, "commands"))) {
+      const fm = frontmatter(f);
+      expect(fm["name"] && fm["description"], f).toBeTruthy();
+    }
+  });
+  test("the rule only attaches to steering files, so it costs nothing at session start", () => {
+    const fm = frontmatter(path.join(CURSOR, "rules/check-steering-files.mdc"));
+    expect(fm["alwaysApply"]).toBe("false");
+    expect(fm["globs"]).toMatch(/AGENTS\.md/);
+  });
+  test("its rule, skill and commands pass lint_steering with no errors or warnings", async () => {
+    const c = await connect([CURSOR]);
+    for (const p of ["rules/check-steering-files.mdc", "skills/markdown-byte-clean/SKILL.md", "commands/md-lint.md", "commands/md-loads.md", "commands/md-budget.md"]) {
+      const r = await c.call("lint_steering", { path: p });
+      const issues = (r.structured["files"] as Array<{ issues: Array<{ severity: string; rule: string }> }>)[0]!.issues;
+      expect(issues.filter((i) => i.severity !== "info"), p).toEqual([]);
+    }
+    await c.close();
+  });
+  test("Add to Cursor links carry the same pinned config as the plugin (the version is inside base64, so the pin check above can't see it)", () => {
+    const links = [path.join(REPO, "README.md"), path.join(REPO, "docs/install.md")]
+      .flatMap((d) => [...read(d).matchAll(/cursor\.com\/en\/install-mcp\?name=asitis&config=([^)\s"]+)/g)].map((m) => m[1]!));
+    expect(links.length).toBeGreaterThan(0);
+    for (const l of links) expect(JSON.parse(Buffer.from(decodeURIComponent(l), "base64").toString("utf8"))).toEqual(mcp.mcpServers.asitis);
+  });
+  test("the skill matches the Claude Code plugin's apart from the command names", () => {
+    const claude = read(path.join(PLUGIN, "skills/markdown-byte-clean/SKILL.md")).replaceAll("/asitis:md-", "/md-");
+    expect(read(path.join(CURSOR, "skills/markdown-byte-clean/SKILL.md"))).toBe(claude);
+  });
 });
 
 // Built from parts so this file does not match itself.
@@ -293,7 +347,7 @@ describe("copy rules: no em-dashes, no emoji, no AI attribution in anything we a
 describe("docs never pin a stale version", () => {
   // Install snippets pin an exact version on purpose (never @latest in an agent config), so every
   // pin must move with the release. This fails the release, not a reader, when one is missed.
-  const docs = [path.join(REPO, "README.md"), path.join(PKG, "README.md")].filter((p) => existsSync(p));
+  const docs = [path.join(REPO, "README.md"), path.join(PKG, "README.md"), path.join(REPO, "docs/install.md")].filter((p) => existsSync(p));
   for (const doc of docs) {
     test(`${path.relative(REPO, doc)} pins @asitis/mcp at ${pkg.version}`, () => {
       const pins = [...read(doc).matchAll(/@asitis\/mcp@(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
