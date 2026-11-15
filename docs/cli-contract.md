@@ -13,7 +13,7 @@ Types named here live in `packages/mcp/src/findings.ts` and `packages/mcp/src/pr
 - `asitis-mcp` does not get a `lint` subcommand. It treats positionals as root folders and that stays.
 - The bundle follows the server's rules: no write, exec or network code, no `child_process`, `net`, `http`, `https`, `http2`, `dns`, `tls`, `dgram`, `worker_threads` or `cluster`. It may import the Node modules the server bundle already imports (`node:fs`, `node:path`, `node:crypto`, `node:os`, `node:util`, `node:process`) and nothing else. Output goes to stdout and stderr only; files come from shell redirects.
 
-### `@asitis/cli` (planned; not shipped as of 0.4.0)
+### `@asitis/cli` (planned; not shipped as of 0.4.1)
 
 A thin package so `npm search` finds the linter under its own name:
 
