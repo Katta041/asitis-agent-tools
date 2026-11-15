@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="AsItIs">
+<!-- AsItIs stet mark, v3 variation 1 (Slab). Hand-written fill-only SVG on a 32-unit grid, even coordinates: slab x4..28 y8..16 rx2, three dots r2 at x8/16/24 y22. At 16 px: 4 px slab, 2 px dots. -->
+<!-- Favicon: tile form: teal tile, white mark at 70 % of the tile width. In dark browser chrome the tile uses the brand's dark-surface teal with the text ink, so the tab icon keeps its contrast against a dark tab strip. -->
+<style>.t{fill:#007370}.m{fill:#FDFDFF}@media (prefers-color-scheme:dark){.t{fill:#4AB8B5}.m{fill:#141517}}</style>
+<rect class="t" width="32" height="32" rx="7.5"/>
+<g transform="translate(1.067 1.317) scale(0.9333)">
+<rect class="m" x="4" y="8" width="24" height="8" rx="2"/>
+<circle class="m" cx="8" cy="22" r="2"/>
+<circle class="m" cx="16" cy="22" r="2"/>
+<circle class="m" cx="24" cy="22" r="2"/>
+</g>
+</svg>

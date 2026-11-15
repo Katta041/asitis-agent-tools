@@ -1,0 +1,18 @@
+{
+  "name": "asitis",
+  "owner": {
+    "name": "AsItIs",
+    "email": "dev@asitis.app"
+  },
+  "metadata": {
+    "description": "AsItIs for Cursor: a read-only linter for the files your agent reads before it starts work.",
+    "version": "0.4.1"
+  },
+  "plugins": [
+    {
+      "name": "asitis",
+      "source": "./plugins/asitis-cursor",
+      "description": "Read-only MCP tools, a rule that runs them when you edit steering files, and /md-lint, /md-loads and /md-budget."
+    }
+  ]
+}
