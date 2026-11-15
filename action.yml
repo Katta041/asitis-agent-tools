@@ -51,6 +51,10 @@ inputs:
     description: Set to true to upload the SARIF file to GitHub code scanning. Needs a public repo, or GitHub Code Security on a private one, and security-events write permission. A failed upload never hides the lint result.
     required: false
     default: "false"
+  allow-partial:
+    description: Set to true to pass when the repo is too big to search in full (more than 1,000 steering files, 200,000 folder entries or the time limit) and nothing found fails. By default such a partial run fails with exit code 4, after annotating the files it did lint.
+    required: false
+    default: "false"
   fail-on-hidden-security:
     description: Fail the job when the repo's .asitisrc.json (a rule turned off, a lower severity, an ignore pattern) or the baseline hides a security finding. Set to false to let them through.
     required: false
@@ -90,6 +94,7 @@ runs:
         INPUT_BASELINE: ${{ inputs.baseline }}
         INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
         INPUT_FAIL_ON_HIDDEN_SECURITY: ${{ inputs.fail-on-hidden-security }}
+        INPUT_ALLOW_PARTIAL: ${{ inputs.allow-partial }}
       run: bash "$GITHUB_ACTION_PATH/action/run.sh"
 
     # continue-on-error: on a private repo without GitHub Code Security the upload returns 403
@@ -108,7 +113,10 @@ runs:
       env:
         EXIT_CODE: ${{ steps.lint.outputs.exit-code }}
       run: |
-        if [ "$EXIT_CODE" != "0" ]; then
+        if [ "$EXIT_CODE" = "4" ]; then
+          echo "asitis: partial run, the repo was too big to search in full (exit code 4). Set root to a subfolder or list paths, or set allow-partial: true."
+          exit 4
+        elif [ "$EXIT_CODE" != "0" ]; then
           echo "asitis: findings at or above the fail-on level (exit code $EXIT_CODE)."
           exit "$EXIT_CODE"
         fi

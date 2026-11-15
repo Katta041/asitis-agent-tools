@@ -124,7 +124,7 @@ If a desktop app cannot find `npx` or `node`, use its full path (run `which npx`
 
 ## CLI and CI
 
-The package also has an `asitis` command for scripts, CI and pre-commit. It lints the same way as `lint_steering` and exits 0 (clean), 1 (findings at or above `--fail-on`, default `error`), 2 (something you can fix, one line on stderr) or 3 (a bug in asitis).
+The package also has an `asitis` command for scripts, CI and pre-commit. It lints the same way as `lint_steering` and exits 0 (clean), 1 (findings at or above `--fail-on`, default `error`), 2 (something you can fix, one line on stderr), 3 (a bug in asitis) or 4 (a partial run: the repo was too big to search in full, so only the files found were linted; `--allow-partial` gives 0 or 1 instead).
 
 ```bash
 npx -y -p @asitis/mcp@0.4.0 asitis lint                      # every steering file under the current folder

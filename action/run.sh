@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Runs the bundled asitis CLI for action.yml. Inputs arrive as INPUT_* environment variables,
 # never pasted into the script, so a path or config name cannot inject shell code.
-# Writes the step outputs and exits 0 when the lint ran (exit code 0 or 1 goes to the
-# exit-code output, and the last step of action.yml fails the job on 1), or exits 2 or 3
-# straight away when the run itself failed.
+# Writes the step outputs and exits 0 when the lint ran (exit code 0, 1 or 4 goes to the
+# exit-code output, and the last step of action.yml fails the job on any of them but 0), or exits
+# 2 or 3 straight away when the run itself failed. 4 is a partial run: the repo was too big to
+# walk in full, the files found are still annotated and in the SARIF file.
 set -u
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,6 +60,13 @@ annotate=()
 [ "$format" = github ] && [ "${INPUT_ANNOTATE_NOTES:-false}" = true ] && annotate=(--annotate-notes)
 # fail-on-hidden-security (default true): the lint pass exits 1 when .asitisrc.json or the baseline
 # hides or lowers a security finding. Only the lint pass gets it; the SARIF pass uses --fail-on never.
+# allow-partial (default false): a walk cut at a limit exits 0 or 1 instead of 4.
+partial=()
+case "${INPUT_ALLOW_PARTIAL:-false}" in
+  true) partial=(--allow-partial) ;;
+  false) ;;
+  *) fail 2 "allow-partial must be true or false, not \"${INPUT_ALLOW_PARTIAL}\"." ;;
+esac
 hidden=()
 case "${INPUT_FAIL_ON_HIDDEN_SECURITY:-true}" in
   true) hidden=(--fail-on-hidden-security) ;;
@@ -97,16 +105,17 @@ fi
 # with % escaped so the text stays data.
 log="$(mktemp)"
 errlog="$(mktemp)"
-node "$cli" "${args[@]}" --format "$format" ${annotate[@]+"${annotate[@]}"} --fail-on "${INPUT_FAIL_ON:-error}" ${hidden[@]+"${hidden[@]}"} ${paths[@]+"${paths[@]}"} > "$log" 2> "$errlog"
+node "$cli" "${args[@]}" --format "$format" ${annotate[@]+"${annotate[@]}"} --fail-on "${INPUT_FAIL_ON:-error}" ${hidden[@]+"${hidden[@]}"} ${partial[@]+"${partial[@]}"} ${paths[@]+"${paths[@]}"} > "$log" 2> "$errlog"
 code=$?
 cat "$log"
 level=notice
-[ "$code" -ge 2 ] && level=error
+[ "$code" -eq 4 ] && level=warning
+[ "$code" -ge 2 ] && [ "$code" -ne 4 ] && level=error
 while IFS= read -r line; do
   [ -n "$line" ] && printf '::%s title=asitis::%s\n' "$level" "$(printf '%s' "$line" | tr -d '\r' | sed 's/%/%25/g')"
 done < "$errlog"
 rm -f "$errlog"
-if [ "$code" -ge 2 ]; then
+if [ "$code" -ge 2 ] && [ "$code" -ne 4 ]; then
   rm -f "$log"
   output exit-code "$code"
   exit "$code"
@@ -137,9 +146,10 @@ if [ -n "$sarif" ]; then
   if ! : > "$sarif" 2>/dev/null; then
     fail 2 "cannot write the SARIF file \"$sarif\"; set sarif-file to a path inside the workspace."
   fi
-  node "$cli" "${args[@]}" --format sarif --fail-on never ${paths[@]+"${paths[@]}"} > "$sarif"
+  node "$cli" "${args[@]}" --format sarif --fail-on never ${partial[@]+"${partial[@]}"} ${paths[@]+"${paths[@]}"} > "$sarif"
   scode=$?
-  if [ "$scode" -ne 0 ]; then
+  # 4: the same partial walk as the lint pass; the SARIF file holds what was found.
+  if [ "$scode" -ne 0 ] && [ "$scode" -ne 4 ]; then
     rm -f "$sarif"
     output exit-code "$scode"
     exit "$scode"

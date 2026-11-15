@@ -96,19 +96,20 @@ The upload uses `github/codeql-action/upload-sarif`, pinned to a commit inside `
 | `baseline` | empty | Baseline file inside `root`. Findings listed there are reported as suppressed and do not fail the step. |
 | `sarif-file` | `asitis.sarif` | Where to write the SARIF 2.1.0 report. Empty skips it. |
 | `upload-sarif` | `false` | `true` uploads the SARIF file to code scanning. Needs a public repo or GitHub Code Security, and `security-events: write`. A failed upload never changes the job result. |
+| `allow-partial` | `false` | Pass when the repo is too big to search in full (more than 1,000 steering files, 200,000 folder entries or the time limit) and nothing it did find fails. Off by default, so a partial run fails with exit code 4. |
 | `fail-on-hidden-security` | `true` | Fail the job when the repo's own `.asitisrc.json` (a rule turned off, a lower severity, an `ignore` pattern) or the baseline hides a security finding. See below. |
 
 ## Outputs
 
 | Output | Meaning |
 |---|---|
-| `exit-code` | 0 clean, 1 findings at or above `fail-on`, 2 a setup problem you can fix, 3 a bug in asitis. |
+| `exit-code` | 0 clean, 1 findings at or above `fail-on`, 2 a setup problem you can fix, 3 a bug in asitis, 4 a partial run (the repo was too big to search in full; what was found is still annotated and in the SARIF file). |
 | `errors` | Number of errors, not counting suppressed ones. |
 | `warnings` | Number of warnings, not counting suppressed ones. |
 | `notes` | Number of notes, not counting suppressed ones. |
 | `sarif-file` | Path of the SARIF file, or empty. |
 
-The step fails on exit code 1, 2 or 3. When you want the numbers without failing the job, set `fail-on: never` and read the outputs.
+The step fails on exit code 1, 2, 3 or 4. For 4, point `root` at a subfolder, list `paths`, or set `allow-partial: true`. When you want the numbers without failing the job, set `fail-on: never` and read the outputs.
 
 ## Adopting it on a repo with existing findings
 
@@ -154,7 +155,7 @@ The badge is static. It says the repo's steering files are checked by this Actio
 2. Runs `node action/asitis.mjs lint --format github` (or the format you chose), with `--fail-on-hidden-security` unless you turned it off. Each finding becomes one `::error`, `::warning` or `::notice` line. Text from your files is escaped, so a file cannot start a workflow command of its own.
 3. If `sarif-file` is set, runs a second pass with `--format sarif` into that file.
 4. If `upload-sarif` is `true`, uploads the file. A failed upload is a warning, not a failure.
-5. Fails the step if the lint pass exited non-zero.
+5. Fails the step if the lint pass exited non-zero. A partial run (exit 4) still writes the counts and the SARIF file first.
 
 Inputs are handed to the script as environment variables, never pasted into shell code, so a strange path or file name cannot run commands.
 

@@ -1,6 +1,6 @@
 // WP3: the GitHub Action (action.yml, action/run.sh), the pre-commit hook and the CI docs.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
@@ -286,6 +286,28 @@ describe.skipIf(!bash)("action/run.sh", () => {
       const log = JSON.parse(readFileSync(sarif, "utf8")) as { version: string; runs: Array<{ results: unknown[] }> };
       expect(log.version).toBe("2.1.0");
       expect(log.runs[0]!.results).toHaveLength(5);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a partial run (walk cut at the file limit): annotated, counted, SARIF written, exit-code 4; allow-partial passes", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "asitis-partial-"));
+    try {
+      for (let i = 0; i < 1005; i++) {
+        mkdirSync(path.join(dir, `p${i}`));
+        writeFileSync(path.join(dir, `p${i}`, "CLAUDE.md"), "# P\n\n- Use pnpm\n");
+      }
+      const sarif = path.join(dir, "out.sarif");
+      const r = runAction({ INPUT_ROOT: dir, INPUT_SARIF_FILE: sarif });
+      expect(r.code, r.stdout).toBe(0); // the step passes; action.yml's last step fails on exit-code 4
+      expect(r.outputs).toMatchObject({ "exit-code": "4", errors: "0", "sarif-file": sarif });
+      expect(r.stdout).toMatch(/^::warning title=asitis/m);
+      expect(r.stdout).not.toMatch(/^::error /m);
+      expect(JSON.parse(readFileSync(sarif, "utf8")).version).toBe("2.1.0");
+      const ok = runAction({ INPUT_ROOT: dir, INPUT_ALLOW_PARTIAL: "true" });
+      expect(ok.outputs["exit-code"]).toBe("0");
+      expect(runAction({ INPUT_ROOT: dir, INPUT_ALLOW_PARTIAL: "maybe" }).outputs["exit-code"]).toBe("2");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
