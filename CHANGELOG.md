@@ -2,6 +2,14 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.4.2] - 2026-11-16
+
+### Fixed
+- `npx -y @asitis/mcp` failed with "could not determine executable to run" from 0.3.0 on, because the package has two commands and npx couldn't tell which one to start. That's the line in the README and the one MCP Registry clients run. The package now has a third command, `mcp`, which is the server, so the plain form starts it again. `npx -y -p @asitis/mcp asitis-mcp` keeps working.
+- The README no longer says no real finding was lost between 0.3.0 and 0.4.0, and the agnix rule count in the comparison table is 761 now.
+
+Details: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#042---2026-11-16) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#042---2026-11-16).
+
 ## [0.4.1] - 2026-11-15
 
 ### Fixed

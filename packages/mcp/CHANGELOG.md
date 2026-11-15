@@ -2,6 +2,12 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] - 2026-11-16
+
+### Fixed
+- `npx -y @asitis/mcp@<version>` with no command name failed with "could not determine executable to run" since 0.3.0 added the `asitis` bin: with more than one bin, npx only runs the one named after the unscoped package name. Added the bin `mcp` (same file as `asitis-mcp`). This is the form in the README and in `server.json` (runtimeHint `npx`). A test pins the bins and checks every npx line in the docs.
+- `asitis-mcp --help` lists `load_plan` and shows the `-p` form that works on every version.
+
 ## [0.4.1] - 2026-11-15
 
 ### Fixed

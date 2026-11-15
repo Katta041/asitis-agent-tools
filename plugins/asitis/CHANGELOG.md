@@ -2,6 +2,11 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] - 2026-11-16
+
+### Changed
+- The bundled server is `@asitis/mcp` 0.4.2. Nothing changes inside Claude Code; the release fixes plain `npx -y @asitis/mcp` for other MCP clients.
+
 ## [0.4.1] - 2026-11-15
 
 ### Fixed
