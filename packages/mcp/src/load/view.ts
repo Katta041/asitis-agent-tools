@@ -47,8 +47,8 @@ export interface ViewOptions {
 
 const MARK: Record<string, string> = { assumed: " (assumed)", canary: "", documented: "" };
 
-function stepLine(s: LoadStep, i: number, name: (p: string) => string): string {
-  const indent = s.depth ? "   ".repeat(s.depth) : "";
+function stepLine(s: LoadStep, i: number, name: (p: string) => string, depth = s.depth ?? 0): string {
+  const indent = depth > 0 ? "   ".repeat(depth) : "";
   const label = s.kind === "overflow" || s.kind === "listing" ? esc(s.path, 300) : name(s.path);
   const mark = MARK[s.basis] ?? "";
   if (s.kind === "missing") return `    ${i}. ${indent}${label}: ${esc(s.note ?? "not loaded", 200)}`;
@@ -80,8 +80,16 @@ function toolView(p: LoadPlan, opts: ViewOptions): { lines: string[]; json: Reco
   ];
   for (const [title, pick] of groups) {
     const rows: string[] = [];
+    // Depth is shown relative to the rows above it in the same group, so an import whose importing
+    // file is listed in another group (an external import of a CLAUDE.md that loads at launch)
+    // starts at the group's margin instead of hanging under nothing.
+    let prev: { raw: number; shown: number } | null = null;
     page.forEach((s, k) => {
-      if (pick(s)) rows.push(stepLine(s, offset + k + 1, name));
+      if (!pick(s)) return;
+      const raw = s.depth ?? 0;
+      const shown: number = prev ? Math.max(0, prev.shown + raw - prev.raw) : 0;
+      rows.push(stepLine(s, offset + k + 1, name, shown));
+      prev = { raw, shown };
     });
     if (!rows.length) continue;
     lines.push(`  ${title}`, ...rows);

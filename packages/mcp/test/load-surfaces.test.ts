@@ -224,6 +224,72 @@ describe("load plan keeps the 0.3.1 import rules", () => {
     expect(top.filter((s) => s.trigger === "on-approval")).toEqual([]);
     expect(top.find((s) => s.path === "AGENTS.md")).toMatchObject({ trigger: "launch", counted: true });
   });
+  test("text view: exact row format in every group, imports indented only under a parent in the same group", async () => {
+    const root = temp({
+      "CLAUDE.md": "@AGENTS.md\n@pkg/inner.md\nSee @guide.md: now.\n\n# Root\n",
+      "AGENTS.md": "# Agents\n\n@pkg/via-agents.md\n",
+      "guide.md": "# guide\n",
+      "shared.md": "# S\n",
+      "pkg/inner.md": "# Inner\n",
+      "pkg/via-agents.md": "# Via\n",
+      "pkg/CLAUDE.md": "# Pkg\n\n@../shared.md\n@local.md\n",
+      "pkg/local.md": "# L\n",
+      "pkg/sub/CLAUDE.md": "# Sub\n",
+      ".claude/rules/r.md": "---\npaths: pkg/**\n---\n# R\n",
+      ".claude/skills/rel/SKILL.md": "---\nname: rel\ndescription: Cut a release.\n---\n# x\n",
+      ".github/instructions/db.instructions.md": "---\ndescription: Database rules.\n---\n# DB\n",
+      ".cursor/rules/style.mdc": "---\ndescription: Style rules.\n---\n# Style\n",
+    }, [".git"]);
+    // The rows of one group: its title line, then every line that starts with a step number.
+    const group = (out: string, title: string): string[] => {
+      const lines = out.split("\n");
+      const at = lines.indexOf(`  ${title}`);
+      expect(at, title).toBeGreaterThan(-1);
+      const rows: string[] = [];
+      for (const l of lines.slice(at + 1)) {
+        if (!/^ {4}\d+\. /.test(l)) break;
+        rows.push(l);
+      }
+      return rows;
+    };
+    const cc = await cli(["loads", "pkg", "--tool", "claude-code"], root);
+    expect(cc.code).toBe(0);
+    expect(group(cc.out, "At launch")).toEqual([
+      "    1. CLAUDE.md, about 14 tokens, project instructions (from the project root, above the start folder)",
+      "    2.    pkg/inner.md, about 2 tokens, imported by CLAUDE.md",
+      "    3.    @guide.md:: not loaded as written (see lint_steering), not counted",
+      "    4. pkg/CLAUDE.md, about 8 tokens, project instructions",
+      "    5.    pkg/local.md, about 1 tokens, imported by pkg/CLAUDE.md",
+      "    6. Skill listing (1 entry), about 9 tokens, names and descriptions of skills, commands and subagents; bodies load on use",
+    ]);
+    expect(group(cc.out, "Later, when the agent works in a folder or on matching files")).toEqual([
+      "    7. .claude/rules/r.md, about 7 tokens, when Claude reads or edits a file matching pkg/** (5 files match now)",
+      "    8. pkg/sub/CLAUDE.md, about 2 tokens, when Claude reads or edits a file in pkg/sub",
+    ]);
+    // The importing CLAUDE.md files are in "At launch", so these start at the margin; the chained
+    // import is indented one level under AGENTS.md, which is in this group.
+    expect(group(cc.out, "Only after you approve imports from outside the start folder (not counted)")).toEqual([
+      "    9. AGENTS.md, about 8 tokens, imported by CLAUDE.md, after you approve external imports for this project",
+      "    10.    pkg/via-agents.md, about 2 tokens, imported by AGENTS.md, after you approve external imports for this project",
+      "    11. shared.md, about 1 tokens, imported by pkg/CLAUDE.md, after you approve external imports for this project",
+    ]);
+    const other = await cli(["loads", ".", "--tool", "copilot,cursor"], root);
+    expect(other.code).toBe(0);
+    const [copilot, cursor] = other.out.split("\nCursor: ");
+    expect(group(copilot!, "Only when picked (by description or by you)")).toEqual([
+      "    1. .github/instructions/db.instructions.md, about 11 tokens, when the agent decides it is relevant from its description",
+    ]);
+    expect(group(copilot!, "Only if a setting is on (not counted)")).toEqual([
+      "    2. AGENTS.md, about 8 tokens, at launch when chat.useAgentsMdFile is on (Copilot agents read it by default)",
+      "    3. CLAUDE.md, about 14 tokens, at launch when chat.useClaudeMdFile is on",
+    ]);
+    expect(group(cursor!, "At launch, but not counted in the total")).toEqual([
+      "    1. AGENTS.md, about 8 tokens, AGENTS.md in the workspace root; the docs do not say it is always in context, so it is not in the total (assumed)",
+    ]);
+    expect(group(cursor!, "Only when picked (by description or by you)")).toEqual([
+      "    2. .cursor/rules/style.mdc, about 11 tokens, when the agent decides it is relevant from its description",
+    ]);
+  });
   test("only a CLAUDE.local.md hides AGENTS.md: the warning names CLAUDE.local.md, not a CLAUDE.md", async () => {
     const root = temp({ "CLAUDE.local.md": "# Mine\n", "AGENTS.md": "# Agents\n", "pkg/x.ts": "" }, [".git"]);
     for (const dir of [".", "pkg"]) {
