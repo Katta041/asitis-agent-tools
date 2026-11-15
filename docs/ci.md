@@ -63,6 +63,8 @@ The SARIF upload needs code scanning on the repo: every public repo has it, a pr
 
 ### Security findings hidden by the config or baseline
 
+On a repo too big to search in full the Action annotates what it found, writes the SARIF file, and then fails with exit code 4. Set `root` to a subfolder, list `paths`, or set `allow-partial: true` if a partial run is fine for you.
+
 `fail-on-hidden-security` is on by default. The job fails when the repo's `.asitisrc.json` (a security rule turned off or lowered, or an `ignore` pattern over a file with security findings) or the baseline hides a security finding, so a pull request cannot get a hidden instruction past CI by also editing the config or the baseline. Each hidden finding stays in the SARIF and JSON as a suppressed result with a justification, and the log has one line that counts them. The CLI does the same with `--fail-on-hidden-security`; without the flag it still prints the line. [action/README.md](../action/README.md#security-findings-the-config-or-baseline-hides) explains why this checks the result rather than the diff.
 
 ## pre-commit
