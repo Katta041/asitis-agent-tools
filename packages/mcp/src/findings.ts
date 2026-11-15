@@ -2,7 +2,7 @@
 // and suppression code, and the fix engine. lint.ts keeps its own Issue type for the MCP tools;
 // toFindings() converts at the end of lintProject. docs/cli-contract.md is the spec for this file.
 
-import { createHash } from "node:crypto";
+import { createHash, type Hash } from "node:crypto";
 import path from "node:path";
 import type { Doc } from "./doc.js";
 import type { Issue, LintResult, Severity } from "./lint.js";
@@ -74,6 +74,8 @@ export interface LintSummary {
    * how many, and by what. Those findings are also in findings[], marked suppressed (or lowered).
    */
   hiddenSecurity?: { config: number; baseline: number; rules: string[]; ignoredFiles: string[] };
+  /** Present (true) only when the walk stopped at the file, entry or time limit, so some steering files were not linted. */
+  partial?: true;
 }
 
 /** The JSON report. schemaVersion stays 1 for all of 0.x; fields are only ever added. */
@@ -100,6 +102,46 @@ export function normaliseLineText(text: string): string {
  */
 export function fingerprint(ruleId: string, path: string, lineText: string, occurrence: number): string {
   return createHash("sha256").update(`${ruleId}\0${path}\0${normaliseLineText(lineText)}\0${occurrence}`).digest("hex");
+}
+
+/**
+ * Fingerprints for the findings of one file, in the order toFindings() visits them. Gives exactly
+ * what fingerprint() gives, but normalises each line once and hashes its text once per rule, so a
+ * file that is one 10 MB line with thousands of findings stays linear (it took 70 s in 0.3.0).
+ */
+export class FingerprintCounter {
+  private readonly normByLine = new Map<number, string>();
+  private readonly idOfNorm = new Map<string, number>();
+  private readonly seen = new Map<string, number>();
+  private readonly states = new Map<string, Hash>();
+  constructor(
+    private readonly path: string,
+    private readonly lineText: LineText,
+  ) {}
+
+  next(i: Pick<Issue, "rule" | "line" | "fingerprintText">): string {
+    let norm: string;
+    if (i.fingerprintText !== undefined) norm = normaliseLineText(i.fingerprintText);
+    else {
+      const cached = this.normByLine.get(i.line);
+      norm = cached ?? normaliseLineText(this.lineText(i.line));
+      if (cached === undefined) this.normByLine.set(i.line, norm);
+    }
+    let id = this.idOfNorm.get(norm);
+    if (id === undefined) {
+      id = this.idOfNorm.size;
+      this.idOfNorm.set(norm, id);
+    }
+    const key = `${i.rule}\0${id}`;
+    const occurrence = this.seen.get(key) ?? 0;
+    this.seen.set(key, occurrence + 1);
+    let state = this.states.get(key);
+    if (!state) {
+      state = createHash("sha256").update(`${i.rule}\0${this.path}\0`).update(norm).update("\0");
+      this.states.set(key, state);
+    }
+    return state.copy().update(String(occurrence)).digest("hex");
+  }
 }
 
 /** The text a finding's fingerprint is computed from: its fingerprintText, or the text of its line. */
@@ -130,21 +172,14 @@ export interface FindingSource {
 export function toFindings(sources: FindingSource[], category: (ruleId: string) => Category): Finding[] {
   const out: Finding[] = [];
   for (const s of sources) {
-    const seen = new Map<string, number>();
+    const fp = new FingerprintCounter(s.path, s.lineText);
     const ordered = [...s.result.issues].sort((a, b) => a.line - b.line || (a.column ?? 1) - (b.column ?? 1));
-    for (const i of ordered) {
-      const text = s.lineText(i.line);
-      const fpText = fingerprintTextOf(i, s.lineText);
-      const key = `${i.rule}\0${normaliseLineText(fpText)}`;
-      const occurrence = seen.get(key) ?? 0;
-      seen.set(key, occurrence + 1);
-      out.push(issueToFinding(i, s.path, text, fpText, occurrence, category(i.rule)));
-    }
+    for (const i of ordered) out.push(issueToFinding(i, s.path, s.lineText(i.line), fp.next(i), category(i.rule)));
   }
   return out.sort(compareFindings);
 }
 
-function issueToFinding(i: Issue, path: string, text: string, fpText: string, occurrence: number, category: Category): Finding {
+function issueToFinding(i: Issue, path: string, text: string, fingerprint: string, category: Category): Finding {
   const f: Finding = {
     ruleId: i.rule,
     severity: toFindingSeverity(i.severity),
@@ -155,7 +190,7 @@ function issueToFinding(i: Issue, path: string, text: string, fpText: string, oc
     endLine: i.endLine ?? i.line,
     endColumn: i.endColumn ?? text.length + 1,
     message: i.message,
-    fingerprint: fingerprint(i.rule, path, fpText, occurrence),
+    fingerprint,
   };
   if (i.suppressed) f.suppressed = i.suppressed;
   if (i.fix) f.fix = i.fix;
