@@ -2,6 +2,14 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.4.1] - 2026-11-16
+
+### Fixed
+- `asitis loads` and `load_plan` were wrong about @imports from a folder above the start folder. 0.4.0 said Claude Code never expands them. It does, after you approve them: an import whose file sits outside the folder you start Claude in is an external import, and Claude Code asks once per project, in an interactive session, whether to allow external imports. Yes loads them from then on, `claude -p` included; no keeps them off and the question doesn't come back. `claude -p` never asks, so until someone has said yes there, they don't load in scripts or CI. My 0.4.0 canary only used `claude -p`, which is why it looked like "not expanded". Checked again on Claude Code 2.1.312 and 2.1.325, interactive and headless, both answers. Such imports are now listed under "Only after you approve imports from outside the start folder", not counted at launch, with a warning that says what `claude -p` does. An ancestor's import of a file inside the start folder loads at launch, and a start-folder file's `@../x.md` waits for approval like an ancestor's. `context_budget` counts from the project root, where nothing in the project is external, so its numbers don't change.
+- `asitis loads` warned "there is a CLAUDE.md" when the only file hiding AGENTS.md was a CLAUDE.local.md. It names CLAUDE.local.md now.
+
+Details: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#041---2026-11-16) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#041---2026-11-16).
+
 ## [0.4.0] - 2026-11-15
 
 This one folds in 0.3.1, which never shipped on its own.

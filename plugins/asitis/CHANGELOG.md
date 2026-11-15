@@ -2,6 +2,11 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-11-16
+
+### Fixed
+- The bundled server is `@asitis/mcp` 0.4.1. `/asitis:md-loads` no longer says Claude Code ignores imports in a CLAUDE.md above the folder you start in: they wait for Claude Code's one-time approval of imports from outside the start folder, and `claude -p` loads them only after someone has approved them interactively. It also stops claiming there is a CLAUDE.md when only a CLAUDE.local.md hides AGENTS.md.
+
 ## [0.4.0] - 2026-11-15
 
 ### Added
