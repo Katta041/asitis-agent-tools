@@ -113,6 +113,9 @@ async function pathRules(ctx: CheckContext, files: FileIndex): Promise<void> {
       // The Cursor docs do not say what a nested rule's globs are relative to: try both readings.
       base = [holder(".cursor"), ""];
     } else if (d.kind.kind === "copilot-scoped") {
+      // Copilot reads *.instructions.md from .github/instructions by default (the load model says the
+      // same); a file elsewhere, as in an instructions collection, is not applied to this repo at all.
+      if (!/(^|\/)\.github\/instructions\//.test(rel)) continue;
       key = "applyTo";
       tool = "Copilot applies these instructions only to matching files, so they never apply";
       // Relative to the workspace root; a nested .github is its own workspace when that folder is opened.

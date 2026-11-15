@@ -65,6 +65,8 @@ describe("path-rule-matches-nothing", () => {
         "templates/app/.claude/rules/t.md": `${fm('paths:\n  - "src/**"')}Template\n`,
         ".claude/rules/gone.md": `${fm('paths:\n  - "gone/**"')}Gone\n`,
         ".github/instructions/kotlin.instructions.md": `${fm('applyTo: "**/*.kt"')}Kotlin pack, no Kotlin here\n`,
+        // An instructions collection: Copilot only applies files in .github/instructions.
+        "instructions/memory-bank.instructions.md": `${fm('applyTo: "memory-bank/**"')}Collection entry\n`,
       },
       ["dist"],
     );
