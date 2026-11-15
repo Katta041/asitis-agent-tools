@@ -36,9 +36,10 @@ export const LABEL = {
 export type HiddenLabel = (typeof LABEL)[keyof typeof LABEL];
 
 export interface HiddenPhrase {
-  lang: HiddenLang;
-  label: HiddenLabel;
-  regex: RegExp;
+  readonly lang: HiddenLang;
+  readonly label: HiddenLabel;
+  /** Built on first use, so a run that never classifies a comment in this language never compiles it. */
+  readonly regex: RegExp;
 }
 
 /** Space between words. {1,9}, not {1,4}: V8 unrolls tiny counted loops, which made compiling slow. */
@@ -79,8 +80,28 @@ const LEAD_ZH_SENT = String.raw`(?:^|[\n\u3002\uff01\uff1f\uff1b\uff1a.!?;:])\s{
 
 // Patterns are written in any case and compiled lowercased with no flags; scan.ts lowercases the
 // comment once. Case-insensitive Unicode patterns took about a second to compile.
-const re = (...parts: string[]): RegExp => new RegExp(parts.join("").toLowerCase());
-const P = (lang: HiddenLang, label: HiddenLabel, ...parts: string[]): HiddenPhrase => ({ lang, label, regex: re(...parts) });
+// The RegExp is made the first time a comment needs it: compiling the whole table costs about
+// 200 ms once per process, and most runs (no hidden comments, or none in Han or Cyrillic) need
+// little or none of it.
+let compiled = 0;
+/** How many phrase patterns this process has compiled so far (for tests). */
+export const compiledPhrases = (): number => compiled;
+class Phrase implements HiddenPhrase {
+  #re: RegExp | undefined;
+  constructor(
+    readonly lang: HiddenLang,
+    readonly label: HiddenLabel,
+    private readonly source: string,
+  ) {}
+  get regex(): RegExp {
+    if (!this.#re) {
+      this.#re = new RegExp(this.source);
+      compiled++;
+    }
+    return this.#re;
+  }
+}
+const P = (lang: HiddenLang, label: HiddenLabel, ...parts: string[]): HiddenPhrase => new Phrase(lang, label, parts.join("").toLowerCase());
 /** A covert phrase next to an imperative action, in either order, inside one sentence. */
 const covert = (lead: string, action: string, phrase: string, n = 60): string =>
   String.raw`${lead}(?:${action}${IN(n)}${phrase}|${phrase},?${S}${action})`;

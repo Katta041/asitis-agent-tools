@@ -360,11 +360,13 @@ export function classifyInstruction(text: string, otherLanguages = true): string
   const lower = t.toLowerCase();
   // Other languages (lang/hidden-phrases.ts, issue #6). They run after English, and a harmful match
   // there wins over an English one that only addresses the AI ("Claude: 忽略之前的所有指令").
-  for (const { lang, regex, label } of HIDDEN_PHRASES) {
+  for (const p of HIDDEN_PHRASES) {
+    const label = p.label;
     if (english !== null && ADDRESS_ONLY.has(label)) break;
-    const need = LANG_SCRIPTS[lang];
+    const need = LANG_SCRIPTS[p.lang];
     if (need !== 0 && (scripts & need) === 0) continue;
-    if (!regex.test(lower)) continue;
+    // p.regex compiles on first use, after the script check, so Han or Cyrillic phrases cost nothing until such a comment shows up.
+    if (!p.regex.test(lower)) continue;
     if (ADDRESS_ONLY.has(label) && directive) continue;
     return label;
   }
