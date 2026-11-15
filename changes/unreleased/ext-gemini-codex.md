@@ -1,0 +1,9 @@
+### Added
+- Gemini CLI extension: `gemini extensions install https://github.com/Katta041/asitis-agent-tools`. `gemini-extension.json` in the repo root runs the bundled server under Node's permission model with `--root ${workspacePath}`, plus `/asitis:md-lint`, `/asitis:md-loads`, `/asitis:md-budget` and `/asitis:md-fix` as TOML commands and a short context file. Checked on Gemini CLI 0.68.0: `extensions validate` passes, `mcp list` shows the server connected, and the resolved command lints a fixture.
+- Codex plugin: `codex plugin marketplace add Katta041/asitis-agent-tools`, then `codex plugin add asitis@asitis`. Codex reads the existing marketplace; `plugins/asitis/.codex-plugin/plugin.json` points it at `codex.mcp.json`. Codex 0.169 doesn't expand `${CLAUDE_PLUGIN_ROOT}` or `${CLAUDE_PROJECT_DIR}` in plugin MCP args (the Claude Code `.mcp.json` failed to start there), so the Codex entry runs the pinned npm package with no `--root` and the server reads the folder Codex starts in. Checked through `codex app-server`: connected, seven tools, `lint_steering` found a zero-width space in a fixture.
+- Skill `steering-check`: picks `lint_steering`, `load_plan`, `context_budget` or `suggest_fixes` from a plain question. It's the only way in for Codex, which has no plugin commands.
+- Claude Code manifest: `license`, an icon, and the directory listing links (documentation, support, privacy, terms). The description now names all four commands.
+- README: one-line installs for Codex, Gemini CLI and VS Code (an install link and `code --add-mcp`).
+
+### Fixed
+- Every `npx -y @asitis/mcp@x` line in the READMEs failed with "could not determine executable to run". Since 0.3.0 the package has two bins (`asitis`, `asitis-mcp`) and neither matches the package name, so npx can't pick one. The docs now use `npx -y -p @asitis/mcp@x asitis-mcp`, and a test keeps the old form out.

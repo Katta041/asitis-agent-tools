@@ -197,7 +197,7 @@ describe("Claude Code plugin", () => {
   });
   test("the plugin's own skill and commands pass lint_steering with no errors or warnings", async () => {
     const c = await connect([PLUGIN]);
-    for (const p of ["skills/markdown-byte-clean/SKILL.md", "commands/md-lint.md", "commands/md-budget.md", "commands/md-fix.md"]) {
+    for (const p of ["skills/markdown-byte-clean/SKILL.md", "skills/steering-check/SKILL.md", "commands/md-lint.md", "commands/md-budget.md", "commands/md-fix.md"]) {
       const r = await c.call("lint_steering", { path: p });
       const issues = (r.structured["files"] as Array<{ issues: Array<{ severity: string; rule: string }> }>)[0]!.issues;
       expect(issues.filter((i) => i.severity !== "info"), p).toEqual([]);
@@ -215,6 +215,54 @@ describe("Claude Code plugin", () => {
       expect(r.stdout).toMatch(/Validation passed/);
     }
   });
+});
+
+describe("Codex plugin and Gemini CLI extension", () => {
+  const codex = JSON.parse(read(path.join(PLUGIN, ".codex-plugin/plugin.json")));
+  const codexMcp = JSON.parse(read(path.join(PLUGIN, "codex.mcp.json")));
+  const gemini = JSON.parse(read(path.join(REPO, "gemini-extension.json")));
+
+  test("versions agree with the package", () => {
+    expect(codex.version).toBe(pkg.version);
+    expect(gemini.version).toBe(pkg.version);
+    expect(codex.name).toBe("asitis");
+    expect(gemini.name).toBe("asitis");
+  });
+  // Codex 0.169 expands no variables in plugin MCP args, so the plugin cannot point at the
+  // bundled server and the project folder at the same time. It runs the pinned npm package
+  // with no --root, which makes the server read the folder Codex starts it in.
+  test("Codex runs the pinned npm package by its bin name, never @latest", () => {
+    expect(codex.mcpServers).toBe("./codex.mcp.json");
+    expect(codexMcp.mcpServers.asitis).toEqual({ command: "npx", args: ["-y", "-p", `@asitis/mcp@${pkg.version}`, "asitis-mcp"] });
+  });
+  test("Gemini runs the bundled server under Node's permission model, reading only the workspace", () => {
+    const s = gemini.mcpServers.asitis;
+    expect(s.command).toBe("node");
+    expect(s.args).toContain("--permission");
+    expect(s.args).toContain("--allow-fs-read=${workspacePath}");
+    expect(s.args.slice(-2)).toEqual(["--root", "${workspacePath}"]);
+    expect(JSON.stringify(gemini)).not.toMatch(/npx|@latest|allow-fs-write|allow-net|allow-child/);
+    expect(existsSync(path.join(REPO, gemini.contextFileName))).toBe(true);
+  });
+  test("each Gemini command mirrors a Claude Code command", () => {
+    for (const name of ["md-lint", "md-loads", "md-budget", "md-fix"]) {
+      expect(existsSync(path.join(REPO, "commands/asitis", `${name}.toml`)), name).toBe(true);
+      expect(existsSync(path.join(PLUGIN, "commands", `${name}.md`)), name).toBe(true);
+    }
+  });
+});
+
+describe("docs run the server by its bin name", () => {
+  // The package has two bins (asitis and asitis-mcp) and neither is named "mcp", so
+  // `npx @asitis/mcp@x` fails with "could not determine executable to run".
+  const docs = [path.join(REPO, "README.md"), path.join(PKG, "README.md"), path.join(PLUGIN, "README.md")];
+  for (const doc of docs) {
+    test(path.relative(REPO, doc), () => {
+      const text = read(doc);
+      expect(text).not.toMatch(/npx -y @asitis\/mcp@/);
+      expect(text).not.toMatch(/"-y", "@asitis\/mcp@/);
+    });
+  }
 });
 
 // Built from parts so this file does not match itself.
