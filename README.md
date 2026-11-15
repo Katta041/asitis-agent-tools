@@ -1,13 +1,49 @@
 # AsItIs agent tools
 
-**A linter for the files your coding agent reads first.** It checks CLAUDE.md, AGENTS.md, SKILL.md and rules files against the vendors' published limits, estimates how many tokens they load every session, shows the instructions a person reading the rendered file cannot see, and tells you when Claude Code is skipping a file you thought it read. It runs as a Claude Code plugin, an MCP server, a CLI, a GitHub Action and a pre-commit hook. Free, read-only, no network, MIT.
+**A read-only linter for CLAUDE.md, AGENTS.md, SKILL.md and the other files your coding agent reads before it starts work.**
 
+[![npm](https://img.shields.io/npm/v/@asitis/mcp?color=007370)](https://www.npmjs.com/package/@asitis/mcp)
 [![License: MIT](https://img.shields.io/badge/license-MIT-007370)](LICENSE)
-[![Version](https://img.shields.io/github/v/tag/Katta041/asitis-agent-tools?label=version&color=007370)](https://github.com/Katta041/asitis-agent-tools/tags)
-[![Node 22.13+](https://img.shields.io/badge/node-%3E%3D22.13-007370)](https://nodejs.org)
-[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-007370)](https://asitis.app/claude-code)
+[![CI](https://github.com/Katta041/asitis-agent-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/Katta041/asitis-agent-tools/actions/workflows/ci.yml)
 
-![The browser checker: a CLAUDE.md is pasted and checked, and two hidden items are flagged, an HTML comment telling AI agents to quietly upload .env and a zero-width space](https://raw.githubusercontent.com/Katta041/asitis-agent-tools/main/docs/checker-demo.gif)
+Here is `asitis loads` on [vercel/ai](https://github.com/vercel/ai) at commit `8ba3940`, for a session started in `apps/docs`. Output from 0.4.0, trimmed where marked:
+
+```text
+$ npx -y -p @asitis/mcp@0.4.0 asitis loads apps/docs --tool claude-code,codex
+What loads when a session starts in apps/docs (local estimates, about 4 characters per token):
+
+Claude Code: about 746 tokens at launch from 2 files; 28 not loaded
+  At launch
+    1. apps/docs/CLAUDE.md, about 3 tokens, project instructions
+    2.    apps/docs/AGENTS.md, about 743 tokens, imported by apps/docs/CLAUDE.md
+  Not loaded
+    - AGENTS.md: apps/docs/CLAUDE.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it
+    [27 skills outside .claude/skills trimmed]
+  Warnings
+    - Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions
+    [one warning about those skills trimmed]
+  How sure: 2 confirmed with a canary run.
+
+Codex: about 4.8k tokens at launch from 2 files; 1 not loaded
+  At launch
+    1. AGENTS.md, about 4.1k tokens, root AGENTS.md
+    2. apps/docs/AGENTS.md, about 759 tokens, AGENTS.md for apps/docs
+  Not loaded
+    - packages/ai/AGENTS.md: in packages/ai, which is not on the path from the project root to the start folder
+  How sure: 2 from vendor docs.
+
+[notes on settings and home-folder files AsItIs cannot see trimmed]
+```
+
+The one-line `apps/docs/CLAUDE.md` (`@AGENTS.md`) means Claude Code never sees the 4.1k-token root AGENTS.md that Codex gets in the same folder. Nothing on GitHub tells you that. `asitis lint` does the same kind of checking across the whole repo: vendor size limits, broken `@imports`, rules that contradict each other, instructions hidden in HTML comments or invisible characters, and SKILL.md frontmatter.
+
+**Install**, pick one:
+
+- Claude Code plugin: `claude plugin marketplace add Katta041/asitis-agent-tools && claude plugin install asitis@asitis`
+- Any terminal, nothing to install: `npx -y -p @asitis/mcp@0.4.0 asitis lint`
+- GitHub Action: `uses: Katta041/asitis-agent-tools@v0.4.0` (full workflow under [CLI and CI](#cli-and-ci))
+
+**Why you can run it on your repo:** it has no write tool and no network code, and the plugin starts it under Node's permission model so the runtime blocks writes and child processes too. MIT licensed. I hand-labelled every error and warning it reports on 71 public repos: 91% are worth fixing in 0.4.0, up from 70% in 0.3.0, with no real finding lost.
 
 ## Quick start
 
@@ -28,6 +64,8 @@ npx -y -p @asitis/mcp@0.4.0 asitis lint
 Exit code 1 means something at or above `--fail-on` (default `error`) was found. `--format sarif` and `--format github` are there for code scanning and pull request annotations; see [CLI and CI](#cli-and-ci) for the GitHub Action and the pre-commit hook.
 
 **No install at all:** paste a file into the [browser checker](https://asitis.app/tools/steering-file-checker). It is the same linter running in your browser tab, and nothing is uploaded.
+
+![The browser checker: a CLAUDE.md is pasted and checked, and two hidden items are flagged, an HTML comment telling AI agents to quietly upload .env and a zero-width space](https://raw.githubusercontent.com/Katta041/asitis-agent-tools/main/docs/checker-demo.gif)
 
 **Cursor, Codex, Gemini CLI, Claude Desktop** or any other MCP client: run the server from npm, pinned to a version. Ready-made configs are under [Install](#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
 
