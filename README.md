@@ -46,8 +46,11 @@ One person's CLAUDE.local.md is enough to stop Claude Code reading the team's AG
 **Install**, pick one:
 
 - Claude Code plugin: `claude plugin marketplace add Katta041/asitis-agent-tools && claude plugin install asitis@asitis`
-- Any terminal, nothing to install: `npx -y -p @asitis/mcp@0.4.2 asitis lint`
-- GitHub Action: `uses: Katta041/asitis-agent-tools@v0.4.2` (full workflow under [CLI and CI](#cli-and-ci))
+- Codex plugin: `codex plugin marketplace add Katta041/asitis-agent-tools && codex plugin add asitis@asitis`
+- Gemini CLI extension: `gemini extensions install https://github.com/Katta041/asitis-agent-tools`
+- VS Code (Copilot agent mode): [add the MCP server](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522asitis%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522-p%2522%252C%2522%2540asitis%252Fmcp%25400.4.1%2522%252C%2522asitis-mcp%2522%252C%2522--root%2522%252C%2522%2524%257BworkspaceFolder%257D%2522%255D%257D)
+- Any terminal, nothing to install: `npx -y -p @asitis/mcp@0.4.1 asitis lint`
+- GitHub Action: `uses: Katta041/asitis-agent-tools@v0.4.1` (full workflow under [CLI and CI](#cli-and-ci))
 
 **Why you can run it on your repo:** it has no write tool and no network code, and the plugin starts it under Node's permission model so the runtime blocks writes and child processes too. MIT licensed. I hand-labelled every error and warning it reports on 71 public repos: 91% are worth fixing in 0.4.0, up from 70% in 0.3.0.
 
@@ -73,10 +76,22 @@ Exit code 1 means something at or above `--fail-on` (default `error`) was found.
 
 ![The browser checker: a CLAUDE.md is pasted and checked, and two hidden items are flagged, an HTML comment telling AI agents to quietly upload .env and a zero-width space](https://raw.githubusercontent.com/Katta041/asitis-agent-tools/main/docs/checker-demo.gif)
 
-**Cursor, Codex, Gemini CLI, Claude Desktop** or any other MCP client: run the server from npm, pinned to a version. Ready-made configs are under [Install](#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
+**Codex**, one line, then start a new session. Ask Codex to "use AsItIs to lint the AGENTS.md files"; the plugin has the same tools, and a skill that picks the right one:
 
 ```bash
-npx -y @asitis/mcp@0.4.2 --root /absolute/path/to/project
+codex plugin marketplace add Katta041/asitis-agent-tools && codex plugin add asitis@asitis
+```
+
+**Gemini CLI**, one line, then restart Gemini. Run `/asitis:md-lint`, `/asitis:md-loads`, `/asitis:md-budget` or `/asitis:md-fix`:
+
+```bash
+gemini extensions install https://github.com/Katta041/asitis-agent-tools
+```
+
+**Cursor, Claude Desktop, VS Code** or any other MCP client: run the server from npm, pinned to a version. Ready-made configs are under [Install](#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
+
+```bash
+npx -y @asitis/mcp@0.4.1 --root /absolute/path/to/project
 ```
 
 ## What it catches
@@ -198,7 +213,32 @@ The plugin never downloads the server at runtime. See [`plugins/asitis/README.md
 To add only the MCP server to Claude Code, without the skill, commands or hook:
 
 ```bash
-claude mcp add asitis -- npx -y @asitis/mcp@0.4.2 --root "$PWD"
+claude mcp add asitis -- npx -y @asitis/mcp@0.4.1 --root "$PWD"
+```
+
+### Codex (plugin)
+
+```bash
+codex plugin marketplace add Katta041/asitis-agent-tools
+codex plugin add asitis@asitis
+```
+
+Start a new Codex session in your project. The plugin brings the MCP server and two skills (`steering-check`, which picks the right tool for lint, load and budget questions, and `markdown-byte-clean`). Codex has no plugin slash commands, so ask in words: "use AsItIs to show what Codex loads in packages/api". Codex doesn't pass the project folder to plugin servers, so the plugin runs `@asitis/mcp@0.4.1` from npm in the folder Codex starts in, and needs `npx` on your `PATH`. The Claude Code guard hook isn't part of the Codex setup. Remove it with `codex plugin remove asitis@asitis`.
+
+### Gemini CLI (extension)
+
+```bash
+gemini extensions install https://github.com/Katta041/asitis-agent-tools
+```
+
+Restart Gemini CLI, then run `/asitis:md-lint`, `/asitis:md-loads`, `/asitis:md-budget` or `/asitis:md-fix`, or just ask. The extension runs the server bundled in this repository under Node's permission model, reading only your workspace, so nothing is downloaded at runtime. Update with `gemini extensions update asitis`; remove with `gemini extensions uninstall asitis`.
+
+### VS Code (Copilot agent mode)
+
+[Add the MCP server to VS Code](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522asitis%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522-p%2522%252C%2522%2540asitis%252Fmcp%25400.4.1%2522%252C%2522asitis-mcp%2522%252C%2522--root%2522%252C%2522%2524%257BworkspaceFolder%257D%2522%255D%257D), or run:
+
+```bash
+code --add-mcp '{"name":"asitis","type":"stdio","command":"npx","args":["-y","-p","@asitis/mcp@0.4.1","asitis-mcp","--root","${workspaceFolder}"]}'
 ```
 
 ### Other MCP clients (Claude Desktop, Cursor, Codex, Gemini CLI)
@@ -212,7 +252,7 @@ The server is published on npm as `@asitis/mcp`. Always pin the version; never u
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.2", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.4.1", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -225,7 +265,7 @@ The server is published on npm as `@asitis/mcp`. Always pin the version; never u
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.2", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.4.1", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -241,7 +281,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
     "asitis": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.2", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.4.1", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -252,7 +292,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 ```toml
 [mcp_servers.asitis]
 command = "npx"
-args = ["-y", "@asitis/mcp@0.4.2", "--root", "/absolute/path/to/project"]
+args = ["-y", "@asitis/mcp@0.4.1", "--root", "/absolute/path/to/project"]
 ```
 
 **Gemini CLI**: `.gemini/settings.json` in the project (or `~/.gemini/settings.json`).
@@ -262,7 +302,7 @@ args = ["-y", "@asitis/mcp@0.4.2", "--root", "/absolute/path/to/project"]
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.2", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.4.1", "--root", "/absolute/path/to/project"]
     }
   }
 }

@@ -15,7 +15,7 @@ Requires Node 22.13 or later. Always pin the version; never use `@latest` in an 
 Check that it runs:
 
 ```bash
-npx -y @asitis/mcp@0.4.2 --version
+npx -y @asitis/mcp@0.4.1 --version
 ```
 
 ### Claude Code
@@ -23,7 +23,7 @@ npx -y @asitis/mcp@0.4.2 --version
 Run this in your project folder:
 
 ```bash
-claude mcp add asitis -- npx -y @asitis/mcp@0.4.2 --root "$PWD"
+claude mcp add asitis -- npx -y @asitis/mcp@0.4.1 --root "$PWD"
 ```
 
 Or install the [Claude Code plugin](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/README.md), which adds a byte-clean editing skill, `/asitis:md-lint`, `/asitis:md-budget` and an optional guard hook, and runs this server under Node's permission model:
@@ -42,7 +42,7 @@ claude plugin install asitis@asitis
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.2", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.4.1", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -57,7 +57,7 @@ claude plugin install asitis@asitis
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.2", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.4.1", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -75,7 +75,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
     "asitis": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.2", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.4.1", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -88,7 +88,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 ```toml
 [mcp_servers.asitis]
 command = "npx"
-args = ["-y", "@asitis/mcp@0.4.2", "--root", "/absolute/path/to/project"]
+args = ["-y", "@asitis/mcp@0.4.1", "--root", "/absolute/path/to/project"]
 ```
 
 ### Gemini CLI
@@ -100,7 +100,7 @@ args = ["-y", "@asitis/mcp@0.4.2", "--root", "/absolute/path/to/project"]
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.2", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.4.1", "--root", "/absolute/path/to/project"]
     }
   }
 }
