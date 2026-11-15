@@ -22,6 +22,8 @@ interface Layout {
   links?: Record<string, string>;
   /** Why context_budget differs from 0.3.0 here, when it does on purpose. */
   budgetChange?: string;
+  /** Same numbers as 0.3.0, but a warning's wording changed on purpose, and why. */
+  warningChange?: string;
 }
 
 const lines = (n: number, s: string): string => Array.from({ length: n }, (_, i) => `- ${s} ${i}`).join("\n") + "\n";
@@ -36,7 +38,7 @@ const LAYOUTS: Record<string, Layout> = {
   "agents-only": { files: { "AGENTS.md": "# Agents\n\n@notes.md\n", "notes.md": "Notes\n", "svc/AGENTS.md": "# Svc\n", "svc/x.ts": "" }, git: [""], cwds: ["svc"] },
   "claude-and-agents": { files: { "CLAUDE.md": "# Claude\n\n- Use pnpm\n", "AGENTS.md": "# Agents\n" } },
   "claude-imports-agents": { files: { "CLAUDE.md": "@AGENTS.md\n\n## Claude only\n", "AGENTS.md": "# Agents\n- Use pnpm\n" } },
-  "local-hides-agents": { files: { "CLAUDE.local.md": "# Mine\n", "AGENTS.md": "# Agents\n" } },
+  "local-hides-agents": { files: { "CLAUDE.local.md": "# Mine\n", "AGENTS.md": "# Agents\n" }, warningChange: "0.4.1: the warning names CLAUDE.local.md instead of saying there is a CLAUDE.md" },
   "dot-claude": { files: { ".claude/CLAUDE.md": "# In .claude\n", ".claude/AGENTS.md": "# Agents in .claude\n" } },
   "dot-claude-agents-fallback": {
     files: { "AGENTS.md": "# Root agents\n", ".claude/AGENTS.md": "# Agents in .claude\n" },
@@ -235,7 +237,8 @@ describe("context_budget is a view of plan(\"\")", () => {
       if (l.budgetChange) {
         expect(strip(now), `${name}: listed as a budget change (${l.budgetChange}) but nothing changed`).not.toEqual(strip(old));
       } else {
-        expect(strip(now), name).toEqual(strip(old));
+        const keep = (b: ReturnType<typeof strip>) => (l.warningChange ? b.map(({ warnings: _, ...rest }) => rest) : b);
+        expect(keep(strip(now)), name).toEqual(keep(strip(old)));
         compared++;
       }
     }
@@ -244,15 +247,20 @@ describe("context_budget is a view of plan(\"\")", () => {
   test("on every fixture folder in test-fixtures: the same numbers as 0.3.0", async () => {
     const dirs = fixtureDirs();
     expect(dirs.length).toBeGreaterThan(10);
-    // Fixture folders whose budget changes on purpose in 0.4.0, and why.
-    const changed: Record<string, string> = { "drift/variants": "Codex reads AGENTS.override.md instead of AGENTS.md" };
+    // Fixture folders whose budget changes on purpose since 0.3.0, and why.
+    const changed: Record<string, string> = {
+      "drift/variants": "Codex reads AGENTS.override.md instead of AGENTS.md",
+    };
+    // Same numbers as 0.3.0, but a warning's wording changed on purpose.
+    const reworded: Record<string, string> = { "drift/local-only": "0.4.1: the warning names CLAUDE.local.md instead of saying there is a CLAUDE.md" };
     for (const dir of dirs) {
       const sandbox = await Sandbox.create([dir]);
       const now = await budgetFromContext(await loadContext(sandbox, new Deadline(CAPS.callBudgetMs)));
       const old = await legacyBudget(sandbox, new Deadline(CAPS.callBudgetMs));
       const rel = path.relative(FIXTURES, dir).split(path.sep).join("/");
       if (changed[rel]) continue;
-      expect(strip(now), rel).toEqual(strip(old));
+      const keep = (b: ReturnType<typeof strip>) => (reworded[rel] ? b.map(({ warnings: _, ...rest }) => rest) : b);
+      expect(keep(strip(now)), rel).toEqual(keep(strip(old)));
     }
   }, 60_000);
 });

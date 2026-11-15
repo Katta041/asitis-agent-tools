@@ -178,18 +178,22 @@ export async function planClaude(ctx: LoadContext, cwd: string): Promise<LoadPla
     warnings.push(...missingImportWarnings(hits));
   }
   if (usingClaude) {
+    // A CLAUDE.local.md on its own switches the fallback off too; say so instead of "there is a CLAUDE.md".
+    const onlyLocal = counting.every((c) => c.endsWith("CLAUDE.local.md"));
     for (const d of chain) {
       const dot = (await files.hasFile(join(d, ".claude"), "AGENTS.md")) ? await files.doc(join(d, ".claude/AGENTS.md")) : null;
       if (dot && !seen.has(dot.file.real)) skipped.push({ path: dot.path, reason: "a CLAUDE.md in the start folder or above switches off the AGENTS.md fallback, and no CLAUDE.md imports it", ...behaviour(TOOL, "agents-md-shadowed", "documented", DOC.claudeAgentsMd) });
       const rel = join(d, "AGENTS.md");
       const agents = (await files.hasFile(d, "AGENTS.md")) ? await files.doc(rel) : null;
       if (!agents || seen.has(agents.file.real)) continue;
-      const msg = d === ""
-        ? "Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions"
-        : `Claude Code ignores ${agents.path} here: there is a CLAUDE.md in this folder or above and none imports it. Add the line @AGENTS.md to a CLAUDE.md next to it if both should share instructions`;
-      warnings.push(msg);
       const by = counting.find((c) => scopeOf(c) === d) ?? counting[counting.length - 1];
-      skipped.push({ path: agents.path, reason: `${by} switches off the AGENTS.md fallback, and no CLAUDE.md imports it`, ...behaviour(TOOL, "agents-md-shadowed", "documented", DOC.claudeAgentsMd) });
+      const msg = onlyLocal
+        ? `Claude Code ignores ${agents.path} here: ${by} switches off the AGENTS.md fallback just as a CLAUDE.md would, and it does not import AGENTS.md. Add the line @AGENTS.md to ${by}, or set Project instructions to claude-md-and-agents-md`
+        : d === ""
+          ? "Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions"
+          : `Claude Code ignores ${agents.path} here: there is a CLAUDE.md in this folder or above and none imports it. Add the line @AGENTS.md to a CLAUDE.md next to it if both should share instructions`;
+      warnings.push(msg);
+      skipped.push({ path: agents.path, reason: `${by} switches off the AGENTS.md fallback, and ${onlyLocal ? "it does not import AGENTS.md" : "no CLAUDE.md imports it"}`, ...behaviour(TOOL, "agents-md-shadowed", "documented", DOC.claudeAgentsMd) });
     }
   }
 

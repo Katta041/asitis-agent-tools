@@ -188,6 +188,16 @@ describe("load plan keeps the 0.3.1 import rules", () => {
     expect(r.out).toContain("real.md: imported by CLAUDE.md, but Claude Code does not expand imports");
     expect(r.out).not.toContain("guide.md: imported by");
   });
+  test("only a CLAUDE.local.md hides AGENTS.md: the warning names CLAUDE.local.md, not a CLAUDE.md", async () => {
+    const root = temp({ "CLAUDE.local.md": "# Mine\n", "AGENTS.md": "# Agents\n", "pkg/x.ts": "" }, [".git"]);
+    for (const dir of [".", "pkg"]) {
+      const r = await cli(["loads", dir, "--tool", "claude-code"], root);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("Claude Code ignores AGENTS.md here: CLAUDE.local.md");
+      expect(r.out).not.toContain("there is a CLAUDE.md");
+      expect(r.out).not.toContain("no CLAUDE.md imports it");
+    }
+  });
   test("Gemini CLI takes @guide.md: as written, so it is missing, not cut", async () => {
     const root = temp({ "GEMINI.md": "# G\n\n@guide.md:\n", "guide.md": "# Guide\n" }, [".git"]);
     const r = await cli(["loads", ".", "--tool", "gemini-cli", "--format", "json"], root);

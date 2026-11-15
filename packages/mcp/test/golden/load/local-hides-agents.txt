@@ -1,7 +1,7 @@
 ## claude-code from (root)
 launch file CLAUDE.local.md [canary]
-skipped AGENTS.md: CLAUDE.local.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it [canary]
-warning Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions
+skipped AGENTS.md: CLAUDE.local.md switches off the AGENTS.md fallback, and it does not import AGENTS.md [canary]
+warning Claude Code ignores AGENTS.md here: CLAUDE.local.md switches off the AGENTS.md fallback just as a CLAUDE.md would, and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.local.md, or set Project instructions to claude-md-and-agents-md
 
 ## codex from (root)
 launch file AGENTS.md [assumed]
