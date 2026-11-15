@@ -6,36 +6,42 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-007370)](LICENSE)
 [![CI](https://github.com/Katta041/asitis-agent-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/Katta041/asitis-agent-tools/actions/workflows/ci.yml)
 
-Here is `asitis loads` on [vercel/ai](https://github.com/vercel/ai) at commit `8ba3940`, for a session started in `apps/docs`. Output from 0.4.0, trimmed where marked:
+Here is `asitis loads` on [`examples/monorepo`](examples/monorepo), a small made-up repo, run as its own git repo with 0.4.0. The footer about settings it can't see is trimmed:
 
 ```text
-$ npx -y -p @asitis/mcp@0.4.0 asitis loads apps/docs --tool claude-code,codex
-What loads when a session starts in apps/docs (local estimates, about 4 characters per token):
+$ npx -y -p @asitis/mcp@0.4.0 asitis loads --tool claude-code
+What loads when a session starts in the project root (local estimates, about 4 characters per token):
 
-Claude Code: about 746 tokens at launch from 2 files; 28 not loaded
+Claude Code: about 37 tokens at launch from 2 files; 2 more files can load later (up to about 39 tokens); 2 not loaded
   At launch
-    1. apps/docs/CLAUDE.md, about 3 tokens, project instructions
-    2.    apps/docs/AGENTS.md, about 743 tokens, imported by apps/docs/CLAUDE.md
+    1. CLAUDE.local.md, about 14 tokens, project instructions
+    2.    @guide.md:: not loaded as written (see lint_steering), not counted
+    3. Skill listing (1 entry), about 23 tokens, names and descriptions of skills, commands and subagents; bodies load on use
+  Later, when the agent works in a folder or on matching files
+    4. .claude/rules/api.md, about 21 tokens, when Claude reads or edits a file matching packages/api/** (2 files match now)
+    5. packages/api/CLAUDE.md, about 18 tokens, when Claude reads or edits a file in packages/api
   Not loaded
-    - AGENTS.md: apps/docs/CLAUDE.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it
-    [27 skills outside .claude/skills trimmed]
+    - AGENTS.md: CLAUDE.local.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it
+    - packages/api/AGENTS.md: Claude Code reads the CLAUDE.md in packages/api instead
   Warnings
     - Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions
-    [one warning about those skills trimmed]
-  How sure: 2 confirmed with a canary run.
+  How sure: 4 confirmed with a canary run.
 
-Codex: about 4.8k tokens at launch from 2 files; 1 not loaded
+$ npx -y -p @asitis/mcp@0.4.0 asitis loads packages/api --tool codex
+What loads when a session starts in packages/api (local estimates, about 4 characters per token):
+
+Codex: about 8.2k tokens at launch from 2 files; 1 file cut
   At launch
-    1. AGENTS.md, about 4.1k tokens, root AGENTS.md
-    2. apps/docs/AGENTS.md, about 759 tokens, AGENTS.md for apps/docs
-  Not loaded
-    - packages/ai/AGENTS.md: in packages/ai, which is not on the path from the project root to the start folder
+    1. AGENTS.md, about 6.6k tokens, root AGENTS.md
+    2. packages/api/AGENTS.md, about 1.6k tokens (cut from 2.3k tokens), AGENTS.md for packages/api, first 6,332 bytes
+  Cut
+    - packages/api/AGENTS.md: the files above it use 26,436 of the 32,768-byte (32 KiB) budget Codex shares across the chain. About 1.6k tokens of 2.3k tokens load.
+  Warnings
+    - packages/api/AGENTS.md is cut after 6,332 bytes: the AGENTS.md files above it use 26,436 of Codex's 32,768-byte (32 KiB) budget
   How sure: 2 from vendor docs.
-
-[notes on settings and home-folder files AsItIs cannot see trimmed]
 ```
 
-The one-line `apps/docs/CLAUDE.md` (`@AGENTS.md`) means Claude Code never sees the 4.1k-token root AGENTS.md that Codex gets in the same folder. Nothing on GitHub tells you that. `asitis lint` does the same kind of checking across the whole repo: vendor size limits, broken `@imports`, rules that contradict each other, instructions hidden in HTML comments or invisible characters, and SKILL.md frontmatter.
+One person's CLAUDE.local.md is enough to stop Claude Code reading the team's AGENTS.md, `See @guide.md: for the review checklist` imports nothing because of the colon, and Codex cuts the API package's AGENTS.md after 6,332 of its 9,135 bytes. None of that shows on GitHub. `asitis lint` checks the whole repo the same way: vendor size limits, broken `@imports`, rules that contradict each other, instructions hidden in HTML comments or invisible characters, and SKILL.md frontmatter.
 
 **Install**, pick one:
 
