@@ -7,6 +7,7 @@ import { rule, SRC, type RuleMeta } from "./types.js";
 
 const MCP_DOC = "https://code.claude.com/docs/en/mcp";
 const PERMISSIONS_DOC = "https://code.claude.com/docs/en/permissions";
+const APIIRO = "https://apiiro.com/blog/coding-agents-leaking-secrets-github-dont-ask-again";
 
 export const AGENT_CONFIG_RULES: RuleMeta[] = [
   rule({
@@ -58,6 +59,36 @@ export const AGENT_CONFIG_RULES: RuleMeta[] = [
     summary: "A key or token is written in plain text in an MCP server or settings env block",
     why: "Committed keys leak to everyone who can read the repo. Every MCP config format can read the value from an environment variable instead. The message shows the key type and a redacted preview only.",
     source: MCP_DOC,
+  }),
+  // 0.4.0 leak audit. Docs read on 15 November 2026.
+  rule({
+    id: "secret-in-permission-rule",
+    category: "security",
+    defaultSeverity: "error",
+    scope: "file",
+    summary: "A password, token or key is written into a permission rule",
+    why: "\"Yes, and don't ask again\" saves the whole approved command, password included, as an allow rule. Apiiro found secrets in 1,122 public settings.local.json files in November 2026, and gitleaks and TruffleHog both missed 19% of them. The message names the list, the entry and the kind of secret, never the value.",
+    source: APIIRO,
+  }),
+  rule({
+    id: "local-agent-file-not-ignored",
+    category: "security",
+    defaultSeverity: "warning",
+    scope: "project",
+    summary: "A local-only agent file is in the repo and no .gitignore covers it",
+    why: "settings.local.json, CLAUDE.local.md and local subagent memory are personal by design. Claude Code ignores settings.local.json only through each user's global git excludes, so a clone or a second machine commits it. Sign-in files (.claude/.credentials.json, .codex/auth.json) are errors.",
+    source: SRC.settings,
+    severityVaries: "error for sign-in credential files and ~/.claude.json copies, a warning for the rest",
+  }),
+  rule({
+    id: "agent-transcript-in-repo",
+    category: "security",
+    defaultSeverity: "warning",
+    scope: "project",
+    summary: "Agent session transcripts or copied agent state are in the repo",
+    why: "Transcripts keep everything that passed through a tool in plain text: file contents, command output and pasted keys. Apiiro counted transcripts among the agent files that leaked 2,539 secrets on GitHub.",
+    source: "https://code.claude.com/docs/en/claude-directory",
+    severityVaries: "a note for SpecStory history, which is saved in the repo on purpose; a warning for the rest",
   }),
   rule({
     id: "config-json-invalid",
