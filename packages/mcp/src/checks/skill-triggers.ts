@@ -341,6 +341,62 @@ function checkDescriptions(ctx: CheckContext, skills: Skill[]): void {
   }
 }
 
+/** "Do not use for ...", "Don't use it when ...", "Not for ...": the clause names what the skill is not. */
+const EXCLUSION = /\b(?:do\s+not|don't|never)\s+use(?:\s+(?:it|this(?:\s+skill)?))?\s+(?:for|when|on|with|to)\b|\bnot\s+for\b/gi;
+
+/**
+ * Splits a listing into the text without its exclusion clauses (each cut to the end of its
+ * sentence) and the clauses themselves. "Review frontend code ... Do not use for backend-only
+ * code" next to "Review backend code ... Do not use for frontend code": each clause names the
+ * other skill to tell them apart, and would otherwise add shared words. Linear: one regex pass
+ * with no nested quantifiers and a forward indexOf per match.
+ */
+export function splitExclusions(text: string): { kept: string; excluded: string } {
+  const t = text.length > MAX_TEXT ? text.slice(0, MAX_TEXT) : text;
+  let kept = "";
+  let excluded = "";
+  let at = 0;
+  EXCLUSION.lastIndex = 0;
+  for (let m = EXCLUSION.exec(t); m; m = EXCLUSION.exec(t)) {
+    if (m.index < at) continue;
+    kept += t.slice(at, m.index);
+    let end = t.length;
+    for (const stop of [". ", ".\n", ";", "\n"]) {
+      const k = t.indexOf(stop, m.index);
+      if (k >= 0 && k < end) end = k;
+    }
+    excluded += ` ${t.slice(m.index, end)}`;
+    at = end;
+    EXCLUSION.lastIndex = Math.max(EXCLUSION.lastIndex, end);
+  }
+  return { kept: kept + t.slice(at), excluded };
+}
+
+/** Words of b's name that a's name lacks ("backend" for backend-code-review next to frontend-code-review). */
+function ownNameWords(b: Skill, a: Skill): string[] {
+  const an = keyWords(`${a.dir} ${a.name}`, true);
+  return [...keyWords(`${b.dir} ${b.name}`, true).keys()].filter((t) => !an.has(t));
+}
+
+/** a's exclusion clauses name b by a word only b's name has: the author already told them apart. */
+function excludesOther(a: Skill, aExcluded: Map<string, string>, b: Skill): boolean {
+  return ownNameWords(b, a).some((t) => hasStem(aExcluded, t));
+}
+
+/** a's listing points to b as a separate skill ("the sweeper-implement skill implements the plan"). */
+function pointsToOther(a: Skill, b: Skill): boolean {
+  const text = a.listed.toLowerCase();
+  for (const nm of new Set([b.dir.toLowerCase(), b.name.toLowerCase()])) {
+    if (nm.length < 4 || !/[-_:]/.test(nm)) continue;
+    let k = text.indexOf(nm);
+    while (k >= 0) {
+      if (/^\W{0,3}(?:skill|command)\b/.test(text.slice(k + nm.length, k + nm.length + 12))) return true;
+      k = text.indexOf(nm, k + nm.length);
+    }
+  }
+  return false;
+}
+
 function checkOverlap(ctx: CheckContext, skills: Skill[]): void {
   const o = ruleOptions(ctx.config, "skill-description-overlap");
   const noteAt = (o["notePercent"] ?? SKILL_TRIGGER_DEFAULTS.notePercent) / 100;
@@ -369,6 +425,8 @@ function checkOverlap(ctx: CheckContext, skills: Skill[]): void {
     }
     if (ctx.deadline.expired) return;
     group.sort((a, b) => (a.doc.path < b.doc.path ? -1 : a.doc.path > b.doc.path ? 1 : 0));
+    const split = group.map((s) => splitExclusions(s.listed));
+    const excluded = split.map((x) => keyWords(x.excluded, true));
     const words = group.map((s) => keyWords(s.listed));
     const every = group.map((s) => keyWords(s.listed, true));
     const named = group.map((s) => keyWords(`${s.dir} ${s.name} ${s.listed}`, true));
@@ -396,6 +454,13 @@ function checkOverlap(ctx: CheckContext, skills: Skill[]): void {
         if (shared.length < minShared || score < noteAt || score <= bestScore) continue;
         if (nameWordOnlyIn(group[i]!, every[i]!, group[j]!, every[j]!) || nameWordOnlyIn(group[j]!, every[j]!, group[i]!, every[i]!)) continue;
         if (opposite(named[i]!, named[j]!)) continue;
+        if (pointsToOther(group[i]!, group[j]!) || pointsToOther(group[j]!, group[i]!)) continue;
+        // Exclusion clauses that name the other skill: compare what each includes.
+        if (excludesOther(group[i]!, excluded[i]!, group[j]!) || excludesOther(group[j]!, excluded[j]!, group[i]!)) {
+          const ki = keyWords(`${group[i]!.dir} ${group[i]!.name} ${split[i]!.kept}`, true);
+          const kj = keyWords(`${group[j]!.dir} ${group[j]!.name} ${split[j]!.kept}`, true);
+          if (opposite(ki, kj) || nameWordOnlyIn(group[i]!, keyWords(split[i]!.kept, true), group[j]!, keyWords(split[j]!.kept, true)) || nameWordOnlyIn(group[j]!, keyWords(split[j]!.kept, true), group[i]!, keyWords(split[i]!.kept, true))) continue;
+        }
         best = i;
         bestScore = score;
         bestShared = shared.map((t) => words[j]!.get(t) ?? t);

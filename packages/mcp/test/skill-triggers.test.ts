@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
-import { keyWords, looksEnglish, personProblem, vagueDescription } from "../src/checks/skill-triggers.js";
+import { keyWords, looksEnglish, personProblem, splitExclusions, vagueDescription } from "../src/checks/skill-triggers.js";
 import { BADGE_MARKDOWN, run, type CliIO } from "../src/cli/asitis.js";
 import { parseJsonLines, validateConfig } from "../src/config.js";
 import { Deadline } from "../src/discover.js";
@@ -186,6 +186,30 @@ describe("skill-description-overlap", () => {
       ".claude/skills/profiler-stop/SKILL.md": skill("profiler-stop", "Disable the runtime profiler. Idempotent: calling when already disabled returns the current state without error."),
     });
     expect(short(await found(dir))).toEqual([]);
+  });
+
+  test("pairs told apart by a 'do not use for' clause or by naming each other are not reported", async () => {
+    const dir = project({
+      ".agents/skills/frontend-code-review/SKILL.md": skill("frontend-code-review", "Review frontend code under `web/` or `packages/ui/` when the user explicitly requests a review or audit. Supports PRs, branches, pending changes, files, and pasted diffs. Do not use for implementation-only requests, diagnosis without review intent, or backend-only code."),
+      ".agents/skills/backend-code-review/SKILL.md": skill("backend-code-review", "Use only when the user explicitly requests a review or audit of backend code under `api/`. Supports pending-change, file-focused, and pasted-diff reviews. Do not use for implementation-only requests, diagnosis without review intent, frontend code, or backend code outside `api/`."),
+      ".github/skills/sweeper-plan/SKILL.md": skill("sweeper-plan", "Plan a Sweeper agent-ready issue with the maintainer: fetch the review record from its state repo, put the open decisions to the maintainer, and write a plan file; it writes no code, and the sweeper-implement skill implements the approved plan."),
+      ".github/skills/sweeper-implement/SKILL.md": skill("sweeper-implement", "Implement a Sweeper agent-ready issue: fetch the review record from its state repo, implement the change from the review brief or an approved plan file, validate the diff, and open a draft PR after the maintainer reviews it."),
+    });
+    expect(short(await found(dir))).toEqual([]);
+  });
+
+  test("splitExclusions cuts each exclusion clause to the end of its sentence", () => {
+    expect(splitExclusions("Review code. Do not use for backend code. Supports diffs.")).toEqual({ kept: "Review code. . Supports diffs.", excluded: " Do not use for backend code" });
+    expect(splitExclusions("Formats SQL; not for Python; fast").kept).toBe("Formats SQL; ; fast");
+    expect(splitExclusions("Plain text with no clause")).toEqual({ kept: "Plain text with no clause", excluded: "" });
+  });
+
+  test("a wrapper that invokes the other as an agent, or a name inside a phrase, still counts as overlap", async () => {
+    const dir = project({
+      ".claude/skills/stress-test/SKILL.md": skill("stress-test", "Runs macro-financial stress tests: scenario design, satellite models, bank and sector results, network contagion, policy implications."),
+      ".claude/skills/team-stress-test/SKILL.md": skill("team-stress-test", "Orchestrates a macro-financial stress-test exercise: scenario design, satellite models, network contagion, bank and sector results and policy options."),
+    });
+    expect(short(await found(dir)).length).toBe(1);
   });
 
   test("mirrored copies for other agents report the pair once, in .claude", async () => {
@@ -461,6 +485,8 @@ describe("new text scanners stay linear", () => {
     braces: "{{ ".repeat(MB / 3),
     "long-word": "a".repeat(MB),
     unicode: "é".repeat(MB),
+    exclusions: "do not use for ".repeat(MB / 15),
+    "exclusion-no-stop": `not for ${"x ".repeat(MB / 2)}`,
   };
   test.each(Object.keys(cases))("%s", (name) => {
     const s = cases[name]!;
@@ -469,6 +495,7 @@ describe("new text scanners stay linear", () => {
     personProblem(s);
     looksEnglish(s);
     keyWords(s);
+    splitExclusions(s);
     placeholderKey(s);
     expect(performance.now() - t0).toBeLessThan(1500);
   });
