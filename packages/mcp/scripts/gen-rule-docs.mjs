@@ -30,6 +30,15 @@ export const SITE = "https://github.com/Katta041/asitis-agent-tools/blob/main/do
 
 /** The day the vendor pages behind the registry's source URLs were last read and checked. */
 const READ_ON = "14 October 2026";
+/** Rules whose sources were read later than READ_ON, when they were added or activated. */
+const READ_ON_BY_RULE = Object.fromEntries(["skill-description-vague", "skill-description-person", "skill-description-overlap", "skill-listing-budget", "skill-shadowed-command", "secret-in-steering"].map((id) => [id, "15 November 2026"]));
+
+/** Rules with options besides severity (RULE_OPTIONS in src/config.ts), for the configure section. */
+const RULE_OPTION_DOCS = {
+  "skill-description-vague": { names: ["maxWords"], example: '{ "maxWords": 8 }' },
+  "skill-description-overlap": { names: ["notePercent", "warnPercent", "minSharedWords", "maxSkills"], example: '{ "notePercent": 60, "warnPercent": 85 }' },
+  "skill-listing-budget": { names: ["budgetChars", "maxDescChars"], example: '{ "budgetChars": 40000 }' },
+};
 
 /** Headings, in page order. The test checks every page has all seven. */
 export const SECTIONS = ["What it catches", "Why it matters", "Bad example", "Good example", "How to fix", "Suppress or configure", "Source"];
@@ -62,6 +71,7 @@ const SOURCE_LABELS = {
   "https://code.claude.com/docs/en/output-styles": "Claude Code docs: Output styles",
   "https://agentskills.io/specification": "Agent Skills specification",
   "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview": "Claude API docs: Agent Skills overview",
+  "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices": "Claude API docs: Skill authoring best practices",
   "https://cursor.com/docs/context/rules": "Cursor docs: Rules",
   "https://code.visualstudio.com/docs/agent-customization/custom-instructions": "VS Code docs: Custom instructions",
   "https://code.visualstudio.com/docs/agent-customization/prompt-files": "VS Code docs: Prompt files",
@@ -200,6 +210,19 @@ function suppressSection(rule) {
         "The options are `claudeMdLines`, `skillMdLines`, `cursorRuleLines`, `codexBytes`, `windsurfChars` and `memoryIndexLines`.",
       );
     }
+    const opts = RULE_OPTION_DOCS[rule.id];
+    if (opts) {
+      lines.push(
+        "",
+        `\`${rule.id}\` also takes options, set under \`rules\` (they apply to the whole project, not per \`overrides\` entry):`,
+        "",
+        "```json",
+        `{ "rules": { "${rule.id}": ["${rule.defaultSeverity}", ${opts.example}] } }`,
+        "```",
+        "",
+        `The options are ${opts.names.map((n) => `\`${n}\``).join(", ").replace(/, ([^,]*)$/, " and $1")}.`,
+      );
+    }
     lines.push(
       "",
       "A `.asitisrc.json` `overrides` entry limits a change to some paths, and a baseline (`asitis lint --format json --write-baseline`) accepts today's findings so only new ones fail the build.",
@@ -258,7 +281,7 @@ export function renderPage(rule, fragment) {
     "",
     `## ${SECTIONS[6]}`,
     "",
-    `[${sourceLabel(rule.source)}](${rule.source}), read on ${READ_ON}.`,
+    `[${sourceLabel(rule.source)}](${rule.source}), read on ${READ_ON_BY_RULE[rule.id] ?? READ_ON}.`,
     "",
     "---",
     "",

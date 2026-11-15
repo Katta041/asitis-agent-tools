@@ -1,6 +1,6 @@
 # asitis rules
 
-One page per rule: what it catches, why it matters, a bad and a good example, how to fix it, how to suppress or configure it, and the vendor page or incident it rests on. 77 rules are active in this build. Each finding in `asitis lint --format sarif` links to its page as `https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/<rule-id>.md`.
+One page per rule: what it catches, why it matters, a bad and a good example, how to fix it, how to suppress or configure it, and the vendor page or incident it rests on. 83 rules are active in this build. Each finding in `asitis lint --format sarif` links to its page as `https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/<rule-id>.md`.
 
 Severity is the default; `.asitisrc.json` can change it. Where it says "depends on location" or "varies", the rule reports some findings at a lower severity (a note in a README, a note for a CLAUDE.md just over 200 lines); the rule page says when. Security rules can be turned off in `.asitisrc.json` or in a baseline, never with a comment in the file.
 
@@ -43,6 +43,10 @@ The file is not read the way its author expects: frontmatter, required fields, v
 | [orphan-memory](orphan-memory.md) | warning | Memory topic file is not linked from MEMORY.md |
 | [trailing-whitespace](trailing-whitespace.md) | note | Lines end in spaces or tabs that change nothing when rendered |
 | [final-newline](final-newline.md) | note | File with line breaks does not end with one |
+| [skill-shadowed-command](skill-shadowed-command.md) | warning | A .claude/commands file has the same name as a skill, so the command never runs |
+| [skill-description-vague](skill-description-vague.md) | note | Skill description is a placeholder or says nothing specific about what the skill does |
+| [skill-description-person](skill-description-person.md) | note | Skill description speaks as the skill ("I can help you") instead of in third person |
+| [skill-description-overlap](skill-description-overlap.md) | note, varies | Two skills that load together have descriptions that share most of their key words |
 
 ## Context budget
 
@@ -57,6 +61,7 @@ The file costs more context than it earns, or more than the tool will read.
 | [duplicate-rule](duplicate-rule.md) | warning, varies | The same rule appears twice in one file |
 | [duplicate-across-files](duplicate-across-files.md) | warning | The same rule is in two files one tool loads every session |
 | [codex-chain-over-budget](codex-chain-over-budget.md) | warning | AGENTS.md files from the root down exceed Codex's 32 KiB |
+| [skill-listing-budget](skill-listing-budget.md) | note | Skill descriptions that load together are longer than Claude Code's skill listing budget |
 
 ## Security
 
@@ -88,6 +93,7 @@ Content a reviewer does not see but an agent does, and other signs of a steering
 | [sec-mcp-launcher](sec-mcp-launcher.md) | warning | MCP server runs an unpinned package or image, a downloaded script, or connects over plain http |
 | [sec-mcp-inline-secret](sec-mcp-inline-secret.md) | error | A key or token is written in plain text in an MCP server or settings env block |
 | [sec-nested-override](sec-nested-override.md) | warning | A subfolder instruction file tells the agent to ignore the files above it |
+| [secret-in-steering](secret-in-steering.md) | error | Steering file contains something shaped like an API key or private key |
 
 ## Drift
 

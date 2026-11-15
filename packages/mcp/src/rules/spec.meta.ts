@@ -3,7 +3,7 @@
 // and codex-chain-over-budget are in drift.meta.ts (one id, one owner). Rules that need a new file kind use the kinds already
 // added to kinds.ts; classify() itself changes only through the WP0 owner.
 
-import { planned, SRC, type RuleMeta } from "./types.js";
+import { planned, rule, SRC, type RuleMeta } from "./types.js";
 
 const f = (id: string, defaultSeverity: "error" | "warning" | "note", summary: string, why: string, source: string): RuleMeta =>
   planned({ id, category: "format", defaultSeverity, summary, why, source });
@@ -21,8 +21,9 @@ export const SPEC_RULES: RuleMeta[] = [
   f("skill-compat-empty", "warning", "compatibility is present but empty", "The spec requires 1 to 500 characters when compatibility is given.", SRC.agentSkillsSpec),
   planned({ id: "skill-shell-injection", category: "security", defaultSeverity: "note", summary: "Skill runs a shell command before the prompt is sent", why: "A !`command` line or a ```! fence runs without a permission prompt when the skill is invoked.", source: SRC.skills }),
   f("skill-nested-reference", "note", "A file SKILL.md links to links to another local file", "The spec recommends keeping file references one level deep.", SRC.agentSkillsSpec),
-  planned({ id: "skill-listing-budget", category: "budget", defaultSeverity: "note", scope: "project", summary: "Skill listings exceed the listing budget", why: "Claude Code fits all skill descriptions into about 1% of the context window (8,000 characters by default) and cuts the rest.", source: SRC.skills }),
-  planned({ id: "skill-shadowed-command", category: "format", defaultSeverity: "warning", scope: "project", summary: "A command and a skill share a name", why: "The skill wins, so the command never runs.", source: SRC.skills }),
+  // Activated in 0.4.0 (checks/skill-triggers.ts). Skills docs and settings reference read 15 November 2026.
+  rule({ id: "skill-listing-budget", category: "budget", defaultSeverity: "note", scope: "project", summary: "Skill descriptions that load together are longer than Claude Code's skill listing budget", why: "Claude Code fits skill names and descriptions into 1% of the context window (skillListingBudgetFraction 0.01; 8,000 characters is the documented fallback). Over the budget it keeps every name but drops the descriptions of the least-used skills, so Claude stops choosing them on its own.", source: SRC.skills }),
+  rule({ id: "skill-shadowed-command", category: "format", defaultSeverity: "warning", scope: "project", summary: "A .claude/commands file has the same name as a skill, so the command never runs", why: "When a skill and a file in .claude/commands/ share a name, Claude Code runs the skill. Names are compared ignoring case.", source: SRC.skills }),
   f("agent-name-format", "error", "Subagent name contains a colon, starts with a hyphen or is too long", "Claude Code skips such a subagent file.", SRC.subagents),
   f("agent-enum", "error", "Subagent permissionMode, memory, isolation, color or effort has an unknown value", "Unknown values are rejected or ignored.", SRC.subagents),
   f("agent-model", "warning", "model is not inherit, a Claude alias or a Claude model id", "An unknown model makes the subagent fail to start.", SRC.subagents),

@@ -138,6 +138,16 @@ We chose that over diffing `.asitisrc.json` and the baseline against the base br
 
 Findings that are not in the security category (length, duplicates, broken links and so on) can be turned off or baselined as before; this option only looks at security findings.
 
+## README badge
+
+Once the job passes, you can show it in your README:
+
+```markdown
+[![checked with AsItIs](https://img.shields.io/badge/checked%20with-AsItIs-007370)](https://asitis.app)
+```
+
+The badge is static. It says the repo's steering files are checked by this Action, not the result of the last run. `asitis lint --badge` prints the same snippet locally, and only after a run with no errors or warnings.
+
 ## What it does, step by step
 
 1. Checks that `node --version` is 22.13 or later. If not, it prints one line telling you to add `actions/setup-node`, and exits 2.

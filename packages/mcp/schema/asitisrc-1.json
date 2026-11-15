@@ -57,6 +57,31 @@
       }
     },
     "threshold": { "type": "integer", "minimum": 1, "maximum": 100000000 },
+    "skillVagueOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxWords": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Only descriptions of at most this many words are judged. Default 12." }
+      }
+    },
+    "skillOverlapOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "notePercent": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Share of key words two descriptions must share for a note. Default 55." },
+        "warnPercent": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Share of key words for a warning. Default 80." },
+        "minSharedWords": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Key words a pair must share as well. Default 6." },
+        "maxSkills": { "type": "integer", "minimum": 2, "maximum": 2000, "description": "Skills folders with more skills than this are skipped. Default 300." }
+      }
+    },
+    "skillListingOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "budgetChars": { "type": "integer", "minimum": 100, "maximum": 10000000, "description": "Characters of skill names and descriptions that fit in the listing. Default 8000 (1% of a 200k context window)." },
+        "maxDescChars": { "type": "integer", "minimum": 1, "maximum": 100000, "description": "Characters of one skill's description counted, as skillListingMaxDescChars. Default 1536." }
+      }
+    },
     "rules": {
       "type": "object",
       "propertyNames": { "pattern": "^[a-z][A-Za-z0-9-]*$" },
@@ -65,6 +90,24 @@
           "oneOf": [
             { "$ref": "#/$defs/severity" },
             { "type": "array", "prefixItems": [{ "$ref": "#/$defs/severity" }, { "$ref": "#/$defs/lengthOptions" }], "minItems": 1, "maxItems": 2 }
+          ]
+        },
+        "skill-description-vague": {
+          "oneOf": [
+            { "$ref": "#/$defs/severity" },
+            { "type": "array", "prefixItems": [{ "$ref": "#/$defs/severity" }, { "$ref": "#/$defs/skillVagueOptions" }], "minItems": 1, "maxItems": 2 }
+          ]
+        },
+        "skill-description-overlap": {
+          "oneOf": [
+            { "$ref": "#/$defs/severity" },
+            { "type": "array", "prefixItems": [{ "$ref": "#/$defs/severity" }, { "$ref": "#/$defs/skillOverlapOptions" }], "minItems": 1, "maxItems": 2 }
+          ]
+        },
+        "skill-listing-budget": {
+          "oneOf": [
+            { "$ref": "#/$defs/severity" },
+            { "type": "array", "prefixItems": [{ "$ref": "#/$defs/severity" }, { "$ref": "#/$defs/skillListingOptions" }], "minItems": 1, "maxItems": 2 }
           ]
         }
       },

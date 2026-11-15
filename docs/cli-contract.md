@@ -29,7 +29,7 @@ asitis lint [paths...] [--root <dir>] [--format text|json|sarif|github]
             [--baseline <file>] [--write-baseline] [--include <list>]
             [--fix-preview[=safe]] [--max-files <n>] [--max-file-mb <n>] [--quiet]
             [--annotate-notes]
-            [--fail-on-hidden-security]
+            [--fail-on-hidden-security] [--badge]
 asitis budget [file] [--root <dir>] [--format text|json] [--max-file-mb <n>]
 asitis loads [dir] [--root <dir>] [--tool <list>] [--format text|json] [--max-file-mb <n>]
 asitis --version
@@ -53,6 +53,7 @@ asitis lint --help | asitis budget --help | asitis loads --help
 | `--quiet` | off | `text` and `github` only: no summary line, no notices. Findings are still printed, and so is the line about security findings hidden by the config or baseline. |
 | `--annotate-notes` | off | `github` only (any other format is exit 2): also annotate findings of severity note. Without it only errors and warnings become annotations; notes still count in the summary line, and one more line says how many were left out. |
 | `--fail-on-hidden-security` | off | Exit 1 when `.asitisrc.json` (rules off, a lower severity, `ignore`) or the baseline hid or lowered at least one security finding. The Action turns it on by default. |
+| `--badge` | off | `text` only (any other format, `--fix-preview` or `--write-baseline` is exit 2). After a run with no unsuppressed error or warning, no hidden security finding and exit code 0, prints a "checked with AsItIs" README badge in Markdown after the summary. Otherwise prints one line on stderr saying why there is no badge yet. Does not change the exit code. |
 | `--allow-broad-root` | off | As in `asitis-mcp`. |
 
 `ASITIS_DEBUG=1` adds a stack trace to exit code 3. No other environment variable changes behaviour.
