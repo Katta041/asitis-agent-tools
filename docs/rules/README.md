@@ -1,6 +1,6 @@
 # asitis rules
 
-One page per rule: what it catches, why it matters, a bad and a good example, how to fix it, how to suppress or configure it, and the vendor page or incident it rests on. 73 rules are active in this build. Each finding in `asitis lint --format sarif` links to its page as `https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/<rule-id>.md`.
+One page per rule: what it catches, why it matters, a bad and a good example, how to fix it, how to suppress or configure it, and the vendor page or incident it rests on. 76 rules are active in this build. Each finding in `asitis lint --format sarif` links to its page as `https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/<rule-id>.md`.
 
 Severity is the default; `.asitisrc.json` can change it. Where it says "depends on location" or "varies", the rule reports some findings at a lower severity (a note in a README, a note for a CLAUDE.md just over 200 lines); the rule page says when. Security rules can be turned off in `.asitisrc.json` or in a baseline, never with a comment in the file.
 
@@ -87,6 +87,9 @@ Content a reviewer does not see but an agent does, and other signs of a steering
 | [sec-no-secret-deny](sec-no-secret-deny.md) | note | The folder has a .env file but no permissions.deny rule keeps Claude Code out of it |
 | [sec-mcp-launcher](sec-mcp-launcher.md) | warning | MCP server runs an unpinned package or image, a downloaded script, or connects over plain http |
 | [sec-mcp-inline-secret](sec-mcp-inline-secret.md) | error | A key or token is written in plain text in an MCP server or settings env block |
+| [secret-in-permission-rule](secret-in-permission-rule.md) | error | A password, token or key is written into a permission rule |
+| [local-agent-file-not-ignored](local-agent-file-not-ignored.md) | warning, varies | A local-only agent file is in the repo and no .gitignore covers it |
+| [agent-transcript-in-repo](agent-transcript-in-repo.md) | warning, varies | Agent session transcripts or copied agent state are in the repo |
 
 ## Drift
 
