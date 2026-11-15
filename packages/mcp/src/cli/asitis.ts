@@ -88,7 +88,8 @@ Cursor rules, Copilot instructions, GEMINI.md, ...). Prints one line per finding
   --baseline <file>        hide findings whose fingerprint is listed in this file
   --write-baseline         print a baseline of the current findings (needs --format json)
   --include <list>         opt-in scans, comma-separated: skills (scripts in skill folders),
-                           config (.claude/settings.json and MCP config), config-local
+                           config (.claude/settings.json, MCP config, .gitignore files,
+                           first 4 KB of <uuid>.jsonl transcripts), config-local
   --fix-preview[=safe]     attach suggested fixes; with text, print them as one unified diff
   --max-files <n>          most steering files to lint when walking the root (default and max 1,000)
   --max-file-mb <n>        largest file analysed, 1 to 64 (default 16)

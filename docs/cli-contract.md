@@ -378,7 +378,7 @@ One workflow command per unsuppressed finding:
 | `markdown` | `policyRefusal` in `paths.ts` | WP0 | every tool |
 | `asitisrc` | `policy/asitisrc.ts` | WP2 | `config.ts`, `baseline.ts` |
 | `skill-script` | `policy/skill-script.ts` | WP5 | `checks/skills.ts` (include `skills`) |
-| `agent-config` | `policy/agent-config.ts` | WP6 | `checks/agent-config.ts` (include `config`); also the root `package.json` and `pyproject.toml`, for the project's own name and URLs only (`checks/own.ts`) |
+| `agent-config` | `policy/agent-config.ts` | WP6 | `checks/agent-config.ts` (include `config`): the fixed config files, `.cursor/cli.json`, files named exactly `.gitignore`, and `<uuid>.jsonl` files with a 4 KB limit (`checks/agent-leaks.ts`); also the root `package.json` and `pyproject.toml`, for the project's own name and URLs only (`checks/own.ts`) |
 | `gitmodules` | `policy/gitmodules.ts` | release | `lint.ts` (broken-link): the root `.gitmodules`, 64 KB at most, only its `path =` lines |
 
 `sandbox.openAs(readClass, path, { baseDir?, headBytes?, grants? })` applies the shared refusals (`commonRefusal`: Windows streams and devices, `.env*`, `.git`, `node_modules`), then the class policy, to the path as asked and to the real path. `headBytes` reads only the first bytes (magic-byte checks) and skips the size limit. `grants` passes the call's include values, so the agent-config policy can allow `.claude/settings.local.json` only for `config-local`. The policy stubs refuse everything until their track lands. `sandbox.listDir(path)` lists a folder without following symlinks or reading files.

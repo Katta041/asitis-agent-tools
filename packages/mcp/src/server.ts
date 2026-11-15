@@ -426,7 +426,7 @@ export function createServer(sandbox: Sandbox, opts: ServerOptions): McpServer {
           .array(z.enum(INCLUDE_VALUES as [Include, ...Include[]]))
           .max(INCLUDE_VALUES.length)
           .optional()
-          .describe("Opt-in scans beyond markdown: skills (scripts in skill folders), config (.claude/settings.json and MCP config files), config-local (also .claude/settings.local.json). Off by default"),
+          .describe("Opt-in scans beyond markdown: skills (scripts in skill folders), config (.claude/settings.json, MCP config files, .gitignore files and the first 4 KB of <uuid>.jsonl transcripts), config-local (also .claude/settings.local.json). Off by default"),
         trustRepoConfig: z
           .boolean()
           .optional()
