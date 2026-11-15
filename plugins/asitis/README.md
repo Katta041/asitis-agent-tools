@@ -5,6 +5,7 @@
 | Part | What it does |
 |---|---|
 | MCP server `asitis` | Seven read-only tools: `read_markdown`, `outline`, `lint_steering`, `context_budget`, `load_plan`, `find_steering_files`, `suggest_fixes`. See [`@asitis/mcp`](https://github.com/Katta041/asitis-agent-tools/blob/main/packages/mcp/README.md). |
+| Skill `steering-check` | Picks the right tool when you ask in plain words: why an agent ignores a file, what loads in a folder, what the files cost, or whether anything hides text. |
 | Skill `markdown-byte-clean` | Teaches Claude to edit minimal ranges, never rewrite whole markdown files, and keep frontmatter, line endings, BOM and trailing spaces exactly as they are. |
 | `/asitis:md-lint [path] [skills] [config]` | Lints steering files: frontmatter on line 1, YAML, required fields, limits, broken links and `@imports`, invisible characters, hidden instructions, and drift between AGENTS.md, CLAUDE.md and the other agents' files. Add `skills` to also scan the scripts in skill folders, and `config` to audit `.claude/settings.json` and the MCP config files. |
 | `/asitis:md-budget [path]` | Shows approximately how many tokens load every session, per tool, and what to cut. |
@@ -28,7 +29,7 @@ To update, run `claude plugin marketplace update asitis`, then `claude plugin up
 
 From a local clone of [the repository](https://github.com/Katta041/asitis-agent-tools), pass the clone's folder instead: `claude plugin marketplace add ./asitis-agent-tools`. To try it for one session without installing, run `claude --plugin-dir ./asitis-agent-tools/plugins/asitis`.
 
-For other assistants (Claude Desktop, Cursor, Codex, Gemini CLI), use the MCP server on its own; config snippets are in the [repository README](https://github.com/Katta041/asitis-agent-tools#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
+The same folder installs as a Codex plugin: `codex plugin marketplace add Katta041/asitis-agent-tools`, then `codex plugin add asitis@asitis`. Codex gets the MCP server (from npm, see the [repository README](https://github.com/Katta041/asitis-agent-tools#codex-plugin) for why) and both skills, but not the commands or the guard hook. Gemini CLI has its own extension in the repository root, and Claude Desktop, Cursor and VS Code use the MCP server on its own; config snippets are in the [repository README](https://github.com/Katta041/asitis-agent-tools#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli).
 
 ### Troubleshooting
 

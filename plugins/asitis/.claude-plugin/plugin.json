@@ -3,12 +3,27 @@
   "name": "asitis",
   "displayName": "AsItIs",
   "version": "0.4.2",
-  "description": "Keep markdown and agent steering files byte-clean. Read-only MCP tools to read, outline, lint and budget CLAUDE.md, AGENTS.md, SKILL.md, rules and memory files; a skill that teaches minimal edits; /asitis:md-lint and /asitis:md-budget; and an optional accident guard for Write and Edit. No network, no writes.",
+  "description": "Read-only linter for CLAUDE.md, AGENTS.md, SKILL.md, rules and memory files. Shows what each agent loads at launch, what it costs in tokens, and where hidden or invisible text sits. /asitis:md-lint, /asitis:md-loads, /asitis:md-budget and /asitis:md-fix, a skill for minimal markdown edits, and an optional accident guard for Write and Edit. No network, no writes.",
   "author": {
     "name": "AsItIs",
     "url": "https://asitis.app/?ref=claude-plugin"
   },
   "homepage": "https://asitis.app/?ref=claude-plugin",
   "repository": "https://github.com/Katta041/asitis-agent-tools",
-  "keywords": ["markdown", "claude-md", "agents-md", "skill-md", "lint", "steering-files", "byte-clean"]
+  "keywords": [
+    "claude-md",
+    "agents-md",
+    "skill-md",
+    "lint",
+    "steering-files",
+    "context-engineering",
+    "prompt-injection",
+    "markdown"
+  ],
+  "license": "MIT",
+  "icon": "./assets/icon.png",
+  "documentationUrl": "https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/README.md",
+  "supportUrl": "https://github.com/Katta041/asitis-agent-tools/issues",
+  "privacyPolicyUrl": "https://asitis.app/legal/privacy",
+  "termsOfServiceUrl": "https://asitis.app/legal/terms"
 }
