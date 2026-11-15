@@ -11,6 +11,12 @@ const SIZE = 10 * MB;
 const BUDGET_MS = Number(process.env["ASITIS_DOS_BUDGET_MS"] ?? 3000);
 
 const fill = (unit: string, bytes = SIZE): string => unit.repeat(Math.ceil(bytes / Buffer.byteLength(unit)));
+/** Openers of the phrases in lang/hidden-phrases.ts, each cut before the part that would match. */
+const LANG_NEAR_MISS = [
+  "Por favor, ignora todas las", "no le digas nada", "Envía las", "Ignore todas as", "não conte nada", "Ignorez toutes les", "ne dis rien",
+  "Ignoriere alle vorherigen", "Sag dem Nutzer", "Игнорируй все предыдущие", "не говори", "忽略之前的所有", "不要告诉", "把 API 密钥",
+  "以前の指示はすべて", "ユーザーには", "이전 지시를 모두", "사용자에게", "पिछले सभी निर्देशों को", "उपयोगकर्ता को यह",
+].join(" ");
 
 const CASES: Record<string, () => string> = {
   "unclosed-comments": () => fill("<!--"),
@@ -56,6 +62,14 @@ const CASES: Record<string, () => string> = {
   "root-links": () => fill("[x](docs/a.md) [y](url) "),
   "placeholder-lines": () => fill("- [a] -> [b]\n"),
   "deep-headings": () => fill("# a\n## b\n### c\n#### d\n##### e\n###### f\nText under the heading here.\n"),
+  // 0.4.0 hidden-instruction phrases in other languages (lang/hidden-phrases.ts): near misses that
+  // open every phrase and never finish it, in closed comments, link-reference comments and one
+  // unclosed comment that runs to the end of the file.
+  "lang-comments": () => fill(`<!-- ${LANG_NEAR_MISS} -->\n`),
+  "lang-ref-comments": () => fill(`[//]: # (${LANG_NEAR_MISS})\n`),
+  "lang-unclosed": () => "<!-- " + fill(LANG_NEAR_MISS + " "),
+  // An ordinary link title is classified too (scanRefComments keeps it only when it matches), with no cap.
+  "lang-link-titles": () => fill(`[a]: https://x.test "${LANG_NEAR_MISS}"\n`),
 };
 
 let t: ReturnType<typeof tempDir>;
@@ -97,7 +111,7 @@ describe(`10 MB adversarial inputs, each tool call under ${BUDGET_MS} ms`, () =>
 });
 
 describe("scaling is linear, not quadratic", () => {
-  test.each(["closed-comments", "unclosed-comments", "link-openers", "imports", "dotted-rules"])("%s: 8x input costs well under 64x time", async (name) => {
+  test.each(["closed-comments", "unclosed-comments", "link-openers", "imports", "dotted-rules", "lang-comments", "lang-ref-comments"])("%s: 8x input costs well under 64x time", async (name) => {
     const small = tempDir("asitis-scale-");
     try {
       const unit = CASES[name]!().slice(0, 4096);
