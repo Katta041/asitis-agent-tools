@@ -6,10 +6,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-007370)](LICENSE)
 [![CI](https://github.com/Katta041/asitis-agent-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/Katta041/asitis-agent-tools/actions/workflows/ci.yml)
 
-Here is `asitis loads` on [`examples/monorepo`](examples/monorepo), a small made-up repo, run as its own git repo with 0.4.0. The footer about settings it can't see is trimmed:
+Here is `asitis loads` on [`examples/monorepo`](examples/monorepo), a small made-up repo, run as its own git repo with 0.4.1. The footer about settings it can't see is trimmed:
 
 ```text
-$ npx -y -p @asitis/mcp@0.4.0 asitis loads --tool claude-code
+$ npx -y -p @asitis/mcp@0.4.1 asitis loads --tool claude-code
 What loads when a session starts in the project root (local estimates, about 4 characters per token):
 
 Claude Code: about 37 tokens at launch from 2 files; 2 more files can load later (up to about 39 tokens); 2 not loaded
@@ -21,13 +21,13 @@ Claude Code: about 37 tokens at launch from 2 files; 2 more files can load later
     4. .claude/rules/api.md, about 21 tokens, when Claude reads or edits a file matching packages/api/** (2 files match now)
     5. packages/api/CLAUDE.md, about 18 tokens, when Claude reads or edits a file in packages/api
   Not loaded
-    - AGENTS.md: CLAUDE.local.md switches off the AGENTS.md fallback, and no CLAUDE.md imports it
+    - AGENTS.md: CLAUDE.local.md switches off the AGENTS.md fallback, and it does not import AGENTS.md
     - packages/api/AGENTS.md: Claude Code reads the CLAUDE.md in packages/api instead
   Warnings
-    - Claude Code ignores AGENTS.md here: there is a CLAUDE.md and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.md if both should share instructions
+    - Claude Code ignores AGENTS.md here: CLAUDE.local.md switches off the AGENTS.md fallback just as a CLAUDE.md would, and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.local.md, or set Project instructions to claude-md-and-agents-md
   How sure: 4 confirmed with a canary run.
 
-$ npx -y -p @asitis/mcp@0.4.0 asitis loads packages/api --tool codex
+$ npx -y -p @asitis/mcp@0.4.1 asitis loads packages/api --tool codex
 What loads when a session starts in packages/api (local estimates, about 4 characters per token):
 
 Codex: about 8.2k tokens at launch from 2 files; 1 file cut
@@ -46,8 +46,8 @@ One person's CLAUDE.local.md is enough to stop Claude Code reading the team's AG
 **Install**, pick one:
 
 - Claude Code plugin: `claude plugin marketplace add Katta041/asitis-agent-tools && claude plugin install asitis@asitis`
-- Any terminal, nothing to install: `npx -y -p @asitis/mcp@0.4.0 asitis lint`
-- GitHub Action: `uses: Katta041/asitis-agent-tools@v0.4.0` (full workflow under [CLI and CI](#cli-and-ci))
+- Any terminal, nothing to install: `npx -y -p @asitis/mcp@0.4.1 asitis lint`
+- GitHub Action: `uses: Katta041/asitis-agent-tools@v0.4.1` (full workflow under [CLI and CI](#cli-and-ci))
 
 **Why you can run it on your repo:** it has no write tool and no network code, and the plugin starts it under Node's permission model so the runtime blocks writes and child processes too. MIT licensed. I hand-labelled every error and warning it reports on 71 public repos: 91% are worth fixing in 0.4.0, up from 70% in 0.3.0, with no real finding lost.
 
