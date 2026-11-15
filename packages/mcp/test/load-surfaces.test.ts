@@ -155,3 +155,37 @@ describe("asitis loads", () => {
     expect(all.out).toContain("asitis loads [dir]");
   });
 });
+
+describe("load plan keeps the 0.3.1 import rules", () => {
+  test("a trailing colon or a paren loads nothing in Claude Code; #anchor and a 4-hop chain load", async () => {
+    const root = temp({
+      "CLAUDE.md": "# Root\n\nSee @guide.md: for setup.\n(@paren.md)\n@frag.md#setup\n@d1.md\n",
+      "guide.md": "# Guide\n",
+      "paren.md": "# Paren\n",
+      "frag.md": "# Frag\n",
+      "d1.md": "@d2.md\n",
+      "d2.md": "@d3.md\n",
+      "d3.md": "@d4.md\n",
+      "d4.md": "@d5.md\n",
+      "d5.md": "# Five\n",
+    }, [".git"]);
+    const r = await cli(["loads", ".", "--tool", "claude-code", "--format", "json"], root);
+    expect(r.code).toBe(0);
+    const plan = JSON.parse(r.out) as { tools: Array<{ steps: Array<{ path: string; counted: boolean; via?: string[] }> }> };
+    const steps = plan.tools[0]!.steps;
+    const counted = steps.filter((s) => s.counted).map((s) => s.path);
+    expect(counted).toContain("frag.md");
+    expect(counted).toEqual(expect.arrayContaining(["d1.md", "d2.md", "d3.md", "d4.md"]));
+    expect(counted).not.toContain("d5.md");
+    expect(counted).not.toContain("guide.md");
+    expect(counted).not.toContain("paren.md");
+    expect(steps.find((s) => s.path === "d4.md")!.via).toEqual(["CLAUDE.md", "d1.md", "d2.md", "d3.md"]);
+  });
+  test("Gemini CLI takes @guide.md: as written, so it is missing, not cut", async () => {
+    const root = temp({ "GEMINI.md": "# G\n\n@guide.md:\n", "guide.md": "# Guide\n" }, [".git"]);
+    const r = await cli(["loads", ".", "--tool", "gemini-cli", "--format", "json"], root);
+    expect(r.code).toBe(0);
+    const plan = JSON.parse(r.out) as { tools: Array<{ steps: Array<{ path: string; counted: boolean }> }> };
+    expect(plan.tools[0]!.steps.filter((s) => s.counted).map((s) => s.path)).not.toContain("guide.md");
+  });
+});
