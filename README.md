@@ -17,7 +17,7 @@
 claude plugin marketplace add Katta041/asitis-agent-tools && claude plugin install asitis@asitis
 ```
 
-Run `/asitis:md-lint` (lint every steering file in the project), `/asitis:md-budget` (tokens loaded per session, per tool) or `/asitis:md-fix` (mechanical fixes as a diff, applied only after you say yes).
+Run `/asitis:md-lint` (lint every steering file in the project), `/asitis:md-budget` (tokens loaded per session, per tool), `/asitis:md-loads packages/api` (what each agent actually loads when it starts in that folder) or `/asitis:md-fix` (mechanical fixes as a diff, applied only after you say yes).
 
 **Terminal or CI**, nothing to install first:
 
@@ -73,7 +73,7 @@ name: PR Summary
 - Diff: !`gh pr diff $ARGUMENTS`
 ```
 
-On GitHub, the comment and the zero-width space do not show up at all, and nothing tells you that Claude Code reads `CLAUDE.md` and never opens `AGENTS.md`. This is what `asitis lint --include skills` (0.3.0) prints for that folder, unedited:
+On GitHub, the comment and the zero-width space do not show up at all, and nothing tells you that Claude Code reads `CLAUDE.md` and never opens `AGENTS.md`. This is what `asitis lint --include skills` (0.4.0) prints for that folder, unedited:
 
 ```text
 .claude/skills/pr-summary/SKILL.md:1:1 error missing-description description is required: it is what the agent reads to decide when to load the skill (Claude Code uses the first non-empty line of the body instead)
