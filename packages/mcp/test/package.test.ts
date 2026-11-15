@@ -58,7 +58,7 @@ describe("npm package", () => {
   });
   test("every dev dependency is pinned to an exact version, SDK included", () => {
     for (const [name, v] of Object.entries(pkg.devDependencies as Record<string, string>)) expect(v, name).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(pkg.devDependencies["@modelcontextprotocol/sdk"]).toBe("1.31.0");
+    expect(pkg.devDependencies["@modelcontextprotocol/sdk"]).toBe("1.32.1");
   });
   test("version constant matches package.json", () => expect(VERSION).toBe(pkg.version));
   test("MCP Registry metadata: server.json matches package.json (validated with mcp-publisher validate)", () => {

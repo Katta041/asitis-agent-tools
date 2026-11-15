@@ -2,7 +2,7 @@
 
 @asitis/mcp 0.3.1 bundles the following packages.
 
-## @modelcontextprotocol/sdk 1.31.0 (MIT)
+## @modelcontextprotocol/sdk 1.32.1 (MIT)
 
 ```
 MIT License
@@ -185,7 +185,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-## zod 4.6.5 (MIT)
+## zod 4.6.7 (MIT)
 
 ```
 MIT License
