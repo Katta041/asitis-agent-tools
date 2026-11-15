@@ -49,7 +49,7 @@ One person's CLAUDE.local.md is enough to stop Claude Code reading the team's AG
 - Any terminal, nothing to install: `npx -y -p @asitis/mcp@0.4.1 asitis lint`
 - GitHub Action: `uses: Katta041/asitis-agent-tools@v0.4.1` (full workflow under [CLI and CI](#cli-and-ci))
 
-**Why you can run it on your repo:** it has no write tool and no network code, and the plugin starts it under Node's permission model so the runtime blocks writes and child processes too. MIT licensed. I hand-labelled every error and warning it reports on 71 public repos: 91% are worth fixing in 0.4.0, up from 70% in 0.3.0, with no real finding lost.
+**Why you can run it on your repo:** it has no write tool and no network code, and the plugin starts it under Node's permission model so the runtime blocks writes and child processes too. MIT licensed. I hand-labelled every error and warning it reports on 71 public repos: 91% are worth fixing in 0.4.0, up from 70% in 0.3.0.
 
 ## Quick start
 
@@ -160,7 +160,7 @@ These tools overlap with AsItIs in places and are good at things it does not do.
 
 | | AsItIs | [agnix](https://github.com/agent-sh/agnix) | [ctxlint](https://github.com/ctxlint/Ctxlint) | [markdownlint](https://github.com/DavidAnson/markdownlint) | [skills-ref](https://github.com/agentskills/agentskills/tree/main/skills-ref) `validate` |
 |---|---|---|---|---|---|
-| Main job | Lint steering files against vendor limits, token budget, hidden content, drift between files | Validate agent configs for many tools (455 rules), with auto-fix and editor plugins | Lint context files for stale references, dead commands, secrets and token waste | Markdown style and syntax | Validate a skill against the Agent Skills spec |
+| Main job | Lint steering files against vendor limits, token budget, hidden content, drift between files | Validate agent configs for many tools (761 rules), with auto-fix and editor plugins | Lint context files for stale references, dead commands, secrets and token waste | Markdown style and syntax | Validate a skill against the Agent Skills spec |
 | Files | CLAUDE.md, AGENTS.md, SKILL.md, GEMINI.md, Cursor, Copilot, Windsurf and Cline rules, subagents, commands, memory; skill scripts and agent config when you opt in | CLAUDE.md, AGENTS.md, SKILL.md, hooks, MCP configs, Cursor, Copilot, Kiro, Cline, Gemini CLI files | AGENTS.md, CLAUDE.md, GEMINI.md, Cursor, Windsurf, Cline and Aider rules, `.mcp.json` | Any markdown | SKILL.md |
 | Tokens loaded per session, per tool | Yes, approximate | Not in its README | "Token waste" checks | No | No |
 | Hidden comments, invisible and bidi characters | Yes, errors by default | Not in its README | Not in its README | No (MD033 flags inline HTML in general) | No |
