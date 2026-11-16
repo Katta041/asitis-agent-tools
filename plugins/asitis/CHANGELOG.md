@@ -2,6 +2,11 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.4] - 2026-11-17
+
+### Added
+- The bundled server is `@asitis/mcp` 0.4.4. `/asitis:md-lint` now reports `stale-path`, a repo path in backticks that no longer exists, with no extra file reads. `/asitis:md-lint config` also runs `dead-command`, which reads `package.json` and Makefile files to find commands whose script or target is gone.
+
 ## [0.4.3] - 2026-11-16
 
 ### Added

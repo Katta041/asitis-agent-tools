@@ -2,6 +2,14 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.4] - 2026-11-17
+
+### Added
+- `stale-path` (warning, `src/refs.ts`): a repo path in backticks that is not in the repository. It checks only paths with two or more parts that end in an extension or a slash and whose top folder exists next to the file or at the root, in the same letter case, and skips globs, URLs, placeholders, fenced blocks, example sections, submodules, paragraphs about another repository, and a folder that became a module (`src/handlers/` when `src/handlers.py` exists). A path that exists anywhere in the repo with the same ending is fine. By default it reads no file contents: it probes paths and lists folders, and skips paths under `results/`, `output/`, `tmp/`, `logs/` and similar run-output folders. With include `config` it reads `.gitignore` files instead and skips what they cover.
+- `dead-command` (warning, `src/refs.ts`): `npm run`, `npm test`, `pnpm`, `yarn` and `bun run` commands whose script is in no `package.json`, and `make` targets the Makefile does not define. Runs only with include `config`. Workspace scripts up to three folders deep count; commands with workspace or folder flags, or after `cd`, are not checked, and Makefiles with `include` lines or pattern rules are skipped.
+- A `project-files` read class (`policy/project-files.ts`) for files named exactly `package.json`, `Makefile`, `makefile`, `GNUmakefile` or `.gitignore`, up to 1 MB. It refuses every read unless the call includes `config`, and only names are kept from those files. A test spies on `fs.promises.open` to check that a default run opens no `package.json`, Makefile or `.gitignore`.
+- `lintDoc` takes the call's include values.
+
 ## [0.4.3] - 2026-11-16
 
 ### Added

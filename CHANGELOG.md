@@ -2,6 +2,20 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.4.4] - 2026-11-17
+
+### Added
+- `stale-path` (warning, on by default): a repo path in backticks, such as `src/api/routes.ts` or `packages/web/`, that isn't in the repository any more. It only checks paths with two or more parts that end in an extension or a slash and whose top folder exists, and it skips globs, placeholders, fenced blocks, example sections and paragraphs about another repository. It only asks whether paths exist; it opens no file besides the steering file. On 26 public repos it reported 15 paths, and I checked each by hand: all 15 were real moved or deleted files.
+- `dead-command` (warning, opt-in): `npm run`, `npm test`, `pnpm`, `yarn`, `bun run` and `make` commands whose script or target isn't defined. It reads `package.json` and Makefile files, so it runs only with `--include config` (`include: ["config"]` in `lint_steering`). With `config`, `stale-path` also reads `.gitignore` files and skips the paths they cover.
+
+### Changed
+- The README leads with CI: the GitHub Action comes first, with a copy-paste workflow that lints pull requests and pushes to main that touch a steering file and uploads SARIF on push only.
+
+### Fixed
+- The README's "How was it tested?" answer still said every real finding from 0.3.0 was kept in 0.4.0. 0.4.2 took that claim back in the changelog; the FAQ line is gone now too.
+
+Details: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#044---2026-11-17) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#044---2026-11-17).
+
 ## [0.4.3] - 2026-11-16
 
 ### Added
