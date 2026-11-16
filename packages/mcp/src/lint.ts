@@ -16,6 +16,7 @@ import { DANGEROUS_HIDDEN_SEVERITY } from "./rules/core.meta.js";
 import { hygieneIssues } from "./fixes/hygiene.js";
 import { inTemplateFolder, inTestTree, notProjectInstructions, topLevelSkill } from "./places.js";
 import { GITMODULES_FILE, submodulePaths } from "./policy/gitmodules.js";
+import { checkRefs } from "./refs.js";
 import type { FindingFix, Suppression } from "./findings.js";
 
 export type Severity = "error" | "warning" | "info";
@@ -1393,6 +1394,7 @@ export async function lintDoc(doc: Doc, sandbox: Sandbox): Promise<LintResult> {
   checkSecrets(doc, c);
   checkRules(doc, c);
   await checkLinks(doc, sandbox, c);
+  await checkRefs(doc, sandbox, c, await submodulesOf(sandbox));
   if (hasUnsafe(doc.path)) {
     c.add("warning", "unsafe-path", `The path ${q(doc.path, 200)} contains control, bidirectional or invisible characters (shown escaped). They can make a name read differently to people and to agents`);
   }

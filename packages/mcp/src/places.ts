@@ -55,3 +55,8 @@ export function topLevelSkill(rel: string): boolean {
   const holder = parts[parts.length - 2]!;
   return holder === "skills" || holder === "skill";
 }
+
+/** True for a file under a template, example, fixture or similar folder (not counting skill folders). */
+export function inNotProjectFolder(rel: string): boolean {
+  return folders(rel).some((p) => NOT_PROJECT_DIR.test(p));
+}
