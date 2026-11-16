@@ -35,6 +35,9 @@
     ],
     "termsOfServiceURL": "https://asitis.app/legal/terms",
     "composerIcon": "./assets/icon.png",
-    "logo": "./assets/icon.png"
+    "logo": "./assets/icon.png",
+    "screenshots": [
+      "./assets/screenshot-lint.png"
+    ]
   }
 }
