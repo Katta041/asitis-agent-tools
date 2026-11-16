@@ -1,6 +1,6 @@
 # asitis rules
 
-One page per rule: what it catches, why it matters, a bad and a good example, how to fix it, how to suppress or configure it, and the vendor page or incident it rests on. 86 rules are active in this build. Each finding in `asitis lint --format sarif` links to its page as `https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/<rule-id>.md`.
+One page per rule: what it catches, why it matters, a bad and a good example, how to fix it, how to suppress or configure it, and the vendor page or incident it rests on. 88 rules are active in this build. Each finding in `asitis lint --format sarif` links to its page as `https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/<rule-id>.md`.
 
 Severity is the default; `.asitisrc.json` can change it. Where it says "depends on location" or "varies", the rule reports some findings at a lower severity (a note in a README, a note for a CLAUDE.md just over 200 lines); the rule page says when. Security rules can be turned off in `.asitisrc.json` or in a baseline, never with a comment in the file.
 
@@ -40,6 +40,8 @@ The file is not read the way its author expects: frontmatter, required fields, v
 | [broken-import](broken-import.md) | warning | @import names a file that does not exist |
 | [link-outside-root](link-outside-root.md) | note | Link points outside the project and was not checked |
 | [import-outside-root](import-outside-root.md) | warning | @import reaches outside the project |
+| [stale-path](stale-path.md) | warning | A path in backticks names a file or folder that is not in the repository |
+| [dead-command](dead-command.md) | warning | npm, pnpm, yarn, bun or make command runs a script or target that is not defined |
 | [orphan-memory](orphan-memory.md) | warning | Memory topic file is not linked from MEMORY.md |
 | [trailing-whitespace](trailing-whitespace.md) | note | Lines end in spaces or tabs that change nothing when rendered |
 | [final-newline](final-newline.md) | note | File with line breaks does not end with one |

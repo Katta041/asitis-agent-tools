@@ -31,7 +31,7 @@ export const SITE = "https://github.com/Katta041/asitis-agent-tools/blob/main/do
 /** The day the vendor pages behind the registry's source URLs were last read and checked. */
 const READ_ON = "14 October 2026";
 /** Rules whose sources were read later than READ_ON, when they were added or activated. */
-const READ_ON_BY_RULE = Object.fromEntries(["skill-description-vague", "skill-description-person", "skill-description-overlap", "skill-listing-budget", "skill-shadowed-command", "secret-in-steering"].map((id) => [id, "15 November 2026"]));
+const READ_ON_BY_RULE = Object.fromEntries(["skill-description-vague", "skill-description-person", "skill-description-overlap", "skill-listing-budget", "skill-shadowed-command", "secret-in-steering"].map((id) => [id, "15 November 2026"]).concat([["stale-path", "16 November 2026"], ["dead-command", "16 November 2026"]]));
 
 /** Rules with options besides severity (RULE_OPTIONS in src/config.ts), for the configure section. */
 const RULE_OPTION_DOCS = {

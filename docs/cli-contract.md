@@ -386,7 +386,7 @@ One workflow command per unsuppressed finding:
 
 ## Read classes
 
-`paths.ts` has five read classes. Markdown is the only one the server uses for steering files by default; `asitisrc` reads AsItIs's own config, and `gitmodules` reads one file, the root `.gitmodules`, only when a relative link is missing (to tell a submodule that is not checked out from a broken link).
+`paths.ts` has six read classes. Markdown is the only one the server uses for steering files by default; `asitisrc` reads AsItIs's own config, `gitmodules` reads one file, the root `.gitmodules`, only when a relative link is missing (to tell a submodule that is not checked out from a broken link), and `project-files` reads `package.json`, Makefiles and `.gitignore` files for script, target and ignore names (`stale-path` and `dead-command`).
 
 | Class | Policy file | Owner | Opened by |
 |---|---|---|---|
@@ -395,5 +395,6 @@ One workflow command per unsuppressed finding:
 | `skill-script` | `policy/skill-script.ts` | WP5 | `checks/skills.ts` (include `skills`) |
 | `agent-config` | `policy/agent-config.ts` | WP6 | `checks/agent-config.ts` (include `config`): the fixed config files, `.cursor/cli.json`, files named exactly `.gitignore`, and `<uuid>.jsonl` files with a 4 KB limit (`checks/agent-leaks.ts`); also the root `package.json` and `pyproject.toml`, for the project's own name and URLs only (`checks/own.ts`) |
 | `gitmodules` | `policy/gitmodules.ts` | release | `lint.ts` (broken-link): the root `.gitmodules`, 64 KB at most, only its `path =` lines |
+| `project-files` | `policy/project-files.ts` | 0.4.4 | `refs.ts` (stale-path, dead-command): files named exactly `package.json`, `Makefile`, `makefile`, `GNUmakefile` or `.gitignore`, 1 MB at most; only script, dependency, target and ignore-pattern names are kept |
 
 `sandbox.openAs(readClass, path, { baseDir?, headBytes?, grants? })` applies the shared refusals (`commonRefusal`: Windows streams and devices, `.env*`, `.git`, `node_modules`), then the class policy, to the path as asked and to the real path. `headBytes` reads only the first bytes (magic-byte checks) and skips the size limit. `grants` passes the call's include values, so the agent-config policy can allow `.claude/settings.local.json` only for `config-local`. The policy stubs refuse everything until their track lands. `sandbox.listDir(path)` lists a folder without following symlinks or reading files.
