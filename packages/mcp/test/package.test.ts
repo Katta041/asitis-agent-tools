@@ -231,9 +231,9 @@ describe("Codex plugin and Gemini CLI extension", () => {
   // Codex 0.169 expands no variables in plugin MCP args, so the plugin cannot point at the
   // bundled server and the project folder at the same time. It runs the pinned npm package
   // with no --root, which makes the server read the folder Codex starts it in.
-  test("Codex runs the pinned npm package by its bin name, never @latest", () => {
+  test("Codex runs the pinned npm package, never @latest", () => {
     expect(codex.mcpServers).toBe("./codex.mcp.json");
-    expect(codexMcp.mcpServers.asitis).toEqual({ command: "npx", args: ["-y", "-p", `@asitis/mcp@${pkg.version}`, "asitis-mcp"] });
+    expect(codexMcp.mcpServers.asitis).toEqual({ command: "npx", args: ["-y", `@asitis/mcp@${pkg.version}`] });
   });
   test("Gemini runs the bundled server under Node's permission model, reading only the workspace", () => {
     const s = gemini.mcpServers.asitis;
@@ -249,6 +249,15 @@ describe("Codex plugin and Gemini CLI extension", () => {
       expect(existsSync(path.join(REPO, "commands/asitis", `${name}.toml`)), name).toBe(true);
       expect(existsSync(path.join(PLUGIN, "commands", `${name}.md`)), name).toBe(true);
     }
+  });
+});
+
+describe("Dockerfile", () => {
+  test("labels the image with this version and copies only the prebuilt server", () => {
+    const d = read(path.join(REPO, "Dockerfile"));
+    expect(d).toContain(`org.opencontainers.image.version="${pkg.version}"`);
+    expect(d).not.toMatch(/^RUN\b/m);
+    expect(d).toMatch(/^USER node$/m);
   });
 });
 
@@ -270,8 +279,7 @@ describe("Cursor plugin", () => {
   test("the MCP server is pinned to this exact version, never @latest", () => {
     const s = mcp.mcpServers.asitis;
     expect(s.command).toBe("npx");
-    // -p and the bin name: the package has two bins, so a bare `npx @asitis/mcp` cannot pick one.
-    expect(s.args).toEqual(["-y", "-p", `@asitis/mcp@${pkg.version}`, "asitis-mcp", "--root", "${workspaceFolder}"]);
+    expect(s.args).toEqual(["-y", `@asitis/mcp@${pkg.version}`, "--root", "${workspaceFolder}"]);
     expect(JSON.stringify(mcp)).not.toMatch(/@latest/);
   });
   test("marketplace entry points at the plugin folder and the names match", () => {
