@@ -4,7 +4,7 @@ description: Lint markdown steering files (AGENTS.md, Cursor rules, CLAUDE.md, S
 ---
 Call the `lint_steering` tool from the `asitis` MCP server.
 
-If the user named a path, pass it as `path`. Otherwise leave `path` out to lint every steering file in the project. Add `skills` or `config` to `include` only when the user asks for those words; `config` reads `.cursor/mcp.json`, `.mcp.json` and other agent settings, and the tool reads markdown only without it.
+If the user named a path, pass it as `path`. Otherwise leave `path` out to lint every steering file in the project. Add `skills` or `config` to `include` only when the user asks for those words; `config` reads `.cursor/mcp.json`, `.mcp.json` and other agent settings, plus `package.json` and Makefile files for `dead-command`, and the tool reads markdown only without it.
 
 Report the result in this order, and keep it short:
 

@@ -195,7 +195,7 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
         if (prior === undefined) seenReal.set(f.real, viaFolderLink);
       }
       const doc = analyse(f, sandbox.displayFile(f));
-      const result = await lintDoc(doc, sandbox);
+      const result = await lintDoc(doc, sandbox, include);
       docs.push(doc);
       results.push(result);
     } catch (e) {

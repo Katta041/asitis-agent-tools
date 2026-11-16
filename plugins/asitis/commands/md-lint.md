@@ -9,7 +9,7 @@ Arguments: `$ARGUMENTS`. The words `skills`, `config` and `config-local` are opt
 
 - With a path, call it with `path` set to that path.
 - With no path, leave `path` out to lint every steering file in the project.
-- For each of `skills`, `config` or `config-local` in the arguments, add it to `include`. `skills` reads the scripts in skill folders; `config` reads `.claude/settings.json`, the MCP config files, `.gitignore` files and the first 4 KB of `<uuid>.jsonl` transcripts; `config-local` also reads `.claude/settings.local.json`. Without them the tool reads markdown only. Never add them on your own.
+- For each of `skills`, `config` or `config-local` in the arguments, add it to `include`. `skills` reads the scripts in skill folders; `config` reads `.claude/settings.json`, the MCP config files, `.gitignore` files, the first 4 KB of `<uuid>.jsonl` transcripts, and `package.json` and Makefile files (for `dead-command`); `config-local` also reads `.claude/settings.local.json`. Without them the tool reads markdown only. Never add them on your own.
 
 Report the result to the user in this order, and keep it short:
 

@@ -1,11 +1,11 @@
 // stale-path and dead-command (src/refs.ts). Each skip in refs.ts has a negative case here, and
 // each kind of finding the real-repo review kept has a positive one. Fixtures are synthetic.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, promises as fsp, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test, vi } from "vitest";
 import { Deadline } from "../src/discover.js";
-import type { Finding } from "../src/findings.js";
+import type { Finding, Include } from "../src/findings.js";
 import { CAPS } from "../src/limits.js";
 import { Sandbox } from "../src/paths.js";
 import { lintProject } from "../src/project.js";
@@ -30,11 +30,13 @@ function project(files: Record<string, string>): string {
   return t.dir;
 }
 
-async function lint(root: string): Promise<Finding[]> {
+async function lint(root: string, include: Include[] = []): Promise<Finding[]> {
   const sandbox = await Sandbox.create([root]);
-  const p = await lintProject(sandbox, { deadline: new Deadline(CAPS.callBudgetMs), include: [], maxFiles: CAPS.walkMaxFiles });
+  const p = await lintProject(sandbox, { deadline: new Deadline(CAPS.callBudgetMs), include, maxFiles: CAPS.walkMaxFiles });
   return p.findings();
 }
+/** dead-command, and the .gitignore lookups of stale-path, run only with include "config". */
+const lintConfig = (root: string): Promise<Finding[]> => lint(root, ["config"]);
 const of = (fs: Finding[], rule: string): Finding[] => fs.filter((f) => f.ruleId === rule);
 const at = (fs: Finding[], rule: string): Array<[string, number]> => of(fs, rule).map((f) => [f.path, f.line]);
 
@@ -136,8 +138,8 @@ describe("stale-path", () => {
     expect(of(fs, "stale-path")).toEqual([]);
   });
 
-  test("gitignored paths, submodules and a folder that became a module are not stale", async () => {
-    const fs = await lint(
+  test("gitignored paths (with include config), submodules and a folder that became a module are not stale", async () => {
+    const fs = await lintConfig(
       project({
         ...BASE,
         "src/handlers.py": "\n",
@@ -234,8 +236,13 @@ describe("commandsIn and makeTargets", () => {
 });
 
 describe("dead-command", () => {
+  test("is off by default: without include config nothing is reported", async () => {
+    const fs = await lint(project({ ...BASE, Makefile: "build:\n", "CLAUDE.md": "# Project\n\nRun `npm run typecheck` and `make deploy`.\n" }));
+    expect(of(fs, "dead-command")).toEqual([]);
+  });
+
   test("a missing npm script and a missing make target are warnings", async () => {
-    const fs = await lint(
+    const fs = await lintConfig(
       project({
         ...BASE,
         Makefile: "build:\n\tnpm run build\n.PHONY: build\n",
@@ -252,12 +259,12 @@ describe("dead-command", () => {
   });
 
   test("script-like names run through yarn or pnpm are checked, binaries and dependencies are not", async () => {
-    const fs = await lint(project({ ...BASE, "AGENTS.md": "# Agents\n\n- `pnpm typecheck` checks types.\n- `pnpm eslint .` and `yarn tsc` run tools.\n- `yarn lint` lints.\n" }));
+    const fs = await lintConfig(project({ ...BASE, "AGENTS.md": "# Agents\n\n- `pnpm typecheck` checks types.\n- `pnpm eslint .` and `yarn tsc` run tools.\n- `yarn lint` lints.\n" }));
     expect(at(fs, "dead-command")).toEqual([["AGENTS.md", 3]]);
   });
 
   test("workspace scripts, flags, cd, placeholders and other fences are not reported", async () => {
-    const fs = await lint(
+    const fs = await lintConfig(
       project({
         ...BASE,
         "CLAUDE.md": [
@@ -287,7 +294,7 @@ describe("dead-command", () => {
   });
 
   test("no package.json, no Makefile, or a Makefile with include: nothing is checked", async () => {
-    const fs = await lint(
+    const fs = await lintConfig(
       project({
         "CLAUDE.md": "# Project\n\nRun `npm run build` and `make release`.\n",
         "tools/Makefile": "include ../common.mk\n",
@@ -298,7 +305,7 @@ describe("dead-command", () => {
   });
 
   test("a nested steering file uses the nearest package.json", async () => {
-    const fs = await lint(project({ ...BASE, "packages/web/CLAUDE.md": "# Web\n\n`npm run storybook` and `npm run e2e`.\n" }));
+    const fs = await lintConfig(project({ ...BASE, "packages/web/CLAUDE.md": "# Web\n\n`npm run storybook` and `npm run e2e`.\n" }));
     const d = of(fs, "dead-command");
     expect(d.map((f) => f.path)).toEqual(["packages/web/CLAUDE.md"]);
     expect(d[0]!.message).toContain("packages/web/package.json does not define");
@@ -306,13 +313,51 @@ describe("dead-command", () => {
 });
 
 describe("project-files read class", () => {
-  test("reads package.json, Makefiles and .gitignore files only", async () => {
+  test("reads package.json, Makefiles and .gitignore files only, and only with include config", async () => {
     const root = project({ ...BASE, "tsconfig.json": "{}\n", Makefile: "build:\n" });
     const sb = await Sandbox.create([root]);
-    expect((await sb.openAs("project-files", "packages/web/package.json")).buf.length).toBeGreaterThan(0);
-    expect((await sb.openAs("project-files", "Makefile")).buf.length).toBeGreaterThan(0);
-    expect((await sb.openAs("project-files", ".gitignore")).buf.length).toBeGreaterThan(0);
-    await expect(sb.openAs("project-files", "tsconfig.json")).rejects.toThrow(/not a package\.json, Makefile or \.gitignore/);
-    await expect(sb.openAs("project-files", "src/api/routes.ts")).rejects.toThrow(/not a package\.json/);
+    const grants = new Set(["config"]);
+    expect((await sb.openAs("project-files", "packages/web/package.json", { grants })).buf.length).toBeGreaterThan(0);
+    expect((await sb.openAs("project-files", "Makefile", { grants })).buf.length).toBeGreaterThan(0);
+    expect((await sb.openAs("project-files", ".gitignore", { grants })).buf.length).toBeGreaterThan(0);
+    await expect(sb.openAs("project-files", "tsconfig.json", { grants })).rejects.toThrow(/not a package\.json, Makefile or \.gitignore/);
+    await expect(sb.openAs("project-files", "src/api/routes.ts", { grants })).rejects.toThrow(/not a package\.json/);
+    await expect(sb.openAs("project-files", "package.json")).rejects.toThrow(/only with include "config"/);
+    await expect(sb.openAs("project-files", "Makefile")).rejects.toThrow(/only with include "config"/);
+  });
+
+  test("a default run opens markdown and .asitisrc.json only, never package.json, a Makefile or .gitignore", async () => {
+    const root = project({
+      ...BASE,
+      Makefile: "build:\n",
+      // src/results/ looks like run output: without .gitignore it is skipped, not reported.
+      "CLAUDE.md": "# Project\n\nRun `npm run typecheck` and `make deploy`. Routes: `src/server/routes.ts`.\n\nRead `src/results/index.md` after a run.\n",
+    });
+    const spy = vi.spyOn(fsp, "open");
+    try {
+      const fs = await lint(root);
+      expect(of(fs, "dead-command")).toEqual([]);
+      expect(at(fs, "stale-path")).toEqual([["CLAUDE.md", 3]]);
+      const opened = spy.mock.calls.map((c) => path.basename(String(c[0])));
+      expect(opened).toContain("CLAUDE.md");
+      expect(opened.filter((n) => !/\.md$/.test(n) && n !== ".asitisrc.json")).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+    // The same repo with include config reads them, and reports both commands.
+    const spy2 = vi.spyOn(fsp, "open");
+    try {
+      const fs = await lintConfig(root);
+      expect(of(fs, "dead-command").map((f) => f.line)).toEqual([3, 3]);
+      // With .gitignore read, the run-output guess is not needed: src/results/ is not ignored here.
+      expect(at(fs, "stale-path")).toEqual([
+        ["CLAUDE.md", 3],
+        ["CLAUDE.md", 5],
+      ]);
+      const opened = spy2.mock.calls.map((c) => path.basename(String(c[0])));
+      expect(opened).toEqual(expect.arrayContaining(["package.json", "Makefile", ".gitignore"]));
+    } finally {
+      spy2.mockRestore();
+    }
   });
 });

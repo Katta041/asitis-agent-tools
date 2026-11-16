@@ -31,6 +31,14 @@
 // Skills, commands and agents are checked only inside the project's own tool folders (.claude/,
 // .github/, .agents/, ...): a skill published for other repos talks about their paths.
 // Only node:path and the sandbox are used: nothing is written, run or fetched.
+//
+// What each rule reads. stale-path is on by default and reads no file contents: it only asks whether
+// paths exist and lists folders. With include "config" it also reads .gitignore files, so a path the
+// build writes is not reported; without them it skips paths under results/, output/, tmp/, logs/
+// and similar folders, which usually hold ignored run output (scripts/pr-status/results/ in
+// next.js). dead-command needs package.json and Makefile contents, so it runs only with include
+// "config", like the other checks that read files other than markdown. The project-files policy
+// refuses every read without that grant as well.
 
 import path from "node:path";
 import type { Doc } from "./doc.js";
@@ -201,14 +209,14 @@ function existsSomewhere(idx: RepoIndex, t: string): boolean {
 class Ignores {
   readonly tree = new IgnoreTree();
   private readonly loaded = new Set<string>();
-  constructor(private readonly sandbox: Sandbox) {}
+  constructor(private readonly sandbox: Sandbox, private readonly grants: ReadonlySet<string>) {}
   async load(dir: string): Promise<void> {
     if (this.loaded.has(dir)) return;
     this.loaded.add(dir);
     const rel = dir ? `${dir}/.gitignore` : ".gitignore";
     if ((await this.sandbox.probe(rel, this.sandbox.primary.real)).state !== "ok") return;
     try {
-      const f = await this.sandbox.openAs("project-files", rel);
+      const f = await this.sandbox.openAs("project-files", rel, { grants: this.grants });
       this.tree.add(dir, parseGitignore(new TextDecoder("utf-8").decode(f.buf)));
     } catch {
       // unreadable or refused: no patterns from it
@@ -216,6 +224,12 @@ class Ignores {
   }
 }
 const ignoresBySandbox = new WeakMap<Sandbox, Ignores>();
+
+/**
+ * A folder name that usually holds files a script or a run writes (scripts/pr-status/results/).
+ * Without include "config" no .gitignore is read, so these paths are skipped instead.
+ */
+const RUNTIME_SEGMENT = /^(?:results?|outputs?|tmp|temp|cache|logs?|generated|artifacts?|snapshots?|reports?)$/i;
 
 /** Root-relative POSIX path of base joined with t, or null when it leaves the root. */
 function rootRel(sandbox: Sandbox, base: string, t: string): string | null {
@@ -232,7 +246,7 @@ const REPO_REF = /^[A-Za-z0-9][\w.-]*\/[\w.-]+$/;
 /** "the charts repo", "in the SDK repository": another repository named in words. */
 const OTHER_REPO_WORDS = /\b(?!(?:this|the|our|same|main|whole|a|an|your|each|every|its|mono)\b)[\w-]+\s+repo(?:sitory)?\b/i;
 
-async function checkStalePaths(doc: Doc, sandbox: Sandbox, out: Sink, submodules: string[]): Promise<void> {
+async function checkStalePaths(doc: Doc, sandbox: Sandbox, out: Sink, submodules: string[], grants: ReadonlySet<string>): Promise<void> {
   const fileDir = path.dirname(doc.file.real);
   const bases = [...new Set([fileDir, sandbox.primary.real])];
   /** exact: exists as written; nocase: exists in another letter case (macOS, Windows); missing. */
@@ -262,12 +276,16 @@ async function checkStalePaths(doc: Doc, sandbox: Sandbox, out: Sink, submodules
       return false;
     }
   };
-  let ignores = ignoresBySandbox.get(sandbox);
-  if (!ignores) {
-    ignores = new Ignores(sandbox);
-    ignoresBySandbox.set(sandbox, ignores);
+  // .gitignore files are read only with include "config"; by default no file contents are read here.
+  let ignores: Ignores | null = null;
+  if (readsProjectFiles(grants)) {
+    ignores = ignoresBySandbox.get(sandbox) ?? null;
+    if (!ignores) {
+      ignores = new Ignores(sandbox, grants);
+      ignoresBySandbox.set(sandbox, ignores);
+    }
+    await ignores.load("");
   }
-  await ignores.load("");
   const start = doc.frontmatter.present ? doc.frontmatter.endLine + 1 : 0;
   // Blocks: runs of non-blank lines outside fences and headings (a paragraph, a list, a table).
   const blockOf = new Int32Array(doc.lines.count).fill(-1);
@@ -339,9 +357,11 @@ async function checkStalePaths(doc: Doc, sandbox: Sandbox, out: Sink, submodules
       if (!base) continue;
       const rel = rootRel(sandbox, base, t);
       if (rel === null || submodules.some((m) => rel === m || rel.startsWith(m + "/"))) continue;
-      const relParts = rel.split("/");
-      for (let d = 0; d < relParts.length; d++) await ignores.load(relParts.slice(0, d).join("/"));
-      if (ignores.tree.ignored(rel.replace(/\/$/, ""), t.endsWith("/"))) continue;
+      if (ignores) {
+        const relParts = rel.split("/");
+        for (let d = 0; d < relParts.length; d++) await ignores.load(relParts.slice(0, d).join("/"));
+        if (ignores.tree.ignored(rel.replace(/\/$/, ""), t.endsWith("/"))) continue;
+      } else if (segs.slice(0, -1).some((x) => RUNTIME_SEGMENT.test(x))) continue;
       const idx = await repoIndex(sandbox);
       if (!idx.complete || existsSomewhere(idx, t)) continue;
       if (blockOf[i]! >= 0 && (await foreign(blockOf[i]!))) continue;
@@ -427,12 +447,12 @@ interface ProjectIndex {
 }
 const projectCache = new WeakMap<Sandbox, ProjectIndex>();
 
-async function readManifest(sandbox: Sandbox, idx: ProjectIndex, rel: string): Promise<Manifest | null> {
+async function readManifest(sandbox: Sandbox, idx: ProjectIndex, rel: string, grants: ReadonlySet<string>): Promise<Manifest | null> {
   if (idx.manifests.has(rel)) return idx.manifests.get(rel)!;
   let m: Manifest | null = null;
   if ((await sandbox.probe(rel, sandbox.primary.real)).state === "ok") {
     try {
-      const f = await sandbox.openAs("project-files", rel);
+      const f = await sandbox.openAs("project-files", rel, { grants });
       const j = JSON.parse(new TextDecoder("utf-8").decode(f.buf)) as Record<string, unknown>;
       const keys = (v: unknown): string[] => (v && typeof v === "object" && !Array.isArray(v) ? Object.keys(v) : []);
       m = { rel, scripts: new Set(keys(j["scripts"])), deps: new Set([...keys(j["dependencies"]), ...keys(j["devDependencies"]), ...keys(j["peerDependencies"]), ...keys(j["optionalDependencies"])]) };
@@ -446,7 +466,7 @@ async function readManifest(sandbox: Sandbox, idx: ProjectIndex, rel: string): P
 
 const MAX_MANIFESTS = 400;
 
-async function allScripts(sandbox: Sandbox, idx: ProjectIndex): Promise<Set<string>> {
+async function allScripts(sandbox: Sandbox, idx: ProjectIndex, grants: ReadonlySet<string>): Promise<Set<string>> {
   idx.anyScripts ??= (async () => {
     const names = new Set<string>();
     let seen = 0;
@@ -460,7 +480,7 @@ async function allScripts(sandbox: Sandbox, idx: ProjectIndex): Promise<Set<stri
       }
       if (list.entries.some((e) => e.name === "package.json" && e.type === "file")) {
         seen++;
-        const m = await readManifest(sandbox, idx, dir ? `${dir}/package.json` : "package.json");
+        const m = await readManifest(sandbox, idx, dir ? `${dir}/package.json` : "package.json", grants);
         for (const s of m?.scripts ?? []) names.add(s);
       }
       if (depth >= 3) return;
@@ -493,7 +513,7 @@ export function makeTargets(text: string): Set<string> | null {
   return out;
 }
 
-async function checkDeadCommands(doc: Doc, sandbox: Sandbox, out: Sink): Promise<void> {
+async function checkDeadCommands(doc: Doc, sandbox: Sandbox, out: Sink, grants: ReadonlySet<string>): Promise<void> {
   let idx = projectCache.get(sandbox);
   if (!idx) {
     idx = { manifests: new Map(), anyScripts: null };
@@ -510,7 +530,7 @@ async function checkDeadCommands(doc: Doc, sandbox: Sandbox, out: Sink): Promise
     if (nearest !== undefined) return nearest;
     nearest = null;
     for (const d of chain) {
-      const m = await readManifest(sandbox, idx!, d ? `${d}/package.json` : "package.json");
+      const m = await readManifest(sandbox, idx!, d ? `${d}/package.json` : "package.json", grants);
       if (m) { nearest = m; break; }
     }
     return nearest;
@@ -525,7 +545,7 @@ async function checkDeadCommands(doc: Doc, sandbox: Sandbox, out: Sink): Promise
         const p = await sandbox.probe(rel, sandbox.primary.real);
         if (p.state !== "ok" || !p.rel?.endsWith(n)) continue;
         try {
-          const f = await sandbox.openAs("project-files", rel);
+          const f = await sandbox.openAs("project-files", rel, { grants });
           makefile = { rel, targets: makeTargets(new TextDecoder("utf-8").decode(f.buf)), dir: d };
         } catch {
           makefile = null;
@@ -550,7 +570,7 @@ async function checkDeadCommands(doc: Doc, sandbox: Sandbox, out: Sink): Promise
       const m = await pkg();
       if (!m || m.scripts.has(c.name)) continue;
       if (c.binOk && (!SCRIPT_LIKE.test(c.name) || m.deps.has(c.name))) continue;
-      if ((await allScripts(sandbox, idx!)).has(c.name)) continue;
+      if ((await allScripts(sandbox, idx!, grants)).has(c.name)) continue;
       const have = [...m.scripts].slice(0, 8);
       out.add("warning", "dead-command", `${q(c.text, 120)} runs a script that ${m.rel} does not define${have.length ? ` (it has ${have.join(", ")}${m.scripts.size > have.length ? ", ..." : ""})` : " (it has no scripts)"}. Fix the command or add the script`, line);
     }
@@ -587,9 +607,14 @@ async function checkDeadCommands(doc: Doc, sandbox: Sandbox, out: Sink): Promise
   }
 }
 
-/** Runs both checks on one steering file. */
-export async function checkRefs(doc: Doc, sandbox: Sandbox, out: Sink, submodules: string[]): Promise<void> {
+/** Whether this call may read package.json, Makefile and .gitignore files (include "config" or "config-local"). */
+function readsProjectFiles(grants: ReadonlySet<string>): boolean {
+  return grants.has("config") || grants.has("config-local");
+}
+
+/** Runs stale-path on one steering file, and dead-command too when the call includes "config". */
+export async function checkRefs(doc: Doc, sandbox: Sandbox, out: Sink, submodules: string[], grants: ReadonlySet<string> = new Set()): Promise<void> {
   if (!refsInScope(doc)) return;
-  await checkStalePaths(doc, sandbox, out, submodules);
-  await checkDeadCommands(doc, sandbox, out);
+  await checkStalePaths(doc, sandbox, out, submodules, grants);
+  if (readsProjectFiles(grants)) await checkDeadCommands(doc, sandbox, out, grants);
 }

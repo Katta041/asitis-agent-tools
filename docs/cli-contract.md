@@ -46,7 +46,7 @@ asitis lint --help | asitis budget --help | asitis loads --help
 | `--config <file>` | `<root>/.asitisrc.json` if present | Config file. Must be inside the root. A missing default file is fine; a missing `--config` file is exit 2. |
 | `--baseline <file>` | none | Findings whose fingerprint is listed are marked suppressed (`kind: "external"`). Must be inside the root. |
 | `--write-baseline` | off | Print a baseline for the current findings instead of the report. Needs `--format json`; any other format is exit 2. |
-| `--include <list>` | none | Comma-separated opt-in scans: `skills`, `config`, `config-local` (implies `config`). Unknown values are exit 2. Merged with `include` from the config file. |
+| `--include <list>` | none | Comma-separated opt-in scans: `skills`, `config` (also turns on `dead-command`), `config-local` (implies `config`). Unknown values are exit 2. Merged with `include` from the config file. |
 | `--fix-preview[=safe]` | off | Attach fixes. With `text` it prints one combined unified diff that `git apply` accepts, and nothing else. With `json` each fixable finding gets `fix`; with `sarif` results get `fixes[]`; with `github` it is ignored. `=safe` limits fixes to safe ones. There is no flag that writes. |
 | `--max-files <n>` | 1,000 | Most steering files linted when walking the root, 1 to 1,000 (`CAPS.walkMaxFiles`). A walk that finds more lints the first `n` and exits 4 (see Exit codes). |
 | `--max-file-mb <n>` | 16 | Largest markdown file analysed, 1 to 64. |
@@ -386,7 +386,7 @@ One workflow command per unsuppressed finding:
 
 ## Read classes
 
-`paths.ts` has six read classes. Markdown is the only one the server uses for steering files by default; `asitisrc` reads AsItIs's own config, `gitmodules` reads one file, the root `.gitmodules`, only when a relative link is missing (to tell a submodule that is not checked out from a broken link), and `project-files` reads `package.json`, Makefiles and `.gitignore` files for script, target and ignore names (`stale-path` and `dead-command`).
+`paths.ts` has six read classes. Markdown is the only one the server uses for steering files by default; `asitisrc` reads AsItIs's own config, and `gitmodules` reads one file, the root `.gitmodules`, only when a relative link is missing (to tell a submodule that is not checked out from a broken link). `project-files` reads `package.json`, Makefiles and `.gitignore` files for script, target and ignore names, and only with include `config`: `dead-command` runs only then, and `stale-path`, which is on by default, uses `.gitignore` patterns only then. By default `stale-path` checks that paths exist and lists folders, and opens no file.
 
 | Class | Policy file | Owner | Opened by |
 |---|---|---|---|
@@ -395,6 +395,6 @@ One workflow command per unsuppressed finding:
 | `skill-script` | `policy/skill-script.ts` | WP5 | `checks/skills.ts` (include `skills`) |
 | `agent-config` | `policy/agent-config.ts` | WP6 | `checks/agent-config.ts` (include `config`): the fixed config files, `.cursor/cli.json`, files named exactly `.gitignore`, and `<uuid>.jsonl` files with a 4 KB limit (`checks/agent-leaks.ts`); also the root `package.json` and `pyproject.toml`, for the project's own name and URLs only (`checks/own.ts`) |
 | `gitmodules` | `policy/gitmodules.ts` | release | `lint.ts` (broken-link): the root `.gitmodules`, 64 KB at most, only its `path =` lines |
-| `project-files` | `policy/project-files.ts` | 0.4.4 | `refs.ts` (stale-path, dead-command): files named exactly `package.json`, `Makefile`, `makefile`, `GNUmakefile` or `.gitignore`, 1 MB at most; only script, dependency, target and ignore-pattern names are kept |
+| `project-files` | `policy/project-files.ts` | 0.4.4 | `refs.ts` (include `config`: dead-command, and the .gitignore lookups of stale-path): files named exactly `package.json`, `Makefile`, `makefile`, `GNUmakefile` or `.gitignore`, 1 MB at most; only script, dependency, target and ignore-pattern names are kept |
 
 `sandbox.openAs(readClass, path, { baseDir?, headBytes?, grants? })` applies the shared refusals (`commonRefusal`: Windows streams and devices, `.env*`, `.git`, `node_modules`), then the class policy, to the path as asked and to the real path. `headBytes` reads only the first bytes (magic-byte checks) and skips the size limit. `grants` passes the call's include values, so the agent-config policy can allow `.claude/settings.local.json` only for `config-local`. The policy stubs refuse everything until their track lands. `sandbox.listDir(path)` lists a folder without following symlinks or reading files.

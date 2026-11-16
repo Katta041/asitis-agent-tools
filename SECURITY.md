@@ -14,7 +14,7 @@ Only the latest released version of `@asitis/mcp` and of the `asitis` plugin rec
 
 In scope, for example:
 
-- reading any file outside the configured root, or any file that is not on the markdown allowlist (including `.env*` and `.claude/settings*.json`) without the opt-in scan that lists it (`skills` for skill scripts; `config` for agent settings, MCP config, `.gitignore` files and the first 4 KB of `<uuid>.jsonl` files);
+- reading any file outside the configured root, or any file that is not on the markdown allowlist (including `.env*` and `.claude/settings*.json`) without the opt-in scan that lists it (`skills` for skill scripts; `config` for agent settings, MCP config, `.gitignore` files, the first 4 KB of `<uuid>.jsonl` files, and the `package.json` and Makefile files the `dead-command` rule checks);
 - any write, network connection or child process started by the server or the guard hook;
 - input that makes a tool call exceed its time budget or exhaust memory;
 - the plugin's vendored server not matching its SHA-256 pin.

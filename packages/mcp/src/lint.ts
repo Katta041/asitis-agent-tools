@@ -1382,7 +1382,11 @@ function checkSecrets(doc: Doc, c: Collector): void {
   }
 }
 
-export async function lintDoc(doc: Doc, sandbox: Sandbox): Promise<LintResult> {
+/**
+ * Lints one file. grants are the call's include values: dead-command and the .gitignore lookups of
+ * stale-path read package.json, Makefile and .gitignore files, so they run only with "config".
+ */
+export async function lintDoc(doc: Doc, sandbox: Sandbox, grants: ReadonlySet<string> = new Set()): Promise<LintResult> {
   const c = new Collector();
   const body = doc.frontmatter.present ? doc.text.slice(doc.lines.start(Math.min(doc.frontmatter.endLine + 1, doc.lines.count - 1))) : doc.text;
   const tokens = approxTokens(body);
@@ -1394,7 +1398,7 @@ export async function lintDoc(doc: Doc, sandbox: Sandbox): Promise<LintResult> {
   checkSecrets(doc, c);
   checkRules(doc, c);
   await checkLinks(doc, sandbox, c);
-  await checkRefs(doc, sandbox, c, await submodulesOf(sandbox));
+  await checkRefs(doc, sandbox, c, await submodulesOf(sandbox), grants);
   if (hasUnsafe(doc.path)) {
     c.add("warning", "unsafe-path", `The path ${q(doc.path, 200)} contains control, bidirectional or invisible characters (shown escaped). They can make a name read differently to people and to agents`);
   }
