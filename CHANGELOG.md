@@ -2,6 +2,21 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.4.3] - 2026-11-16
+
+### Added
+- Codex plugin: `codex plugin marketplace add Katta041/asitis-agent-tools && codex plugin add asitis@asitis`. Codex has no plugin commands, so a new `steering-check` skill picks the right tool from a plain question.
+- Gemini CLI extension: `gemini extensions install https://github.com/Katta041/asitis-agent-tools`, with `/asitis:md-lint`, `/asitis:md-loads`, `/asitis:md-budget` and `/asitis:md-fix`. It runs the bundled server under Node's permission model, reading only the workspace.
+- Add to Cursor and VS Code install links in the README, and `docs/install.md` with configs for Devin Desktop (Windsurf), Cline, Kiro, Zed, Goose, Continue, JetBrains AI Assistant and Docker.
+- A Dockerfile that runs the prebuilt server with no npm install, as the non-root `node` user. It works with `--network none --read-only` and the project mounted read-only.
+- A Cursor plugin in `plugins/asitis-cursor`. I haven't run it inside Cursor yet; its README says which part is unconfirmed.
+
+### Changed
+- Claude Code plugin manifest: license, icon, documentation, support, privacy and terms links, and a description that names all four commands.
+- Docs use the plain `npx -y @asitis/mcp@0.4.3` form for the server now that 0.4.2 has the `mcp` bin.
+
+Details: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#043---2026-11-16) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#043---2026-11-16).
+
 ## [0.4.2] - 2026-11-16
 
 ### Fixed

@@ -2,6 +2,11 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.3] - 2026-11-16
+
+### Added
+- Packaging for more clients, all running this server unchanged: `gemini-extension.json` (bundled server, `node --permission --allow-fs-read=${workspacePath}`, `--root ${workspacePath}`), a Codex manifest whose `codex.mcp.json` runs `npx -y @asitis/mcp@0.4.3` with no `--root` because Codex 0.169 expands no variables in plugin MCP args, a Cursor plugin pinned the same way with `--root ${workspaceFolder}`, and a Dockerfile labelled with the version. Tests check that every manifest and pin matches `package.json`.
+
 ## [0.4.2] - 2026-11-16
 
 ### Fixed

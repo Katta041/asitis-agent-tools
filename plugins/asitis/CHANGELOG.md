@@ -2,6 +2,14 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.3] - 2026-11-16
+
+### Added
+- Skill `steering-check`: picks `lint_steering`, `load_plan`, `context_budget` or `suggest_fixes` from a plain question. Codex uses the same plugin folder through `.codex-plugin/plugin.json`.
+
+### Changed
+- Manifest: `license`, an icon, documentation, support, privacy and terms links, and a description that names `/asitis:md-lint`, `/asitis:md-loads`, `/asitis:md-budget` and `/asitis:md-fix`. The bundled server is `@asitis/mcp` 0.4.3.
+
 ## [0.4.2] - 2026-11-16
 
 ### Changed

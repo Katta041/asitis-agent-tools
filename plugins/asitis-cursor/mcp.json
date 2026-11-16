@@ -2,7 +2,7 @@
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "-p", "@asitis/mcp@0.4.1", "asitis-mcp", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.4.3", "--root", "${workspaceFolder}"]
     }
   }
 }
