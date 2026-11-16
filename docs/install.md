@@ -2,7 +2,7 @@
 
 Claude Code, Claude Desktop, Codex, Gemini CLI and VS Code are covered in the [README](../README.md#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli). This page has the rest.
 
-Every config here starts the same server, `npx -y -p @asitis/mcp@0.4.1 asitis-mcp --root <project>`. The `-p ... asitis-mcp` part is needed: the package has two commands (`asitis-mcp` and `asitis`), so a bare `npx @asitis/mcp` stops with "could not determine executable to run". Two more things matter everywhere:
+Every config here starts the same server, `npx -y @asitis/mcp@0.4.3 --root <project>`. Versions before 0.4.2 need `npx -y -p @asitis/mcp@<version> asitis-mcp` instead, because a bare `npx @asitis/mcp` stops with "could not determine executable to run" there. Two more things matter everywhere:
 
 - **Pin the version.** Never use `@latest` in an agent config.
 - **Give `--root` the project folder as an absolute path**, unless the tool fills it in for you (Cursor does, with `${workspaceFolder}`). Most clients start servers from somewhere other than your project, and the server refuses your home folder and the filesystem root on purpose.
@@ -11,7 +11,7 @@ If the server can't start, it prints one line saying why, for example `Refusing 
 
 ## Cursor
 
-[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=asitis&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi1wIiwiQGFzaXRpcy9tY3BAMC40LjEiLCJhc2l0aXMtbWNwIiwiLS1yb290IiwiJHt3b3Jrc3BhY2VGb2xkZXJ9Il19)
+[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=asitis&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBhc2l0aXMvbWNwQDAuNC4zIiwiLS1yb290IiwiJHt3b3Jrc3BhY2VGb2xkZXJ9Il19)
 
 Or put this in `.cursor/mcp.json` in the project:
 
@@ -20,7 +20,7 @@ Or put this in `.cursor/mcp.json` in the project:
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "-p", "@asitis/mcp@0.4.1", "asitis-mcp", "--root", "${workspaceFolder}"]
+      "args": ["-y", "@asitis/mcp@0.4.3", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -28,7 +28,7 @@ Or put this in `.cursor/mcp.json` in the project:
 
 Cursor sets `${workspaceFolder}` to the folder that contains `.cursor/mcp.json`. If you add the server to your global `~/.cursor/mcp.json` and it says it refused your home folder, move the entry into the project's `.cursor/mcp.json` or put the absolute path in its place.
 
-The Cursor plugin in [`plugins/asitis-cursor`](../plugins/asitis-cursor) adds the same server plus a rule that runs `lint_steering` after the agent edits an AGENTS.md, a Cursor rule or a CLAUDE.md, and `/md-lint`, `/md-loads` and `/md-budget` commands.
+The Cursor plugin in [`plugins/asitis-cursor`](../plugins/asitis-cursor) adds the same server plus a rule that runs `lint_steering` after the agent edits an AGENTS.md, a Cursor rule or a CLAUDE.md, and `/md-lint`, `/md-loads` and `/md-budget` commands. It hasn't been tested inside Cursor yet, see [its README](../plugins/asitis-cursor/README.md) for what's unconfirmed. The config above is the safer path.
 
 ## Devin Desktop (formerly Windsurf)
 
@@ -39,7 +39,7 @@ The Cursor plugin in [`plugins/asitis-cursor`](../plugins/asitis-cursor) adds th
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "-p", "@asitis/mcp@0.4.1", "asitis-mcp", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.4.3", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -56,7 +56,7 @@ In the Cline panel: MCP Servers, Configure, Configure MCP Servers. For the Cline
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "-p", "@asitis/mcp@0.4.1", "asitis-mcp", "--root", "/absolute/path/to/project"],
+      "args": ["-y", "@asitis/mcp@0.4.3", "--root", "/absolute/path/to/project"],
       "disabled": false,
       "autoApprove": []
     }
@@ -75,7 +75,7 @@ All seven tools only read, so you can list them in `autoApprove` if you'd rather
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "-p", "@asitis/mcp@0.4.1", "asitis-mcp", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.4.3", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -90,7 +90,7 @@ Settings, AI, MCP Servers, Add Local Server, or add it under `context_servers` i
   "context_servers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "-p", "@asitis/mcp@0.4.1", "asitis-mcp", "--root", "/absolute/path/to/project"],
+      "args": ["-y", "@asitis/mcp@0.4.3", "--root", "/absolute/path/to/project"],
       "env": {}
     }
   }
@@ -99,7 +99,7 @@ Settings, AI, MCP Servers, Add Local Server, or add it under `context_servers` i
 
 ## Goose
 
-`goose configure`, Add Extension, Command-line Extension, then paste `npx -y -p @asitis/mcp@0.4.1 asitis-mcp --root /absolute/path/to/project` as the command. Or in `~/.config/goose/config.yaml`:
+`goose configure`, Add Extension, Command-line Extension, then paste `npx -y @asitis/mcp@0.4.3 --root /absolute/path/to/project` as the command. Or in `~/.config/goose/config.yaml`:
 
 ```yaml
 extensions:
@@ -107,7 +107,7 @@ extensions:
     name: asitis
     type: stdio
     cmd: npx
-    args: ["-y", "-p", "@asitis/mcp@0.4.1", "asitis-mcp", "--root", "/absolute/path/to/project"]
+    args: ["-y", "@asitis/mcp@0.4.3", "--root", "/absolute/path/to/project"]
     enabled: true
     timeout: 300
 ```
@@ -118,13 +118,13 @@ A file in `.continue/mcpServers/` in the project, for example `.continue/mcpServ
 
 ```yaml
 name: asitis
-version: 0.4.1
+version: 0.4.3
 schema: v1
 mcpServers:
   - name: asitis
     type: stdio
     command: npx
-    args: ["-y", "-p", "@asitis/mcp@0.4.1", "asitis-mcp", "--root", "/absolute/path/to/project"]
+    args: ["-y", "@asitis/mcp@0.4.3", "--root", "/absolute/path/to/project"]
 ```
 
 ## JetBrains AI Assistant
@@ -136,7 +136,7 @@ Settings, Tools, AI Assistant, Model Context Protocol (MCP), Add. Paste this JSO
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "-p", "@asitis/mcp@0.4.1", "asitis-mcp", "--root", "/absolute/path/to/project"]
+      "args": ["-y", "@asitis/mcp@0.4.3", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -168,4 +168,4 @@ In a client config, `command` is `docker` and the rest goes in `args`:
 
 ## Anything else
 
-Any client that can start a stdio MCP server works with `npx -y -p @asitis/mcp@0.4.1 asitis-mcp --root /absolute/path/to/project`. The server is also in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.Katta041/asitis-mcp) as `io.github.Katta041/asitis-mcp`, which some clients browse directly.
+Any client that can start a stdio MCP server works with `npx -y @asitis/mcp@0.4.3 --root /absolute/path/to/project`. The server is also in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.Katta041/asitis-mcp) as `io.github.Katta041/asitis-mcp`, which some clients browse directly.
