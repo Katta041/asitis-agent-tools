@@ -35,6 +35,7 @@ interface ActionFile {
 const action = parse(read("action.yml")) as ActionFile;
 const readme = read("action/README.md");
 const ciDoc = read("docs/ci.md");
+const rootReadme = read("README.md");
 
 /** ```yaml blocks of a markdown file. */
 const yamlBlocks = (md: string): string[] => [...md.matchAll(/```yaml\n([\s\S]*?)```/g)].map((m) => m[1]!);
@@ -116,7 +117,7 @@ describe("action.yml", () => {
 
 describe("every uses: is pinned to a full commit SHA", () => {
   const own = /^Katta041\/asitis-agent-tools@v\d+\.\d+\.\d+$/;
-  const files = ["action.yml", ".github/workflows/action-selftest.yml", ".github/workflows/ci.yml", "action/README.md", "docs/ci.md"];
+  const files = ["action.yml", ".github/workflows/action-selftest.yml", ".github/workflows/ci.yml", "action/README.md", "docs/ci.md", "README.md"];
   test.each(files)("%s", (rel) => {
     const uses = usesIn(read(rel));
     if (rel === "action.yml" || rel.endsWith("action-selftest.yml")) expect(uses.length).toBeGreaterThan(0);
@@ -131,7 +132,7 @@ describe("every uses: is pinned to a full commit SHA", () => {
 
 describe("example workflows ask for the least permission", () => {
   const ALLOWED_JOB = new Set(["contents:read", "security-events:write", "actions:read"]);
-  const workflows = [...yamlBlocks(readme), ...yamlBlocks(ciDoc)]
+  const workflows = [...yamlBlocks(readme), ...yamlBlocks(ciDoc), ...yamlBlocks(rootReadme)]
     .map((y) => parse(y) as Record<string, unknown> | null)
     .filter((w): w is Record<string, unknown> => !!w && typeof w === "object" && "jobs" in w);
 

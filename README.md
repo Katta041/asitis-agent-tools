@@ -45,14 +45,86 @@ One person's CLAUDE.local.md is enough to stop Claude Code reading the team's AG
 
 **Install**, pick one:
 
+- GitHub Action, so every pull request that touches a steering file gets checked: copy the workflow under [Run it in CI](#run-it-in-ci)
 - Claude Code plugin: `claude plugin marketplace add Katta041/asitis-agent-tools && claude plugin install asitis@asitis`
 - Codex plugin: `codex plugin marketplace add Katta041/asitis-agent-tools && codex plugin add asitis@asitis`
 - Gemini CLI extension: `gemini extensions install https://github.com/Katta041/asitis-agent-tools`
 - Cursor: [Add to Cursor](https://cursor.com/en/install-mcp?name=asitis&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBhc2l0aXMvbWNwQDAuNC4zIiwiLS1yb290IiwiJHt3b3Jrc3BhY2VGb2xkZXJ9Il19) (adds the MCP server to your Cursor settings)
 - VS Code (Copilot agent mode): [add the MCP server](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522asitis%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522%2540asitis%252Fmcp%25400.4.3%2522%252C%2522--root%2522%252C%2522%2524%257BworkspaceFolder%257D%2522%255D%257D)
 - Any terminal, nothing to install: `npx -y -p @asitis/mcp@0.4.3 asitis lint`
-- GitHub Action: `uses: Katta041/asitis-agent-tools@v0.4.3` (full workflow under [CLI and CI](#cli-and-ci))
 - Devin Desktop (Windsurf), Cline, Kiro, Zed, Goose, Continue, JetBrains and Docker: [docs/install.md](docs/install.md)
+
+## Run it in CI
+
+Save this as `.github/workflows/asitis.yml`. It runs only when a steering file changes, puts findings on the pull request as annotations, and fails the check on errors. On pushes to `main` it also uploads a SARIF report, so findings show up under Security, Code scanning:
+
+```yaml
+name: asitis
+
+on:
+  pull_request:
+    paths:
+      - '**/CLAUDE.md'
+      - '**/CLAUDE.local.md'
+      - '**/AGENTS.md'
+      - '**/GEMINI.md'
+      - '**/SKILL.md'
+      - '.claude/**'
+      - '.cursor/rules/**'
+      - '.cursorrules'
+      - '.windsurf/rules/**'
+      - '.windsurfrules'
+      - '.clinerules'
+      - '.clinerules/**'
+      - '.github/copilot-instructions.md'
+      - '.github/instructions/**'
+      - '.github/prompts/**'
+      - '.asitisrc.json'
+      - '.github/workflows/asitis.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/CLAUDE.md'
+      - '**/CLAUDE.local.md'
+      - '**/AGENTS.md'
+      - '**/GEMINI.md'
+      - '**/SKILL.md'
+      - '.claude/**'
+      - '.cursor/rules/**'
+      - '.cursorrules'
+      - '.windsurf/rules/**'
+      - '.windsurfrules'
+      - '.clinerules'
+      - '.clinerules/**'
+      - '.github/copilot-instructions.md'
+      - '.github/instructions/**'
+      - '.github/prompts/**'
+      - '.asitisrc.json'
+      - '.github/workflows/asitis.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  asitis:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read # needed on private repos; harmless on public ones
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - uses: Katta041/asitis-agent-tools@v0.4.3
+        with:
+          upload-sarif: ${{ github.event_name == 'push' }}
+```
+
+The Action runs the CLI bundled in this repo, so there's no npm install in the job. The upload only happens on push because pull requests from forks never get `security-events: write`; annotations still show on every pull request. A private repo needs GitHub Code Security for the upload, and without it the upload is skipped with a warning while the lint result still decides the job. Inputs such as `fail-on: warning`, `root` and `include: skills` are in [action/README.md](action/README.md#inputs). If you make this check required in branch protection, drop the `paths` filters: GitHub leaves a required check that never ran as pending.
 
 **Why you can run it on your repo:** it has no write tool and no network code, and the plugin starts it under Node's permission model so the runtime blocks writes and child processes too. MIT licensed. I hand-labelled every error and warning it reports on 71 public repos: 91% are worth fixing in 0.4.0, up from 70% in 0.3.0.
 
