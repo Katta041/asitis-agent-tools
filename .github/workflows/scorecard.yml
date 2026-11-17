@@ -1,0 +1,39 @@
+name: scorecard
+
+# OpenSSF Scorecard: branch protection, pinned dependencies, token permissions and the
+# rest, published to api.scorecard.dev (for the README badge) and to code scanning.
+# The Scorecard API rejects results unless this file stays restricted: no workflow-level
+# env, defaults or write permissions, and only the actions listed below in the job.
+
+on:
+  push:
+    branches: [main]
+  branch_protection_rule:
+  schedule:
+    - cron: "29 6 * * 1" # Mondays 06:29 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  analysis:
+    name: scorecard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+      id-token: write # publish results to the Scorecard API
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: results.sarif
+          category: scorecard
