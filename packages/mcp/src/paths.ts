@@ -380,8 +380,9 @@ export class Sandbox {
       throw new UserError(`File too large: ${input} is ${mb(before.size)}; the limit is ${mb(maxBytes)}${limitHint}.`);
     }
     // O_NOFOLLOW refuses a final-component symlink swapped in after realpath;
-    // the dev/ino comparison catches a swapped regular file.
-    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
+    // the dev/ino comparison catches a swapped regular file. O_NONBLOCK keeps a FIFO swapped in
+    // after the stat from blocking the open (and the server) forever; isFile() then refuses it.
+    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
     let fh: fsp.FileHandle;
     try {
       fh = await fsp.open(r.real, flags);
@@ -391,6 +392,7 @@ export class Sandbox {
     try {
       const st = await fh.stat();
       if (st.ino !== before.ino || st.dev !== before.dev || !st.isFile()) throw new UserError(`Refused: ${input} changed while it was being opened.`);
+      await this.confirmOpened(r, st, input);
       if (!head && st.size > maxBytes) throw new UserError(`File too large: ${input} is ${mb(st.size)}; the limit is ${mb(maxBytes)}${limitHint}.`);
       const want = head ? Math.min(st.size, Math.max(0, headBytes)) : st.size;
       const buf = Buffer.alloc(want);
@@ -411,6 +413,31 @@ export class Sandbox {
     } finally {
       await fh.close();
     }
+  }
+
+  /**
+   * The checks before the open resolve the path, then open it again by name, so a folder on the
+   * way that is swapped for a symlink to outside the root in between (O_NOFOLLOW covers only the
+   * last part) would let the open read an outside file. After the open, resolve the path again: it
+   * must still be the same real path inside the root, and name the very file the handle has open
+   * (same dev and inode). A swap before the open fails the first test, a swap back after it the
+   * second.
+   *
+   * Hard links (nlink > 1) are allowed: git does not create them, but pnpm stores and `cp -al`
+   * copies do, and a hard link can only be made to a file the user could already read.
+   */
+  private async confirmOpened(r: Resolved, st: Stats, input: string): Promise<void> {
+    const changed = (): UserError => new UserError(`Refused: ${input} changed while it was being opened.`);
+    let again: string;
+    try {
+      again = await fsp.realpath(r.real);
+    } catch {
+      throw changed();
+    }
+    const inside = this.contain(again);
+    if (!inside || inside.real !== r.real) throw changed();
+    const now = await fsp.stat(inside.real).catch(() => null);
+    if (!now || now.ino !== st.ino || now.dev !== st.dev) throw changed();
   }
 
   /**
@@ -446,12 +473,45 @@ export class Sandbox {
     try {
       real = await fsp.realpath(lex.abs);
     } catch {
-      return { state: "missing" };
+      // A missing path through a symlink that leaves the root (h -> ~, then h/no-such-file) is
+      // "outside", like an existing one, so the answer says nothing about files out there.
+      return (await this.leavesRoot(lex.abs)) ? { state: "outside" } : { state: "missing" };
     }
     const inside = this.contain(real);
     if (!inside) return { state: "outside" };
     const st = await fsp.stat(inside.real).catch(() => null);
     return st ? { state: "ok", size: st.isFile() ? st.size : 0, real: inside.real, rel: inside.rel } : { state: "missing" };
+  }
+
+  /**
+   * For a path that does not resolve: whether some part of it that does exist is a symlink out of
+   * the roots. A symlink on the way is followed by its text (readlink), and a target outside the
+   * roots answers true, whether or not the target exists.
+   */
+  private async leavesRoot(abs: string): Promise<boolean> {
+    let lex = this.lexical(abs);
+    if (!lex) return true;
+    let hops = 0;
+    // Walk down from the root one part at a time, so a long missing path costs one lstat.
+    for (;;) {
+      const parts = lex.rel ? lex.rel.split("/") : [];
+      let cur = lex.root.real;
+      let next: ReturnType<Sandbox["lexical"]> = null;
+      for (let i = 0; i < parts.length; i++) {
+        cur = path.join(cur, parts[i]!);
+        const st = await fsp.lstat(cur).catch(() => null);
+        if (!st) return false; // missing from here on, inside the root
+        if (!st.isSymbolicLink()) continue;
+        if (++hops > 40) return true; // a long chain of links: say outside rather than guess
+        const to = await fsp.readlink(cur).catch(() => null);
+        if (to === null) return false;
+        next = this.lexical(path.resolve(path.dirname(cur), to, ...parts.slice(i + 1)));
+        if (!next) return true;
+        break;
+      }
+      if (!next) return false;
+      lex = next;
+    }
   }
 
   /** Display path of an opened file: the path as the agent tools see it, and where a symlink points. */
