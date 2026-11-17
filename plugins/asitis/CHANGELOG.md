@@ -2,6 +2,11 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+- `hooks/guard.mjs` escapes file names in `systemMessage`, `permissionDecisionReason` and `additionalContext`, and the text of its own error lines, with the rules in `packages/mcp/src/escape.ts`: control, bidi and invisible characters become `\u` escapes, a name with anything but plain path characters is quoted, and names are cut at 120 characters.
+
 ## [0.4.4] - 2026-11-17
 
 ### Added
