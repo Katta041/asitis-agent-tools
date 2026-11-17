@@ -12,6 +12,16 @@ import { GITMODULES_POLICY } from "./policy/gitmodules.js";
 import { PROJECT_FILES_POLICY } from "./policy/project-files.js";
 import { SKILL_SCRIPT_POLICY } from "./policy/skill-script.js";
 
+
+/**
+ * Same file by inode and volume. On Windows, libuv 1.49 and 1.50 (Node 22.13 to 22.16) report a different
+ * volume serial for a path than for an open handle to the same file (fixed in libuv 1.51, "win: fix the
+ * inconsistency in volume serial number"), so there only the file index is compared.
+ */
+function sameFile(a: { ino: number | bigint; dev: number | bigint }, b: { ino: number | bigint; dev: number | bigint }): boolean {
+  return a.ino === b.ino && (process.platform === "win32" || a.dev === b.dev);
+}
+
 export class UserError extends Error {
   override readonly name = "UserError";
 }
@@ -401,7 +411,7 @@ export class Sandbox {
     }
     try {
       const st = await fh.stat();
-      if (st.ino !== before.ino || st.dev !== before.dev || !st.isFile()) throw new UserError(`Refused: ${input} changed while it was being opened.`);
+      if (!sameFile(st, before) || !st.isFile()) throw new UserError(`Refused: ${input} changed while it was being opened.`);
       await this.confirmOpened(r, st, input);
       if (!head && st.size > maxBytes) throw new UserError(`File too large: ${input} is ${mb(st.size)}; the limit is ${mb(maxBytes)}${limitHint}.`);
       const want = head ? Math.min(st.size, Math.max(0, headBytes)) : st.size;
@@ -447,7 +457,7 @@ export class Sandbox {
     const inside = this.contain(again);
     if (!inside || inside.real !== r.real) throw changed();
     const now = await fsp.stat(inside.real).catch(() => null);
-    if (!now || now.ino !== st.ino || now.dev !== st.dev) throw changed();
+    if (!now || !sameFile(now, st)) throw changed();
   }
 
   /**

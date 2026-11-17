@@ -23,6 +23,7 @@ All notable changes to this repository are documented here. The format follows [
 - `suggest_fixes` shows its diff inside a fence longer than any backtick run in it, and writes bidi, zero-width and other control characters as `\u` escapes in the text. The JSON result and `asitis lint --fix-preview` keep the raw diff for `git apply`.
 
 ### Fixed
+- On Windows with Node 22.13 to 22.16, every file read was refused with "changed while it was being opened". Those Node versions report a different volume serial for a path than for an open handle to the same file (a libuv bug fixed in Node 22.17), so on Windows the check now compares the file index only. CI runs Windows on Node 22.13.0 now too.
 - A file of HTML comment openers inside a code span or a fence (`` `<!--<!--...` ``) took quadratic time: 200 KB took 16.7 s and 1 MB about 8 minutes on my machine, blocking the server. Both comment scanners now reuse their last search for `-->`, and the same 1 MB file lints in 0.1 s.
 - Reads recheck the real path and the inode after opening, so a folder swapped for a symlink to outside the project between the checks and the open is refused. A FIFO swapped in no longer blocks the open.
 - A missing path behind a symlink that leaves the project (`h -> ~`, then `[x](h/no-such-file)`) is now reported as outside the project, like an existing one, so findings no longer tell whether a file exists out there.
