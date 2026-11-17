@@ -1,6 +1,6 @@
 # asitis rules
 
-One page per rule: what it catches, why it matters, a bad and a good example, how to fix it, how to suppress or configure it, and the vendor page or incident it rests on. 88 rules are active in this build. Each finding in `asitis lint --format sarif` links to its page as `https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/<rule-id>.md`.
+One page per rule: what it catches, why it matters, a bad and a good example, how to fix it, how to suppress or configure it, and the vendor page or incident it rests on. 89 rules are active in this build. Each finding in `asitis lint --format sarif` links to its page as `https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/<rule-id>.md`.
 
 Severity is the default; `.asitisrc.json` can change it. Where it says "depends on location" or "varies", the rule reports some findings at a lower severity (a note in a README, a note for a CLAUDE.md just over 200 lines); the rule page says when. Security rules can be turned off in `.asitisrc.json` or in a baseline, never with a comment in the file.
 
@@ -77,6 +77,7 @@ Content a reviewer does not see but an agent does, and other signs of a steering
 | [hidden-comment](hidden-comment.md) | note | Comments hidden in rendered views |
 | [hidden-styled-text](hidden-styled-text.md) | warning | Inline style or the hidden attribute hides text |
 | [unclosed-comment](unclosed-comment.md) | warning | HTML comment never closes |
+| [unlinted-steering-target](unlinted-steering-target.md) | error, varies | A steering file or import loads a file AsItIs could not lint |
 | [unsafe-path](unsafe-path.md) | warning | File path contains control, bidi or invisible characters |
 | [sec-remote-exec](sec-remote-exec.md) | error, depends on location | Downloads code and runs it (curl or wget piped to a shell, and similar) |
 | [sec-encoded-blob](sec-encoded-blob.md) | warning, depends on location | Decodes base64 or hex and runs the result, or hides a command in an encoding |

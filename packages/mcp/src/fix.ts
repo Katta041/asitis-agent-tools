@@ -348,13 +348,22 @@ function render(project: ProjectResult, ps: FilePlan[], safety: "safe" | "all", 
     }
     if (notFixed.length > MAX_LISTED) lines.push(`  - and ${notFixed.length - MAX_LISTED} more`);
   }
+  // The JSON result keeps the raw diff for scripts that git apply it (JSON escapes every control
+  // character); the text the model reads gets the escaped copy.
   const diff = combineDiffs(ps.filter((p) => p.edits.length).map((p) => unifiedDiff(p.path, p.doc.file.buf, p.edits)));
+  const { text: shownDiff, escaped } = diffForModel(diff);
   if (fixes.length) {
     lines.push(
       "",
-      "To apply a fix, make one Edit per old/new pair: old is old_string and new is new_string. They are JSON strings, so \\n, \\r, \\t and \\u escapes stand for the exact characters. Change nothing else in the file. Or save the diff below to a file and run git apply on it.",
+      `To apply a fix, make one Edit per old/new pair: old is old_string and new is new_string. They are JSON strings, so \\n, \\r, \\t and \\u escapes stand for the exact characters. Change nothing else in the file. ${escaped ? "The diff below shows control and invisible characters as \\u escapes, so it is for reading only; for a diff git apply takes, run asitis lint --fix-preview." : "Or save the diff below to a file and run git apply on it."}`,
     );
-    if (diff.length <= MAX_DIFF_CHARS) lines.push("", "Diff:", "```diff", diff.replace(/\n$/, ""), "```");
+    if (diff.length <= MAX_DIFF_CHARS) {
+      // A fence longer than any backtick run in the diff, so a line of the file cannot close it.
+      let run = 0;
+      for (const m of shownDiff.matchAll(/`+/g)) run = Math.max(run, m[0].length);
+      const fence = "`".repeat(Math.max(3, run + 1));
+      lines.push("", "Diff:", `${fence}diff`, shownDiff.replace(/\n$/, ""), fence);
+    }
     else lines.push("", `The diff is ${Math.round(diff.length / 1024).toLocaleString("en-US")} KB, too long for this result. Pass rules or paths for a smaller one, or run asitis lint --fix-preview.`);
   }
   if (project.notes.length) lines.push("", ...project.notes.map((t) => esc(t, 400)));
@@ -370,6 +379,29 @@ function render(project: ProjectResult, ps: FilePlan[], safety: "safe" | "all", 
       diff,
     },
   };
+}
+
+/**
+ * A diff as the MCP tool shows it: the file's bytes are untrusted, so control and invisible
+ * characters (bidi overrides, zero-width, lone CR) become \\u escapes, keeping only the line
+ * breaks, CRLF and tabs a diff needs. --fix-preview in the CLI and the structured result keep the raw
+ * diff for git apply.
+ */
+function diffForModel(diff: string): { text: string; escaped: boolean } {
+  let out = "";
+  let escaped = false;
+  for (let i = 0; i < diff.length; ) {
+    const cp = diff.codePointAt(i)!;
+    const ch = String.fromCodePoint(cp);
+    i += ch.length;
+    const keep = cp === 10 || cp === 9 || (cp === 13 && diff.charCodeAt(i) === 10);
+    if (keep || !unsafeCodePoint(cp)) out += ch;
+    else {
+      escaped = true;
+      out += esc(ch);
+    }
+  }
+  return { text: out, escaped };
 }
 
 /**

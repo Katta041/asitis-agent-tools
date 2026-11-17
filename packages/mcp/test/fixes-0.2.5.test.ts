@@ -421,7 +421,7 @@ describe("result size and paging (robustness M2, L7; e2e F3, F10)", () => {
     const dir = project(files);
     await withServer(dir, async (c) => {
       const r = await c.call("lint_steering");
-      expect(r.text).toMatch(/That is 300 of the 305 steering files found \(at most 300 per call\)\. Pass paths \(up to 50 per call\) to lint the others/);
+      expect(r.text).toMatch(/That is the first 300 of the 305 steering files found \(at most 300 per call\)\. Pass paths \(up to 50 per call\) to lint the others/);
     });
   });
   test("more than 200 imports: the overflow is named, not counted, and flagged", async () => {

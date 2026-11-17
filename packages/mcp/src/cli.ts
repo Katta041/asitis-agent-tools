@@ -4,7 +4,7 @@
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { Sandbox, UserError } from "./paths.js";
+import { Sandbox, UserError, wildcardGrant } from "./paths.js";
 import { createServer } from "./server.js";
 import { VERSION } from "./version.js";
 
@@ -96,6 +96,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
   // The asitis.app line is opt-in: --footer or ASITIS_MCP_FOOTER=1. --no-footer is still accepted (it is the default).
   const footer = !values["no-footer"] && (values.footer !== undefined ? on(values.footer) : on(process.env["ASITIS_MCP_FOOTER"]));
+
+  const wild = wildcardGrant();
+  if (wild) fail(`refusing to start under --allow-fs-read=${wild}: Node reads a "*" there as a wildcard, which can allow more than the project folder. Grant the folder by its plain path.`);
 
   let sandbox: Sandbox;
   try {

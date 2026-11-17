@@ -36,6 +36,8 @@ function fail(message, code) {
 
 export function nodeTooOld(version) {
   const v = String(version).replace(/^v/, "").split(".").map((x) => parseInt(x, 10) || 0);
+  // 23.0 to 23.4 only know --experimental-permission; --permission came to the 23 line in 23.5.
+  if (v[0] === 23 && (v[1] || 0) < 5) return true;
   for (let i = 0; i < 3; i++) {
     if ((v[i] || 0) > MIN[i]) return false;
     if ((v[i] || 0) < MIN[i]) return true;
@@ -80,7 +82,7 @@ export function dedupeReadGrants(args) {
 /** The one-line message for a Node that is too old, or null when the version is fine. */
 export function versionMessage(version) {
   if (!nodeTooOld(version)) return null;
-  return `AsItIs needs Node 22.13 or later; you have ${String(version).replace(/^v/, "")}. Install a current Node from https://nodejs.org, then restart Claude Code.`;
+  return `AsItIs needs Node 22.13 or later (23.5 or later on the 23 line); you have ${String(version).replace(/^v/, "")}. Install a current Node from https://nodejs.org, then restart Claude Code.`;
 }
 
 function main() {
@@ -90,6 +92,9 @@ function main() {
   if (args[0] !== "--permission") fail("the launcher must be started with --permission as its first option (see the plugin's .mcp.json).", 2);
   const script = args.findIndex((a) => !a.startsWith("-"));
   if (script < 0 || real(args[script]) !== real(SERVER)) fail(`the launcher only starts ${SERVER}.`, 2);
+  const wild = args.slice(0, script).find((a) => a.startsWith("--allow-fs-read=") && a.includes("*"));
+  // Node reads a "*" in a grant as a wildcard (a trailing /* grants every folder that starts with the prefix).
+  if (wild) fail(`refusing ${wild}: a "*" in a read grant is a wildcard to Node and would allow more than the project folder. Start Claude Code from a folder whose path has no "*".`, 2);
   const nodeFlags = dedupeReadGrants(args.slice(0, script));
   const child = spawn(process.execPath, [...nodeFlags, ...args.slice(script)], { stdio: "inherit", windowsHide: true });
   const forward = (sig) => () => {

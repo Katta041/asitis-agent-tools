@@ -10,12 +10,12 @@ It gives your coding agent seven tools to read, outline, lint, budget and sugges
 
 ## Install
 
-Requires Node 22.13 or later. Always pin the version; never use `@latest` in an agent config. MCP clients start servers outside your project, so give `--root` as an absolute path.
+Requires Node 22.13 or later. Always pin the version; never use `@latest` in an agent config. MCP clients start servers outside your project, so give `--root` as an absolute path. The configs below pass `--prefix=~/` to npx: without it, npx started inside a project runs that project's `node_modules/@asitis/mcp` if the version matches, so a repo you open could ship its own copy.
 
 Check that it runs:
 
 ```bash
-npx -y @asitis/mcp@0.4.4 --version
+npx -y @asitis/mcp@0.4.5 --version
 ```
 
 ### Claude Code
@@ -23,7 +23,7 @@ npx -y @asitis/mcp@0.4.4 --version
 Run this in your project folder:
 
 ```bash
-claude mcp add asitis -- npx -y @asitis/mcp@0.4.4 --root "$PWD"
+claude mcp add asitis -- npx --prefix=~/ -y @asitis/mcp@0.4.5 --root "$PWD"
 ```
 
 Or install the [Claude Code plugin](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/README.md), which adds a byte-clean editing skill, `/asitis:md-lint`, `/asitis:md-budget` and an optional guard hook, and runs this server under Node's permission model:
@@ -42,7 +42,7 @@ claude plugin install asitis@asitis
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.5", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -57,7 +57,7 @@ claude plugin install asitis@asitis
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "${workspaceFolder}"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.5", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -75,7 +75,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
     "asitis": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "${workspaceFolder}"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.5", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -88,7 +88,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 ```toml
 [mcp_servers.asitis]
 command = "npx"
-args = ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+args = ["--prefix=~/", "-y", "@asitis/mcp@0.4.5", "--root", "/absolute/path/to/project"]
 ```
 
 ### Gemini CLI
@@ -100,7 +100,7 @@ args = ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.5", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -111,7 +111,7 @@ args = ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
 Run the file directly under Node's permission model so Node itself denies writes and child processes (and network access on Node 25 and later):
 
 ```bash
-npm install -g @asitis/mcp@0.4.4
+npm install -g @asitis/mcp@0.4.5
 node --permission \
   --allow-fs-read="$(npm root -g)/@asitis/mcp" \
   --allow-fs-read=/absolute/path/to/project \
@@ -127,18 +127,18 @@ If a desktop app cannot find `npx` or `node`, use its full path (run `which npx`
 The package also has an `asitis` command for scripts, CI and pre-commit. It lints the same way as `lint_steering` and exits 0 (clean), 1 (findings at or above `--fail-on`, default `error`), 2 (something you can fix, one line on stderr), 3 (a bug in asitis) or 4 (a partial run: the repo was too big to search in full, so only the files found were linted; `--allow-partial` gives 0 or 1 instead).
 
 ```bash
-npx -y -p @asitis/mcp@0.4.4 asitis lint                      # every steering file under the current folder
-npx -y -p @asitis/mcp@0.4.4 asitis lint CLAUDE.md AGENTS.md  # only these files
-npx -y -p @asitis/mcp@0.4.4 asitis lint --format sarif > asitis.sarif
-npx -y -p @asitis/mcp@0.4.4 asitis lint --fix-preview=safe | git apply   # apply the safe fixes yourself
-npx -y -p @asitis/mcp@0.4.4 asitis budget                    # tokens each agent loads every session
-npx -y -p @asitis/mcp@0.4.4 asitis loads packages/api        # what each agent loads when it starts in packages/api
+npx -y -p @asitis/mcp@0.4.5 asitis lint                      # every steering file under the current folder
+npx -y -p @asitis/mcp@0.4.5 asitis lint CLAUDE.md AGENTS.md  # only these files
+npx -y -p @asitis/mcp@0.4.5 asitis lint --format sarif > asitis.sarif
+npx -y -p @asitis/mcp@0.4.5 asitis lint --fix-preview=safe | git apply   # apply the safe fixes yourself
+npx -y -p @asitis/mcp@0.4.5 asitis budget                    # tokens each agent loads every session
+npx -y -p @asitis/mcp@0.4.5 asitis loads packages/api        # what each agent loads when it starts in packages/api
 ```
 
 Formats: `text`, `json`, `sarif` (the standard report format GitHub code scanning reads) and `github` (pull request annotations). With `github`, only errors and warnings become annotations; add `--annotate-notes` to annotate notes as well. It never writes a file; `--fix-preview` prints a diff and you decide whether to apply it. `asitis lint --help` and `asitis budget --help` list each command's options.
 
 ```text
-$ npx -y -p @asitis/mcp@0.4.4 asitis lint --include skills
+$ npx -y -p @asitis/mcp@0.4.5 asitis lint --include skills
 .claude/skills/release/SKILL.md:4:1 warning sec-skill-allowed-tools allowed-tools pre-approves "Bash" (any shell command), so during the turn that invokes this skill those calls go ahead without asking you; scope each entry to the commands it needs, for example Bash(git status *) or WebFetch(domain:docs.example.com)
 
 CLAUDE.md:7:1 warning duplicate-rule Same rule as line 5: "Run `pnpm test` before every commit". Duplicates cost context and drift apart when one is edited; keep one
@@ -166,7 +166,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - uses: Katta041/asitis-agent-tools@v0.4.4
+      - uses: Katta041/asitis-agent-tools@v0.4.5
 ```
 
 **pre-commit.** Lints only the staged steering files:
@@ -174,7 +174,7 @@ jobs:
 ```yaml
 repos:
   - repo: https://github.com/Katta041/asitis-agent-tools
-    rev: v0.4.4
+    rev: v0.4.5
     hooks:
       - id: asitis-lint
 ```
@@ -206,7 +206,7 @@ Put an `.asitisrc.json` at the project root. Everything is optional:
 | `ignore`, `overrides` | Globs for files to skip, and per-glob rule settings. |
 | `include` | Opt-in scans: `skills`, `config`, `config-local`. Honoured by the CLI and the Action. The MCP server ignores it and asks you to pass `include` to `lint_steering`, so a repo cannot make the server read more than you asked for. |
 
-A typo stops the run with the file, line and a suggestion (`.asitisrc.json line 2: unknown key "rulez" (did you mean "rules"?)`).
+In the CLI, a typo stops the run with exit code 2 and the file, line and a suggestion (`.asitisrc.json line 2: unknown key "rulez" (did you mean "rules"?)`), so a broken config fails CI visibly. In the MCP server a repo's own config is not trusted by default, so one that fails to load (bad JSON, over 64 KB, a symlink out of the folder) is ignored: `lint_steering` lints with the defaults and adds one line saying why. With `trustRepoConfig: true` it stops with the error, as the CLI does.
 
 To silence one finding, put a comment above it with the rule id: `<!-- asitis-disable-next-line duplicate-rule -- the two sections are alternatives -->`, or `asitis-disable-file` for the whole file. The reason after `--` is optional; when you give one it is carried into the JSON and SARIF output. The rule id is the word after the severity in each finding, and [`docs/rules/`](https://github.com/Katta041/asitis-agent-tools/blob/main/docs/rules/README.md) lists them all. Security rules (hidden instructions, invisible characters, the `sec-*` rules) cannot be silenced by a comment, since a comment is exactly what an attacker would add; turn them off in `.asitisrc.json` or a baseline, where it shows in review. For an existing repo, `asitis lint --format json --write-baseline > .asitis-baseline.json` and then `--baseline .asitis-baseline.json` reports only new findings.
 
@@ -254,7 +254,7 @@ Vendor limits checked, with sources in [`src/limits.ts`](https://github.com/Katt
 ## Security model
 
 - **Root confinement.** Every path is resolved with `realpath` and must stay inside a root given at start-up. `../` traversal, absolute paths outside the root and symlinks (file or folder) that resolve outside are refused. Symlinks that resolve inside a root are followed, so a CLAUDE.md that links to AGENTS.md or a linked `.claude/skills` folder is checked where the agent sees it. The filesystem root and your home folder are refused as roots unless you pass `--allow-broad-root`.
-- **Markdown only, unless you opt in.** By default only `.md`, `.mdc`, `.markdown`, `.mdx`, `.cursorrules`, `.windsurfrules` and `.clinerules` are read, plus `.asitisrc.json` (at most 64 KB). `include: ["skills"]` adds the scripts inside skill folders (up to 1 MB each; other files there are read for their first 4 bytes only, to spot binaries), and `include: ["config"]` adds the agent settings and MCP config files listed under Privacy, plus the `package.json`, Makefile and `.gitignore` files that `dead-command` and `stale-path` use. `.env*`, anything in `.git/` or `node_modules/`, `~/.claude.json` and every other file are always refused, including through a symlink that points at them. A repo's `.asitisrc.json` cannot turn these scans on in the MCP server; only the call (or the CLI flag) can. `@imports` of other files are counted from their size, never read. Nothing that is read is ever run.
+- **Markdown only, unless you opt in.** By default only `.md`, `.mdc`, `.markdown`, `.mdx`, `.cursorrules`, `.windsurfrules` and `.clinerules` are read, plus `.asitisrc.json` (at most 64 KB). `include: ["skills"]` adds the scripts inside skill folders (up to 1 MB each; other files there are read for their first 4 bytes only, to spot binaries), and `include: ["config"]` adds the agent settings and MCP config files listed under Privacy, plus the `package.json`, Makefile and `.gitignore` files that `dead-command` and `stale-path` use. `.env*`, anything in `.git/` or `node_modules/`, `~/.claude.json` and every other file are always refused, including through a symlink that points at them. A repo's `.asitisrc.json` cannot turn these scans on in the MCP server; only the call (or the CLI flag) can. `@imports` of other files are counted from their size, never read; an import of a text file that isn't markdown (`@notes.txt`) gets an `unlinted-steering-target` warning that it wasn't checked, and a steering file that is a symlink to such a file or out of the folder gets an `unlinted-steering-target` error. Nothing that is read is ever run.
 - **Bounded work.** Files over 16 MB are refused (`--max-file-mb`), results are capped, every tool call has a 20 s budget, and every scanner is linear time. The test suite runs 32 adversarial 10 MB inputs (unclosed comments, bracket and backtick storms, 2,000-character import tokens, invalid UTF-8 and more) through every tool under a 3 s per-call budget.
 - **Untrusted content.** `read_markdown` labels file content as data, not instructions, and reports hidden instructions and invisible characters up front. This does not stop a model from obeying text it reads; it makes the text visible.
 - **Stronger sandbox, optional.** Run the server under Node's permission model so the runtime itself forbids writes and child processes (and network access on Node 25 and later). The Hardened setup under Install shows how; the Claude Code plugin does this by default.

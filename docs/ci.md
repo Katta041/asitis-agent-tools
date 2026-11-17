@@ -17,17 +17,19 @@ All of them need Node 22.13 or later. The full flag list is in [cli-contract.md]
 Works anywhere Node runs, nothing to install first:
 
 ```
-npx -y -p @asitis/mcp@0.4.4 asitis lint
+npx -y -p @asitis/mcp@0.4.5 asitis lint
 ```
 
 Keep the exact version in the command. `@latest` would let a new release change what your CI checks without a commit on your side.
 
+npx runs the copy in the repo's own `node_modules/@asitis/mcp` first when its version matches, and it reads the repo's `.npmrc`. If your pipeline runs on pull or merge requests from people you don't trust, they can commit both and run their own code in the job. Use the [GitHub Action](#github-actions) or the [pre-commit hook](#pre-commit) there: both run the CLI bundled in this repo and never look at the project's `node_modules`. Elsewhere, `npx --prefix=~/ -y -p @asitis/mcp@0.4.5 asitis lint` makes npx look in the home folder instead of the project.
+
 Useful variants:
 
 ```
-npx -y -p @asitis/mcp@0.4.4 asitis lint --fail-on warning
-npx -y -p @asitis/mcp@0.4.4 asitis lint --format json > asitis.json
-npx -y -p @asitis/mcp@0.4.4 asitis lint --format sarif > asitis.sarif
+npx -y -p @asitis/mcp@0.4.5 asitis lint --fail-on warning
+npx -y -p @asitis/mcp@0.4.5 asitis lint --format json > asitis.json
+npx -y -p @asitis/mcp@0.4.5 asitis lint --format sarif > asitis.sarif
 ```
 
 ## GitHub Actions
@@ -48,7 +50,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - uses: Katta041/asitis-agent-tools@v0.4.4
+      - uses: Katta041/asitis-agent-tools@v0.4.5
         with:
           sarif-file: ""
 ```
@@ -74,7 +76,7 @@ Add this to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/Katta041/asitis-agent-tools
-    rev: v0.4.4
+    rev: v0.4.5
     hooks:
       - id: asitis-lint
 ```
@@ -85,20 +87,22 @@ Dangerous hidden content (invisible characters, and hidden comments that ask the
 
 ```yaml
       - id: asitis-lint
-        args: [--fail-on, warning]
+        args: [--fail-on, warning, --]
 ```
+
+Keep `--` at the end when you set `args`. pre-commit puts the file names after it, and `--` makes sure a file named like an option (`--fail-on=never`) is read as a file, not a flag.
 
 The hook uses `language: script` and the file's `#!/usr/bin/env node` line. pre-commit reads that line itself on Windows, so the same config works there; the self-test runs it on Windows to keep that true.
 
 To try the hook without installing it:
 
 ```
-pre-commit try-repo https://github.com/Katta041/asitis-agent-tools asitis-lint --ref v0.4.4 --all-files
+pre-commit try-repo https://github.com/Katta041/asitis-agent-tools asitis-lint --ref v0.4.5 --all-files
 ```
 
 ### lefthook and husky
 
-These run the npm package instead of the bundled file. `{staged_files}` in lefthook and `git diff --cached` in husky pass only what you are committing. Both lists below match the same files as the pre-commit hook's `files:` pattern.
+These run the npm package instead of the bundled file, so the `node_modules` note under [Plain npx](#plain-npx) applies. `{staged_files}` in lefthook and `git diff --cached` in husky pass only what you are committing. Both lists below match the same files as the pre-commit hook's `files:` pattern.
 
 lefthook (`lefthook.yml`). `glob_matcher: doublestar` matters: with lefthook's default matcher `**/CLAUDE.md` needs at least one folder, so a `CLAUDE.md` at the repo root would never be linted.
 
@@ -108,7 +112,7 @@ pre-commit:
   commands:
     asitis:
       glob: "{**/CLAUDE.md,**/CLAUDE.local.md,**/AGENTS.md,**/GEMINI.md,**/SKILL.md,**/MEMORY.md,**/.cursorrules,**/.windsurfrules,**/.clinerules,**/.claude/agents/**/*.md,**/.claude/commands/**/*.md,**/.claude/rules/**/*.md,**/.cursor/rules/**/*.mdc,**/.windsurf/rules/**/*.md,**/.clinerules/**/*.md,.github/copilot-instructions.md,**/.github/agents/**/*.md,**/*.instructions.md,**/*.prompt.md,**/*.agent.md,**/*.chatmode.md,memory/*.md}"
-      run: npx -y -p @asitis/mcp@0.4.4 asitis lint {staged_files}
+      run: npx -y -p @asitis/mcp@0.4.5 asitis lint -- {staged_files}
 ```
 
 husky (`.husky/pre-commit`). `--diff-filter=ACMR` keeps added, copied, modified and renamed files and leaves deleted ones out. `-z` with `xargs -0 -r` keeps a file name with spaces in one piece and runs nothing when no steering file is staged.
@@ -122,17 +126,19 @@ git diff --cached --name-only --diff-filter=ACMR -z -- \
   ':(glob)**/.clinerules/**/*.md' ':(glob).github/copilot-instructions.md' ':(glob)**/.github/agents/**/*.md' \
   ':(glob)**/*.instructions.md' ':(glob)**/*.prompt.md' ':(glob)**/*.agent.md' ':(glob)**/*.chatmode.md' \
   ':(glob)memory/*.md' \
-  | xargs -0 -r npx -y -p @asitis/mcp@0.4.4 asitis lint
+  | xargs -0 -r npx -y -p @asitis/mcp@0.4.5 asitis lint --
 ```
 
 ## GitLab CI
+
+The npx lines below use the project's `node_modules/@asitis/mcp` if one is committed at the same version (see [Plain npx](#plain-npx)). For merge requests from forks, add `--prefix=~/` after `npx`.
 
 ```yaml
 asitis:
   stage: test
   image: node:22
   script:
-    - npx -y -p @asitis/mcp@0.4.4 asitis lint
+    - npx -y -p @asitis/mcp@0.4.5 asitis lint
 ```
 
 To keep the full report with the job, write JSON as an artifact. `--fail-on never` lets the second command decide the job result:
@@ -142,8 +148,8 @@ asitis:
   stage: test
   image: node:22
   script:
-    - npx -y -p @asitis/mcp@0.4.4 asitis lint --format json --fail-on never > asitis.json
-    - npx -y -p @asitis/mcp@0.4.4 asitis lint
+    - npx -y -p @asitis/mcp@0.4.5 asitis lint --format json --fail-on never > asitis.json
+    - npx -y -p @asitis/mcp@0.4.5 asitis lint
   artifacts:
     when: always
     paths:
@@ -161,6 +167,6 @@ Anything that can run Node 22.13 can run the npx line. Use `--format sarif` wher
 Write a baseline, commit it, and point CI at it. Findings listed there are reported as suppressed, and only new ones fail.
 
 ```
-npx -y -p @asitis/mcp@0.4.4 asitis lint --format json --write-baseline > .asitis-baseline.json
-npx -y -p @asitis/mcp@0.4.4 asitis lint --baseline .asitis-baseline.json
+npx -y -p @asitis/mcp@0.4.5 asitis lint --format json --write-baseline > .asitis-baseline.json
+npx -y -p @asitis/mcp@0.4.5 asitis lint --baseline .asitis-baseline.json
 ```

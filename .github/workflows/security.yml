@@ -1,0 +1,82 @@
+name: security
+
+# Workflow lint (zizmor) and a dependency gate for what we actually ship.
+# Code scanning (CodeQL) is in codeql.yml, OpenSSF Scorecard in scorecard.yml.
+# Secrets are left to GitHub secret scanning with push protection (repo settings),
+# since this repo's own tests and rule docs are full of fake keys by design.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "41 4 * * 1" # Mondays 04:41 UTC, so new advisories show up without a push
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor:
+    name: zizmor (workflow security)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Fails on medium and above. The low findings left (self-repository syntax in
+      # action-selftest.yml) are style notes.
+      - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          version: "1.32.0"
+          min-severity: medium
+          advanced-security: false
+          annotations: true
+
+  npm-audit:
+    name: npm audit (bundled dependencies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      # Everything we ship is esbuild-bundled from devDependencies, so `--omit=dev` would
+      # report nothing. Instead: audit the whole lockfile, fail on high or critical in a
+      # package that is inside the bundle (the list in THIRD_PARTY_NOTICES.md), and only
+      # warn for dev tooling that never reaches users.
+      - name: Gate on high and critical advisories in bundled packages
+        run: |
+          npm audit --json > npm-audit.json || true
+          node - <<'EOF'
+          const fs = require("fs");
+          const audit = JSON.parse(fs.readFileSync("npm-audit.json", "utf8"));
+          if (audit.error) { console.log(`::error title=npm audit::${audit.error.summary}`); process.exit(1); }
+          const notices = fs.readFileSync("plugins/asitis/server/THIRD_PARTY_NOTICES.md", "utf8");
+          const shipped = new Set([...notices.matchAll(/^## (\S+) /gm)].map((m) => m[1]));
+          if (shipped.size === 0) { console.log("::error title=npm audit::no packages found in THIRD_PARTY_NOTICES.md"); process.exit(1); }
+          let blocking = 0;
+          for (const [name, v] of Object.entries(audit.vulnerabilities ?? {})) {
+            const ids = v.via.filter((x) => typeof x === "object").map((x) => x.url).join(" ");
+            const high = v.severity === "high" || v.severity === "critical";
+            if (shipped.has(name) && high) {
+              blocking++;
+              console.log(`::error title=Bundled dependency::${v.severity} in ${name} ${v.range} ${ids}`);
+            } else if (shipped.has(name)) {
+              console.log(`::warning title=Bundled dependency::${v.severity} in ${name} ${v.range} ${ids}`);
+            } else {
+              console.log(`${v.severity} in ${name} ${v.range} (dev tooling, not bundled) ${ids}`);
+            }
+          }
+          console.log(`${shipped.size} bundled packages checked, ${blocking} blocking`);
+          process.exit(blocking ? 1 : 0);
+          EOF

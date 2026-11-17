@@ -1,6 +1,6 @@
 # Third-party notices
 
-@asitis/mcp 0.4.4 bundles the following packages.
+@asitis/mcp 0.4.5 bundles the following packages.
 
 ## @modelcontextprotocol/sdk 1.32.1 (MIT)
 
@@ -106,7 +106,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## fast-uri 3.1.8 (BSD-3-Clause)
+## fast-uri 3.1.9 (BSD-3-Clause)
 
 ```
 Copyright (c) 2011-2021, Gary Court until https://github.com/garycourt/uri-js/commit/a1acf730b4bba3f1097c9f52e7d9d3aba8cdcaae

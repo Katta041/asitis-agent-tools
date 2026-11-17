@@ -1,6 +1,6 @@
 {
   "name": "@asitis/mcp",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "mcpName": "io.github.Katta041/asitis-mcp",
   "description": "Linter for CLAUDE.md, AGENTS.md, SKILL.md and Cursor rules: hidden instructions, invisible characters, token budget, files your agent never loads. CLI, MCP server, GitHub Action. Read-only.",
   "type": "module",

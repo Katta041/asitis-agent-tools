@@ -208,7 +208,8 @@ describe(".pre-commit-hooks.yaml", () => {
   test("runs the bundled CLI on the changed files and fails on errors by default", () => {
     expect(hook.language).toBe("script");
     expect(hook.entry).toBe("action/asitis.mjs lint");
-    expect(hook.args).toEqual(["--fail-on", "error"]);
+    // "--" last, so a staged file named like an option is read as a path.
+    expect(hook.args).toEqual(["--fail-on", "error", "--"]);
     expect(hook.pass_filenames).toBe(true);
   });
 
@@ -265,6 +266,23 @@ describe.skipIf(!bash)("action/run.sh", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }
+
+  test("a path named like an option is linted as a path, never read as a flag", () => {
+    // Before "--" was passed, a file named --help printed the help and passed the job.
+    const r = runAction({ INPUT_ROOT: "test-fixtures/ci/clean", INPUT_PATHS: "--help" });
+    expect(r.code).toBe(2);
+    expect(r.outputs["exit-code"]).toBe("2");
+    expect(r.stdout).toMatch(/^::error title=asitis::asitis: --help: /m);
+    expect(r.stdout).not.toMatch(/asitis lint \[paths/);
+  });
+
+  test("an input with a line break or % stays inside one error annotation", () => {
+    const r = runAction({ INPUT_FORMAT: "x\n::add-mask::secret %0A\r" });
+    expect(r.code).toBe(2);
+    const lines = r.stdout.split("\n").filter((l) => l.trim());
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toBe('::error title=asitis::format must be github, text or json, not "x%0A::add-mask::secret %250A%0D".');
+  });
 
   test("clean fixture: exit-code 0, no annotations", () => {
     const r = runAction({ INPUT_ROOT: "test-fixtures/ci/clean" });

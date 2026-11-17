@@ -11,7 +11,7 @@
       "name": "asitis",
       "source": "./plugins/asitis",
       "description": "Read-only linter for CLAUDE.md, AGENTS.md and SKILL.md: what each agent loads, token budgets, hidden text. /asitis:md-lint, md-loads, md-budget, md-fix, two skills and an optional markdown accident guard.",
-      "version": "0.4.4",
+      "version": "0.4.5",
       "category": "development"
     }
   ]

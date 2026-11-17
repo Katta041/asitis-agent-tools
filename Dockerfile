@@ -10,7 +10,7 @@ FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d
 LABEL org.opencontainers.image.source="https://github.com/Katta041/asitis-agent-tools" \
       org.opencontainers.image.description="Read-only MCP server and linter for CLAUDE.md, AGENTS.md and SKILL.md" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="0.4.4" \
+      org.opencontainers.image.version="0.4.5" \
       io.modelcontextprotocol.server.name="io.github.Katta041/asitis-mcp"
 
 WORKDIR /app

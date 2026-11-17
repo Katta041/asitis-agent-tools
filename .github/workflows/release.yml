@@ -1,7 +1,12 @@
-# Draft: publishes @asitis/mcp to npm with trusted publishing (OIDC) and provenance.
+# Publishes @asitis/mcp to npm with trusted publishing (OIDC) and provenance.
 # Manual trigger only. Before the first run, configure a Trusted Publisher for this
 # repository and workflow file on npmjs.com, and create the protected "npm"
 # environment with required reviewers in the repository settings.
+#
+# Two jobs. "build" installs, tests and packs with read-only permissions and no OIDC token,
+# so nothing that runs during npm ci or the tests can mint a publish token. "publish" runs in
+# the npm environment, installs nothing, checks the tarball's SHA-256 against the one build
+# recorded, and publishes that exact file.
 name: release
 
 on:
@@ -12,15 +17,22 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: read # checkout only
+
+# One release at a time; a second run waits instead of cancelling a publish halfway.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  build:
+    name: build, test and pack
     runs-on: ubuntu-latest
-    environment: npm
     permissions:
-      contents: read
-      id-token: write
+      contents: read # checkout only
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,18 +40,77 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          registry-url: "https://registry.npmjs.org"
-      - name: npm with trusted publishing support
-        run: npm install -g npm@11.5.1
+          package-manager-cache: false
       - name: Version matches the input
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: test "$(node -p "require('./packages/mcp/package.json').version")" = "$INPUT_VERSION"
       - run: npm ci --ignore-scripts
       - run: npm test
-      - name: Tarball SHA-256
+      - name: Pack and record the SHA-256
+        id: pack
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
+          mkdir -p "$RUNNER_TEMP/release"
           cd packages/mcp
-          npm pack --ignore-scripts
-          sha256sum asitis-mcp-*.tgz
-      - run: npm publish -w @asitis/mcp --access public --provenance
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/release"
+          tarball="asitis-mcp-${INPUT_VERSION}.tgz"
+          cd "$RUNNER_TEMP/release"
+          test -f "$tarball"
+          sha256sum "$tarball" | tee "$tarball.sha256"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(cut -d' ' -f1 "$tarball.sha256")" >> "$GITHUB_OUTPUT"
+      - name: The packed server and CLI are the builds pinned in the plugin
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          dir="$RUNNER_TEMP/unpacked"
+          mkdir -p "$dir"
+          tar -xzf "$RUNNER_TEMP/release/$TARBALL" -C "$dir"
+          test "$(sha256sum "$dir/package/dist/asitis-mcp.mjs" | cut -d' ' -f1)" = "$(sed -n 's/^sha256 //p' plugins/asitis/server/VERSION)"
+          test "$(sha256sum "$dir/package/dist/asitis.mjs" | cut -d' ' -f1)" = "$(sed -n 's/^asitis.mjs sha256 //p' plugins/asitis/server/VERSION)"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-tarball
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read # read-only; this job checks out nothing
+      id-token: write # npm trusted publishing (OIDC) and provenance
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - name: npm is new enough for trusted publishing (11.5.1 or later)
+        run: |
+          npm --version
+          node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && (b > 5 || (b === 5 && c >= 1))) ? 0 : 1)' "$(npm --version)"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-tarball
+          path: ${{ runner.temp }}/release
+      - name: SHA-256 matches the build job
+        env:
+          TARBALL: ${{ needs.build.outputs.tarball }}
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
+        working-directory: ${{ runner.temp }}/release
+        run: |
+          actual="$(sha256sum "$TARBALL" | cut -d' ' -f1)"
+          echo "expected $EXPECTED"
+          echo "actual   $actual"
+          test -n "$EXPECTED" && test "$actual" = "$EXPECTED"
+      - name: Publish the tested tarball
+        env:
+          TARBALL: ${{ needs.build.outputs.tarball }}
+        working-directory: ${{ runner.temp }}/release
+        run: npm publish "./$TARBALL" --access public --provenance --ignore-scripts

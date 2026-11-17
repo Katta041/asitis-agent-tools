@@ -2,6 +2,24 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.5] - 2026-11-17
+
+### Added
+- `unlinted-steering-target` (security, error; `src/discover.ts`, `src/project.ts`, `src/lint.ts`): the walk and named targets report a steering file name that is a symlink to a file outside the roots or to one `policyRefusal` refuses, instead of skipping it or failing the read. Import chains report an `@import` of a text file the policy refuses (by `IMPORTED_TEXT`) as a warning. The target is never opened. A repo config can't hide it without trust, as with every security rule.
+
+### Changed
+- `lintProject` (`repoConfig`): when neither `trustRepoConfig` nor `configPath` is set, a `UserError` from loading `.asitisrc.json` is turned into a note and the lint runs with no config. The CLI passes `trustRepoConfig`, so it still exits 2.
+- `suggest_fixes` text: the diff fence is one backtick longer than the longest run in the diff, and unsafe code points (`unsafeCodePoint`) are escaped except LF, CRLF and tab. When anything was escaped the text says to use `asitis lint --fix-preview` for `git apply`. `structuredContent.diff` stays raw.
+
+### Fixed
+- On Windows with Node 22.13 to 22.16, every file read was refused with "changed while it was being opened". Those Node versions report a different volume serial for a path than for an open handle to the same file (a libuv bug fixed in Node 22.17), so on Windows the check now compares the file index only. CI runs Windows on Node 22.13.0 now too.
+- `scan.ts`: `CommentCloser` remembers the last `-->` search, and `scanComments` and `extractImports` use it, so openers skipped in code spans or fences no longer each scan to the end of the file. 1 MB of `` `<!--<!--... `` went from about 8 minutes to 0.1 s. A test checks it gives exactly what `commentClose` gives on 2,000 random inputs, and the CLI output on the test fixtures and 59 adversarial roots is unchanged.
+- `paths.ts` `openChecked`: after the open, the path is resolved again and must give the same real path inside the root, and its stat must match the handle's dev and inode. Opens add `O_NONBLOCK`. Hard links (nlink > 1) are still allowed: pnpm stores and `cp -al` copies use them, and a hard link can only point at a file the user could read anyway.
+- `paths.ts` `probe`: when realpath fails, the path is walked from the root with lstat and readlink; a symlink whose target is outside the roots gives `outside` whether the target exists or not.
+- `frontmatter.ts`: `keyLines` has no prototype, and the cut-value check reads the parsed value with `Object.hasOwn`. `format/sarif.ts` and `format/github.ts` clamp line and column to whole numbers of 1 or more.
+- The server refuses to start under an `--allow-fs-read` grant containing `*` (`wildcardGrant`), and the plugin launcher refuses it and Node 23.0 to 23.4.
+- The "That is N of the M steering files found" line shows only when `CAPS.lintMaxFiles` cut the walk. `resolveReal` errors no longer include the root's absolute path. The MCP instructions list `.asitisrc.json`, `.gitmodules` and the opt-in reads.
+
 ## [0.4.4] - 2026-11-17
 
 ### Added

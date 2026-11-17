@@ -1,7 +1,7 @@
 ---
 description: Show fixes for mechanical problems in steering files as a diff, and apply them with your OK
 argument-hint: [path]
-allowed-tools: mcp__plugin_asitis_asitis__suggest_fixes, Read, Edit
+allowed-tools: mcp__plugin_asitis_asitis__suggest_fixes, Read(**/*.md), Read(**/*.mdc), Read(**/.cursorrules), Read(**/.windsurfrules), Read(**/.clinerules), Edit(**/*.md), Edit(**/*.mdc), Edit(**/.cursorrules), Edit(**/.windsurfrules), Edit(**/.clinerules)
 ---
 Call the `suggest_fixes` tool from the `asitis` MCP server.
 

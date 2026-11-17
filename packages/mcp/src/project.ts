@@ -7,7 +7,7 @@ import path from "node:path";
 import { PROJECT_CHECKS } from "./checks/index.js";
 import { applyConfig, hiddenSecurityNote, loadConfig, matchesAny, type HiddenSecurity, type LoadedConfig } from "./config.js";
 import { analyse, type Doc } from "./doc.js";
-import { Deadline, walk, type WalkResult } from "./discover.js";
+import { Deadline, unlintedLink, walk, type UnlintedLink, type WalkResult } from "./discover.js";
 import { dp } from "./escape.js";
 import { findingPath, toFindings, type Finding, type FindingSource, type LineText } from "./findings.js";
 import { TOOL_NAME, type Kind } from "./kinds.js";
@@ -137,7 +137,7 @@ const MARKDOWN_TARGET = /\.(md|mdc|markdown|mdx)$|(^|[\\/])\.(cursorrules|windsu
 
 export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promise<ProjectResult> {
   const { deadline } = opts;
-  const config = await loadConfig(sandbox, opts.configPath === undefined ? {} : { configPath: opts.configPath });
+  const { config, configNote } = await repoConfig(sandbox, opts);
   const include = new Set<Include>([...(opts.include ?? []), ...(opts.configInclude ? (config?.include ?? []) : [])]);
   // Opt-ins the config asks for that this call did not grant: say so, read nothing extra.
   const asked = opts.configInclude ? [] : (config?.include ?? []).filter((x) => !include.has(x) && !(x === "config" && include.has("config-local")));
@@ -152,10 +152,12 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
   const cut = { depth: false, size: false, time: false };
   let unreadable: string[] = [];
   let walked: WalkResult | undefined;
+  const unlinted: UnlintedLink[] = [];
   if (!targets.length) {
     // Names too (not read), so checks can match path globs against the tree.
     const found = await walk(sandbox, { deadline, collectNames: true });
     walked = found;
+    unlinted.push(...found.unlinted); // applyConfig handles ignore, and only a trusted config can hide these
     // A folder an ignore pattern covers was not wanted anyway.
     unreadable = found.unreadable.filter((d) => !(config?.ignore.length && d !== "." && matchesAny(config.ignore, d)));
     discovered = true;
@@ -170,7 +172,19 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
     otherTargets.push(...targets.filter((t) => !MARKDOWN_TARGET.test(t)));
     targets = targets.filter((t) => MARKDOWN_TARGET.test(t));
   }
-  const single = !discovered && targets.length === 1 && !otherTargets.length;
+  if (!discovered) {
+    // A named steering file that is a symlink to something AsItIs does not read is reported, not
+    // refused: a CI run must not pass because CLAUDE.md points at notes.txt or out of the checkout.
+    const kept: string[] = [];
+    for (const t of targets) {
+      const lex = sandbox.lexical(t);
+      const bad = lex && lex.rel ? await unlintedLink(sandbox, lex.abs, lex.rel, !!lex.root.extra) : null;
+      if (bad) unlinted.push(bad);
+      else kept.push(t);
+    }
+    targets = kept;
+  }
+  const single = !discovered && targets.length === 1 && !otherTargets.length && !unlinted.length;
 
   let timedOut = false;
   const results: LintResult[] = [];
@@ -203,11 +217,21 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
       failures.push({ path: sandbox.display(t), error: failureText(e, t, sandbox.display(t)) });
     }
   }
+  for (const u of unlinted) {
+    results.push({
+      path: u.path,
+      kind: u.kind,
+      load: "other",
+      tokens: 0,
+      issues: [{ severity: "error", rule: "unlinted-steering-target", message: `Not linted: ${u.why}. Agent tools still load it, so hidden instructions in it would go unnoticed. Replace the link with the file itself, or point it at a markdown file inside the project`, line: 1 }],
+    });
+  }
   if (docs.length > 1) dropSymlinkCopies(docs, results);
   if (docs.length > 1) crossFileChecks(docs, results);
 
   // Project checks.
   const notes: string[] = [];
+  if (configNote) notes.push(configNote);
   if (unreadable.length) {
     const shown = unreadable.slice(0, 5).map((d) => dp(d)).join(", ");
     notes.push(`Could not read ${unreadable.length === 1 ? "1 folder" : `${unreadable.length} folders`} (permission denied), so the steering files in ${unreadable.length === 1 ? "it were" : "them were"} not linted: ${shown}${unreadable.length > 5 ? ` and ${unreadable.length - 5} more` : ""}. Fix the permissions, or add the folder to ignore in .asitisrc.json.`);
@@ -287,6 +311,24 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
     hiddenNote,
     findings: () => (cached ??= buildFindings(results, docs, lineTexts)),
   };
+}
+
+/**
+ * The config to lint with. A repo's own .asitisrc.json that can't be loaded (bad JSON, too big, a
+ * symlink out of the folder) is a hard error only when the caller trusts it: the CLI, an explicit
+ * --config, or lint_steering with trustRepoConfig. Otherwise (the MCP server's default) a cloned repo
+ * could use a broken config to make lint_steering return one error and hide every finding, so the
+ * lint runs with the defaults and one note says the config was ignored and why.
+ */
+async function repoConfig(sandbox: Sandbox, opts: ProjectOptions): Promise<{ config: LoadedConfig | null; configNote: string }> {
+  if (opts.configPath !== undefined) return { config: await loadConfig(sandbox, { configPath: opts.configPath }), configNote: "" };
+  try {
+    return { config: await loadConfig(sandbox, {}), configNote: "" };
+  } catch (e) {
+    if (opts.trustRepoConfig === true || !(e instanceof UserError)) throw e;
+    const why = e.message.length > 300 ? `${e.message.slice(0, 300)}...` : e.message;
+    return { config: null, configNote: `.asitisrc.json was ignored and the defaults were used, because it could not be loaded: ${why}` };
+  }
 }
 
 /**

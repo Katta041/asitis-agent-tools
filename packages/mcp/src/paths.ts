@@ -12,6 +12,16 @@ import { GITMODULES_POLICY } from "./policy/gitmodules.js";
 import { PROJECT_FILES_POLICY } from "./policy/project-files.js";
 import { SKILL_SCRIPT_POLICY } from "./policy/skill-script.js";
 
+
+/**
+ * Same file by inode and volume. On Windows, libuv 1.49 and 1.50 (Node 22.13 to 22.16) report a different
+ * volume serial for a path than for an open handle to the same file (fixed in libuv 1.51, "win: fix the
+ * inconsistency in volume serial number"), so there only the file index is compared.
+ */
+function sameFile(a: { ino: number | bigint; dev: number | bigint }, b: { ino: number | bigint; dev: number | bigint }): boolean {
+  return a.ino === b.ino && (process.platform === "win32" || a.dev === b.dev);
+}
+
 export class UserError extends Error {
   override readonly name = "UserError";
 }
@@ -182,6 +192,15 @@ function readGrants(): string[] {
 }
 
 /**
+ * A --allow-fs-read grant with a "*" in it, or null. Node reads "*" as a wildcard (a trailing /*
+ * allows every folder that starts with the prefix), so such a grant can allow far more than the
+ * project folder; the server refuses to start under one.
+ */
+export function wildcardGrant(): string | null {
+  return readGrants().find((g) => g.includes("*")) ?? null;
+}
+
+/**
  * Resolves and checks one root folder. The checks use the sync fs API on purpose:
  * on Node 22.13 a promise-based stat that the permission model denies rejects
  * outside the promise chain and crashes the process instead of throwing here.
@@ -314,7 +333,8 @@ export class Sandbox {
   async resolveReal(p: string, baseDir?: string): Promise<Resolved> {
     const input = this.validateInput(p);
     const lex = this.lexical(input, baseDir);
-    if (!lex) throw new UserError(`Refused: ${input} is outside the allowed folder ${this.primary.real}.`);
+    // No absolute path in the message: it reaches the model and any log of the session.
+    if (!lex) throw new UserError(`Refused: ${input} is outside the allowed folder.`);
     let real: string;
     try {
       real = await fsp.realpath(lex.abs);
@@ -324,7 +344,7 @@ export class Sandbox {
         const fe = fsError(e, input);
         if (fe) throw fe;
       }
-      throw new UserError(`File not found: ${input} (inside ${lex.root.real}). Paths are relative to that folder; find_steering_files lists the steering files.`);
+      throw new UserError(`File not found: ${input} (inside ${lex.root === this.primary ? "the allowed folder" : "the extra --root folder"}). Paths are relative to that folder; find_steering_files lists the steering files.`);
     }
     const inside = this.contain(real);
     if (inside) return inside;
@@ -380,8 +400,9 @@ export class Sandbox {
       throw new UserError(`File too large: ${input} is ${mb(before.size)}; the limit is ${mb(maxBytes)}${limitHint}.`);
     }
     // O_NOFOLLOW refuses a final-component symlink swapped in after realpath;
-    // the dev/ino comparison catches a swapped regular file.
-    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
+    // the dev/ino comparison catches a swapped regular file. O_NONBLOCK keeps a FIFO swapped in
+    // after the stat from blocking the open (and the server) forever; isFile() then refuses it.
+    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
     let fh: fsp.FileHandle;
     try {
       fh = await fsp.open(r.real, flags);
@@ -390,7 +411,8 @@ export class Sandbox {
     }
     try {
       const st = await fh.stat();
-      if (st.ino !== before.ino || st.dev !== before.dev || !st.isFile()) throw new UserError(`Refused: ${input} changed while it was being opened.`);
+      if (!sameFile(st, before) || !st.isFile()) throw new UserError(`Refused: ${input} changed while it was being opened.`);
+      await this.confirmOpened(r, st, input);
       if (!head && st.size > maxBytes) throw new UserError(`File too large: ${input} is ${mb(st.size)}; the limit is ${mb(maxBytes)}${limitHint}.`);
       const want = head ? Math.min(st.size, Math.max(0, headBytes)) : st.size;
       const buf = Buffer.alloc(want);
@@ -411,6 +433,31 @@ export class Sandbox {
     } finally {
       await fh.close();
     }
+  }
+
+  /**
+   * The checks before the open resolve the path, then open it again by name, so a folder on the
+   * way that is swapped for a symlink to outside the root in between (O_NOFOLLOW covers only the
+   * last part) would let the open read an outside file. After the open, resolve the path again: it
+   * must still be the same real path inside the root, and name the very file the handle has open
+   * (same dev and inode). A swap before the open fails the first test, a swap back after it the
+   * second.
+   *
+   * Hard links (nlink > 1) are allowed: git does not create them, but pnpm stores and `cp -al`
+   * copies do, and a hard link can only be made to a file the user could already read.
+   */
+  private async confirmOpened(r: Resolved, st: Stats, input: string): Promise<void> {
+    const changed = (): UserError => new UserError(`Refused: ${input} changed while it was being opened.`);
+    let again: string;
+    try {
+      again = await fsp.realpath(r.real);
+    } catch {
+      throw changed();
+    }
+    const inside = this.contain(again);
+    if (!inside || inside.real !== r.real) throw changed();
+    const now = await fsp.stat(inside.real).catch(() => null);
+    if (!now || !sameFile(now, st)) throw changed();
   }
 
   /**
@@ -446,12 +493,45 @@ export class Sandbox {
     try {
       real = await fsp.realpath(lex.abs);
     } catch {
-      return { state: "missing" };
+      // A missing path through a symlink that leaves the root (h -> ~, then h/no-such-file) is
+      // "outside", like an existing one, so the answer says nothing about files out there.
+      return (await this.leavesRoot(lex.abs)) ? { state: "outside" } : { state: "missing" };
     }
     const inside = this.contain(real);
     if (!inside) return { state: "outside" };
     const st = await fsp.stat(inside.real).catch(() => null);
     return st ? { state: "ok", size: st.isFile() ? st.size : 0, real: inside.real, rel: inside.rel } : { state: "missing" };
+  }
+
+  /**
+   * For a path that does not resolve: whether some part of it that does exist is a symlink out of
+   * the roots. A symlink on the way is followed by its text (readlink), and a target outside the
+   * roots answers true, whether or not the target exists.
+   */
+  private async leavesRoot(abs: string): Promise<boolean> {
+    let lex = this.lexical(abs);
+    if (!lex) return true;
+    let hops = 0;
+    // Walk down from the root one part at a time, so a long missing path costs one lstat.
+    for (;;) {
+      const parts = lex.rel ? lex.rel.split("/") : [];
+      let cur = lex.root.real;
+      let next: ReturnType<Sandbox["lexical"]> = null;
+      for (let i = 0; i < parts.length; i++) {
+        cur = path.join(cur, parts[i]!);
+        const st = await fsp.lstat(cur).catch(() => null);
+        if (!st) return false; // missing from here on, inside the root
+        if (!st.isSymbolicLink()) continue;
+        if (++hops > 40) return true; // a long chain of links: say outside rather than guess
+        const to = await fsp.readlink(cur).catch(() => null);
+        if (to === null) return false;
+        next = this.lexical(path.resolve(path.dirname(cur), to, ...parts.slice(i + 1)));
+        if (!next) return true;
+        break;
+      }
+      if (!next) return false;
+      lex = next;
+    }
   }
 
   /** Display path of an opened file: the path as the agent tools see it, and where a symlink points. */

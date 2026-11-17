@@ -5,6 +5,8 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { spawnSync } from "node:child_process";
 import { connect, PKG, tempDir, type Connected } from "./helpers.js";
+import { CommentCloser, commentClose, extractImports, fenceMask, scanComments } from "../src/scan.js";
+import { LineIndex } from "../src/text.js";
 
 const CLI_BUNDLE = path.join(PKG, "dist/asitis.mjs");
 
@@ -27,6 +29,8 @@ const CASES: Record<string, () => string> = {
   "comment-lines": () => fill("<!-- x -->\n"),
   "suppression-comments": () => fill("<!-- asitis-disable-next-line duplicate-rule, nope -- x -->\n"),
   "comment-then-unclosed": () => "<!-- a -->\n" + fill("<!--"),
+  "code-span-openers": () => "`" + fill("<!--") + "`\n-->\n",
+  "fenced-openers": () => "```\n" + fill("<!--") + "\n```\n@a.md\n-->\n",
   "open-brackets": () => fill("["),
   "link-openers": () => fill("]("),
   "angle-link-openers": () => fill("](<"),
@@ -138,6 +142,59 @@ describe("the CLI on a 10 MB single line", () => {
     expect(JSON.parse(r.stdout).summary.files).toBe(1);
     // Process start and JSON output included, so a few times the per-call budget.
     expect(ms, `${name} took ${ms} ms`).toBeLessThan(BUDGET_MS * 4);
+  }, 120_000);
+});
+
+describe("comment openers that are skipped stay linear (audit M1)", () => {
+  // Openers in a code span or a fence are not comments, but each one used to search for "-->" to
+  // the end of the file: 1 MB of these blocked the server for over 90 s.
+  const ONE_MB = {
+    "code-span-openers": "`" + fill("<!--", MB) + "`\n-->\n",
+    "fenced-openers": "```\n" + fill("<!--", MB) + "\n```\n@a.md\n-->\n",
+    "code-span-openers-then-import": "`" + fill("<!--", MB) + "` @a.md\n",
+  };
+  test.each(Object.keys(ONE_MB))("%s: scanners take under 1 s on 1 MB", (name) => {
+    const text = ONE_MB[name as keyof typeof ONE_MB];
+    const lines = new LineIndex(text);
+    const fence = fenceMask(lines);
+    const t0 = performance.now();
+    scanComments(lines, fence);
+    extractImports(lines, fence);
+    const ms = performance.now() - t0;
+    expect(ms, `${name} took ${ms.toFixed(0)} ms`).toBeLessThan(1000);
+  });
+
+  test("CommentCloser gives exactly what commentClose gives, for openers met in order", () => {
+    // Both scanners swap commentClose for CommentCloser, so this equality keeps every result as it was.
+    const parts = ["<!--", "-->", "<!-->", "<!--->", "--", "-", ">", "`", "x", "\n", "```\n"];
+    let seed = 7;
+    const rnd = (k: number): number => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % k);
+    for (let round = 0; round < 2000; round++) {
+      let s = "";
+      for (let k = rnd(40); k > 0; k--) s += parts[rnd(parts.length)];
+      const closer = new CommentCloser(s);
+      for (let open = s.indexOf("<!--"); open >= 0; open = s.indexOf("<!--", open + 1 + rnd(4))) {
+        expect(closer.close(open), JSON.stringify([s, open])).toBe(commentClose(s, open));
+      }
+    }
+  });
+
+  test("lint_steering on the 1 MB code-span file answers in under 1 s", async () => {
+    const tt = tempDir("asitis-m1-");
+    try {
+      writeFileSync(path.join(tt.dir, "CLAUDE.md"), ONE_MB["code-span-openers"]);
+      const s = await connect([tt.dir]);
+      try {
+        await s.call("lint_steering", { path: "CLAUDE.md" }); // warm up
+        const r = await s.call("lint_steering", { path: "CLAUDE.md" });
+        expect(r.isError).toBe(false);
+        expect(r.ms).toBeLessThan(1000);
+      } finally {
+        await s.close();
+      }
+    } finally {
+      tt.cleanup();
+    }
   }, 120_000);
 });
 
