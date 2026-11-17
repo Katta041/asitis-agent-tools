@@ -109,6 +109,14 @@ describe("B1: the plugin folder inside the project folder", () => {
     expect(r.stderr).not.toMatch(/Root folder not found/);
   });
 
+  test("the server refuses a read grant with a *, which Node treats as a wildcard", () => {
+    const pluginRoot = PLUGIN;
+    const r = spawnSync(process.execPath, ["--permission", `--allow-fs-read=${pluginRoot}`, `--allow-fs-read=${t.dir}${path.sep}*`, path.join(pluginRoot, "server/asitis-mcp.mjs"), "--root", t.dir], { input: "", encoding: "utf8", timeout: 20_000 });
+    expect(r.status).toBe(2);
+    expect(r.stderr.trim().split("\n")).toHaveLength(1);
+    expect(r.stderr).toMatch(/^asitis-mcp: refusing to start under --allow-fs-read=.*\*: Node reads a "\*" there as a wildcard/);
+  });
+
   test("a root that does not exist is still reported as not found", () => {
     const r = spawnSync(process.execPath, [path.join(PLUGIN, "server/asitis-mcp.mjs"), "--root", path.join(t.dir, "nope")], { input: "", encoding: "utf8" });
     expect(r.stderr).toMatch(/Root folder not found: .*nope\. Pass an existing folder with --root\./);
@@ -122,10 +130,16 @@ describe("launcher", () => {
     L = await import(pathToFileURL(LAUNCHER).href);
   });
 
-  test.each([["20.18.0"], ["22.12.0"], ["v18.20.8"], ["22.12.99"]])("Node %s gets one actionable line", (v) => {
-    expect(L.versionMessage(v)).toBe(`AsItIs needs Node 22.13 or later; you have ${v.replace(/^v/, "")}. Install a current Node from https://nodejs.org, then restart Claude Code.`);
+  test.each([["20.18.0"], ["22.12.0"], ["v18.20.8"], ["22.12.99"], ["23.0.0"], ["v23.4.9"]])("Node %s gets one actionable line", (v) => {
+    expect(L.versionMessage(v)).toBe(`AsItIs needs Node 22.13 or later (23.5 or later on the 23 line); you have ${v.replace(/^v/, "")}. Install a current Node from https://nodejs.org, then restart Claude Code.`);
   });
-  test.each([["22.13.0"], ["22.20.1"], ["24.11.0"], ["26.0.0"], ["v23.0.0"]])("Node %s is accepted", (v) => expect(L.versionMessage(v)).toBeNull());
+  test.each([["22.13.0"], ["22.20.1"], ["23.5.0"], ["24.11.0"], ["26.0.0"]])("Node %s is accepted", (v) => expect(L.versionMessage(v)).toBeNull());
+
+  test("a read grant with a * is refused: Node treats it as a wildcard", () => {
+    const r = spawnSync(process.execPath, [LAUNCHER, "--permission", `--allow-fs-read=${PLUGIN}`, `--allow-fs-read=${path.join(PLUGIN, "..")}${path.sep}*`, path.join(PLUGIN, "server/asitis-mcp.mjs"), "--version"], { encoding: "utf8" });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toMatch(/^asitis-mcp: refusing --allow-fs-read=.*\*: a "\*" in a read grant is a wildcard/);
+  });
 
   test("nested and repeated --allow-fs-read folders are dropped, the outer one kept", () => {
     const t = tempDir("asitis-grants-");

@@ -182,6 +182,15 @@ function readGrants(): string[] {
 }
 
 /**
+ * A --allow-fs-read grant with a "*" in it, or null. Node reads "*" as a wildcard (a trailing /*
+ * allows every folder that starts with the prefix), so such a grant can allow far more than the
+ * project folder; the server refuses to start under one.
+ */
+export function wildcardGrant(): string | null {
+  return readGrants().find((g) => g.includes("*")) ?? null;
+}
+
+/**
  * Resolves and checks one root folder. The checks use the sync fs API on purpose:
  * on Node 22.13 a promise-based stat that the permission model denies rejects
  * outside the promise chain and crashes the process instead of throwing here.
@@ -314,7 +323,8 @@ export class Sandbox {
   async resolveReal(p: string, baseDir?: string): Promise<Resolved> {
     const input = this.validateInput(p);
     const lex = this.lexical(input, baseDir);
-    if (!lex) throw new UserError(`Refused: ${input} is outside the allowed folder ${this.primary.real}.`);
+    // No absolute path in the message: it reaches the model and any log of the session.
+    if (!lex) throw new UserError(`Refused: ${input} is outside the allowed folder.`);
     let real: string;
     try {
       real = await fsp.realpath(lex.abs);
@@ -324,7 +334,7 @@ export class Sandbox {
         const fe = fsError(e, input);
         if (fe) throw fe;
       }
-      throw new UserError(`File not found: ${input} (inside ${lex.root.real}). Paths are relative to that folder; find_steering_files lists the steering files.`);
+      throw new UserError(`File not found: ${input} (inside ${lex.root === this.primary ? "the allowed folder" : "the extra --root folder"}). Paths are relative to that folder; find_steering_files lists the steering files.`);
     }
     const inside = this.contain(real);
     if (inside) return inside;
