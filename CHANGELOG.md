@@ -2,6 +2,24 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+- `unlinted-steering-target` (security, error by default): a CLAUDE.md, AGENTS.md or other steering file that is a symlink to a file that isn't markdown (`CLAUDE.md -> notes.txt`) or to a file outside the project. Before, the CI gate passed on these with a notice or nothing at all, while Claude Code loaded the file. An `@import` of a text file that isn't markdown (`@notes.txt`) gets the same rule as a warning saying the file wasn't checked; AsItIs still reads only markdown.
+
+### Changed
+- `lint_steering` no longer stops on a repo's `.asitisrc.json` that fails to load (bad JSON, over 64 KB, a symlink out of the folder). Without `trustRepoConfig` it lints with the defaults and adds one line saying the config was ignored and why, so a cloned repo can't hide its findings behind a broken config. The CLI and `trustRepoConfig: true` still stop with the error, and CI still exits 2.
+- `suggest_fixes` shows its diff inside a fence longer than any backtick run in it, and writes bidi, zero-width and other control characters as `\u` escapes in the text. The JSON result and `asitis lint --fix-preview` keep the raw diff for `git apply`.
+
+### Fixed
+- A file of HTML comment openers inside a code span or a fence (`` `<!--<!--...` ``) took quadratic time: 200 KB took 16.7 s and 1 MB about 8 minutes on my machine, blocking the server. Both comment scanners now reuse their last search for `-->`, and the same 1 MB file lints in 0.1 s.
+- Reads recheck the real path and the inode after opening, so a folder swapped for a symlink to outside the project between the checks and the open is refused. A FIFO swapped in no longer blocks the open.
+- A missing path behind a symlink that leaves the project (`h -> ~`, then `[x](h/no-such-file)`) is now reported as outside the project, like an existing one, so findings no longer tell whether a file exists out there.
+- Frontmatter keys named `__proto__` or `constructor` gave SARIF and GitHub annotations `{}` as a line number. Line and column are always whole numbers of 1 or more now.
+- The Claude Code plugin launcher refuses Node 23.0 to 23.4, which don't know `--permission`, with one line instead of Node's "bad option", and refuses a read grant with a `*` in it. The server refuses such a grant too.
+- `lint_steering` said "That is 2 of the 3 steering files found" when a file was found twice through a symlinked folder and linted once. That line now shows only when the per-call file cap cut the list.
+- Errors for a path outside the root or a missing file no longer include the root's absolute path, and the server's instructions list what it actually reads.
+
 ## [0.4.4] - 2026-11-17
 
 ### Added
