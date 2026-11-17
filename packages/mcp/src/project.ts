@@ -137,7 +137,7 @@ const MARKDOWN_TARGET = /\.(md|mdc|markdown|mdx)$|(^|[\\/])\.(cursorrules|windsu
 
 export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promise<ProjectResult> {
   const { deadline } = opts;
-  const config = await loadConfig(sandbox, opts.configPath === undefined ? {} : { configPath: opts.configPath });
+  const { config, configNote } = await repoConfig(sandbox, opts);
   const include = new Set<Include>([...(opts.include ?? []), ...(opts.configInclude ? (config?.include ?? []) : [])]);
   // Opt-ins the config asks for that this call did not grant: say so, read nothing extra.
   const asked = opts.configInclude ? [] : (config?.include ?? []).filter((x) => !include.has(x) && !(x === "config" && include.has("config-local")));
@@ -208,6 +208,7 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
 
   // Project checks.
   const notes: string[] = [];
+  if (configNote) notes.push(configNote);
   if (unreadable.length) {
     const shown = unreadable.slice(0, 5).map((d) => dp(d)).join(", ");
     notes.push(`Could not read ${unreadable.length === 1 ? "1 folder" : `${unreadable.length} folders`} (permission denied), so the steering files in ${unreadable.length === 1 ? "it were" : "them were"} not linted: ${shown}${unreadable.length > 5 ? ` and ${unreadable.length - 5} more` : ""}. Fix the permissions, or add the folder to ignore in .asitisrc.json.`);
@@ -287,6 +288,24 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
     hiddenNote,
     findings: () => (cached ??= buildFindings(results, docs, lineTexts)),
   };
+}
+
+/**
+ * The config to lint with. A repo's own .asitisrc.json that can't be loaded (bad JSON, too big, a
+ * symlink out of the folder) is a hard error only when the caller trusts it: the CLI, an explicit
+ * --config, or lint_steering with trustRepoConfig. Otherwise (the MCP server's default) a cloned repo
+ * could use a broken config to make lint_steering return one error and hide every finding, so the
+ * lint runs with the defaults and one note says the config was ignored and why.
+ */
+async function repoConfig(sandbox: Sandbox, opts: ProjectOptions): Promise<{ config: LoadedConfig | null; configNote: string }> {
+  if (opts.configPath !== undefined) return { config: await loadConfig(sandbox, { configPath: opts.configPath }), configNote: "" };
+  try {
+    return { config: await loadConfig(sandbox, {}), configNote: "" };
+  } catch (e) {
+    if (opts.trustRepoConfig === true || !(e instanceof UserError)) throw e;
+    const why = e.message.length > 300 ? `${e.message.slice(0, 300)}...` : e.message;
+    return { config: null, configNote: `.asitisrc.json was ignored and the defaults were used, because it could not be loaded: ${why}` };
+  }
 }
 
 /**
