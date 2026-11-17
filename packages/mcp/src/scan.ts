@@ -384,9 +384,33 @@ export function commentClose(s: string, open: number): number {
   return s.indexOf("-->", open + 4);
 }
 
+/**
+ * commentClose for a scan that meets openers in order. It remembers the last "-->" search, so a
+ * run of openers that are skipped (in a code span or a fence) shares one search instead of each
+ * scanning to the end of the file. That was quadratic: 1 MB of "`<!--<!--..." took over 90 s.
+ */
+export class CommentCloser {
+  private from = -1;
+  private found = -1;
+  constructor(private readonly s: string) {}
+  close(open: number): number {
+    const s = this.s;
+    if (s.startsWith(">", open + 4)) return open + 2;
+    if (s.startsWith("->", open + 4)) return open + 3;
+    const start = open + 4;
+    // The first "-->" at or after `from` is `found`, so it is also the first one at or after any
+    // start between the two. With none after `from`, there is none after a later start either.
+    if (this.from >= 0 && start >= this.from && (this.found < 0 || start <= this.found)) return this.found;
+    this.from = start;
+    this.found = s.indexOf("-->", start);
+    return this.found;
+  }
+}
+
 export function scanComments(lines: LineIndex, fence: Uint8Array): { findings: CommentFinding[]; total: number } {
   const s = lines.text;
   const spans = new InlineCodeSpans(lines);
+  const closer = new CommentCloser(s);
   const findings: CommentFinding[] = [];
   let total = 0;
   let pos = 0;
@@ -394,7 +418,7 @@ export function scanComments(lines: LineIndex, fence: Uint8Array): { findings: C
     const open = s.indexOf("<!--", pos);
     if (open < 0) break;
     const startLine = lines.lineOf(open);
-    const close = commentClose(s, open);
+    const close = closer.close(open);
     const end = close < 0 ? s.length : close + 3;
     if (fence[startLine]) { pos = end; continue; } // visible as code, not hidden
     if (spans.inCode(startLine, open)) { pos = open + 4; continue; } // `<!-- -->` in a code span is shown, not hidden
@@ -779,6 +803,7 @@ export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLin
   const spans = new CodeSpanTracker(lines);
   // HTML comments, in order: Claude Code strips them before loading, so "@claude" in one is not an import.
   const commentSpans = new InlineCodeSpans(lines);
+  const closer = new CommentCloser(s);
   let cStart = -1;
   let cEnd = -1; // the current or last comment is [cStart, cEnd)
   let cNext = 0; // where to look for the next comment
@@ -786,7 +811,7 @@ export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLin
     while (cEnd <= at && cNext >= 0) {
       const open = s.indexOf("<!--", cNext);
       if (open < 0) { cNext = -1; break; }
-      const close = commentClose(s, open);
+      const close = closer.close(open);
       const li = lines.lineOf(open);
       if (fence[li] || commentSpans.inCode(li, open)) { cNext = open + 4; continue; }
       cStart = open;
