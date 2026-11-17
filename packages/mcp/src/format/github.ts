@@ -13,6 +13,7 @@
 import { workspacePath } from "./workspace.js";
 import { esc } from "../escape.js";
 import type { FindingSeverity, LintReport } from "../findings.js";
+import { positive } from "./sarif.js";
 import { summaryLine } from "./text.js";
 
 const COMMAND: Record<FindingSeverity, string> = { error: "error", warning: "warning", note: "notice" };
@@ -54,10 +55,10 @@ export function formatGithub(report: LintReport, opts: GithubOptions = {}): stri
     }
     const props = [
       `file=${escapeProperty(esc(workspacePath(report.root, f.path), 400))}`,
-      `line=${f.line}`,
-      `col=${f.column}`,
-      `endLine=${f.endLine}`,
-      `endColumn=${f.endColumn}`,
+      `line=${positive(f.line)}`,
+      `col=${positive(f.column)}`,
+      `endLine=${positive(f.endLine)}`,
+      `endColumn=${positive(f.endColumn)}`,
       `title=${escapeProperty(`asitis(${f.ruleId})`)}`,
     ].join(",");
     lines.push(`::${COMMAND[f.severity]} ${props}::${escapeData(esc(f.message, 1000))}`);

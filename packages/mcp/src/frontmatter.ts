@@ -20,7 +20,7 @@ export interface Frontmatter {
   startLine: number;
   endLine: number;
   data: Record<string, unknown> | null;
-  /** Line (1-based) of each top-level key, for messages. */
+  /** Line (1-based) of each top-level key, for messages. No prototype: a key named __proto__ or constructor is just a key. */
   keyLines: Record<string, number>;
   problems: FrontmatterProblem[];
 }
@@ -69,7 +69,7 @@ function cursorGlobLine(line: string): string {
 }
 
 export function readFrontmatter(lines: LineIndex, kind?: Kind): Frontmatter {
-  const out: Frontmatter = { present: false, startLine: -1, endLine: -1, data: null, keyLines: {}, problems: [] };
+  const out: Frontmatter = { present: false, startLine: -1, endLine: -1, data: null, keyLines: Object.create(null) as Record<string, number>, problems: [] };
   if (lines.count === 0) return out;
   let first = lines.line(0);
   const bom = first.charCodeAt(0) === 0xfeff;
@@ -167,7 +167,7 @@ export function readFrontmatter(lines: LineIndex, kind?: Kind): Frontmatter {
     // "description: Use for A #1 and B": YAML reads " #1 and B" as a comment and drops it.
     const value = raw.slice(m[0].length).trim();
     const hash = value.indexOf(" #");
-    const parsed = out.data[m[1]!];
+    const parsed = Object.hasOwn(out.data, m[1]!) ? out.data[m[1]!] : undefined;
     if (hash > 0 && !/^["'[{|>&*!]/.test(value) && typeof parsed === "string" && parsed.length < value.length) {
       const dropped = value.slice(hash + 1).trim();
       out.problems.push({

@@ -48,6 +48,17 @@ function ruleDescriptor(r: RuleMeta): Record<string, unknown> {
   };
 }
 
+/** A whole number of 1 or more; SARIF rejects anything else in a region (and so does code scanning). */
+export const positive = (n: unknown): number => (typeof n === "number" && Number.isSafeInteger(n) && n >= 1 ? n : 1);
+
+function region(f: Finding): Record<string, number> {
+  const startLine = positive(f.line);
+  const startColumn = positive(f.column);
+  const endLine = Math.max(positive(f.endLine), startLine);
+  const endColumn = endLine === startLine ? Math.max(positive(f.endColumn), startColumn) : positive(f.endColumn);
+  return { startLine, startColumn, endLine, endColumn };
+}
+
 function result(f: Finding, index: ReadonlyMap<string, number>, root: string): Record<string, unknown> {
   // %SRCROOT% is the repository checkout for GitHub code scanning, so a relative --root is prefixed.
   const artifactLocation = { uri: toUri(workspacePath(root, f.path)), uriBaseId: "%SRCROOT%" };
@@ -60,7 +71,7 @@ function result(f: Finding, index: ReadonlyMap<string, number>, root: string): R
     {
       physicalLocation: {
         artifactLocation,
-        region: { startLine: f.line, startColumn: f.column, endLine: f.endLine, endColumn: f.endColumn },
+        region: region(f),
       },
     },
   ];
