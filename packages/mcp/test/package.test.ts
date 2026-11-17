@@ -86,7 +86,7 @@ describe("npm package", () => {
     let seen = 0;
     for (const f of docs) {
       for (const line of read(path.join(REPO, f)).split("\n")) {
-        for (const m of line.matchAll(/npx -y (-p )?@asitis\/mcp@(\S+) ?(\S*)/g)) {
+        for (const m of line.matchAll(/npx (?:--prefix=~\/ )?-y (-p )?@asitis\/mcp@(\S+) ?(\S*)/g)) {
           seen++;
           expect(m[2], `${f}: ${line}`).toBe(pkg.version);
           // With -p the next word must name a bin; without it npx runs the "mcp" bin.
@@ -99,6 +99,25 @@ describe("npm package", () => {
       }
     }
     expect(seen).toBeGreaterThan(20);
+  });
+  test("every MCP server config in the docs runs npx with --prefix=~/, so a repo's own node_modules is never used", () => {
+    // npx runs node_modules/@asitis/mcp from the folder it starts in when the version matches, and
+    // MCP clients often start servers in the project. --prefix=~/ moves that lookup to the home folder.
+    const docs = ["README.md", "packages/mcp/README.md", "docs/install.md"];
+    let seen = 0;
+    for (const f of docs) {
+      const text = read(path.join(REPO, f));
+      for (const m of text.matchAll(/(.{0,20})"-y", ?"@asitis\/mcp@/g)) {
+        seen++;
+        expect(m[1], f).toMatch(/"--prefix=~\/", ?$/);
+      }
+      expect(text, f).not.toMatch(/npx -y @asitis\/mcp@\S+ --root/);
+      for (const l of text.matchAll(/vscode\.dev\/redirect\?url=([^)\s"]+)/g)) {
+        const cfg = JSON.parse(decodeURIComponent(decodeURIComponent(l[1]!).split("?")[1]!));
+        expect(cfg.args.slice(0, 2), f).toEqual(["--prefix=~/", "-y"]);
+      }
+    }
+    expect(seen).toBeGreaterThan(10);
   });
   test("provenance on, public access", () => expect(pkg.publishConfig).toEqual({ access: "public", provenance: true }));
   test("the published tarball contains only the bundle, notices and docs", () => {
@@ -228,12 +247,15 @@ describe("Codex plugin and Gemini CLI extension", () => {
     expect(codex.name).toBe("asitis");
     expect(gemini.name).toBe("asitis");
   });
-  // Codex 0.169 expands no variables in plugin MCP args, so the plugin cannot point at the
-  // bundled server and the project folder at the same time. It runs the pinned npm package
-  // with no --root, which makes the server read the folder Codex starts it in.
-  test("Codex runs the pinned npm package, never @latest", () => {
+  // Codex expands no variables in plugin MCP args (codex-rs/codex-mcp/src/plugin_config.rs only
+  // resolves a relative cwd against the plugin root), so the plugin cannot point at the bundled
+  // server and the project folder at the same time. It runs the pinned npm package with no --root,
+  // which makes the server read the folder Codex starts it in. --prefix=~/ makes npx look for an
+  // installed copy (and an .npmrc) in the home folder instead of that project, so a repo that
+  // commits node_modules/@asitis/mcp at the same version cannot run its own code.
+  test("Codex runs the pinned npm package, never @latest, never the project's node_modules", () => {
     expect(codex.mcpServers).toBe("./codex.mcp.json");
-    expect(codexMcp.mcpServers.asitis).toEqual({ command: "npx", args: ["-y", `@asitis/mcp@${pkg.version}`] });
+    expect(codexMcp.mcpServers.asitis).toEqual({ command: "npx", args: ["--prefix=~/", "-y", `@asitis/mcp@${pkg.version}`] });
   });
   test("Gemini runs the bundled server under Node's permission model, reading only the workspace", () => {
     const s = gemini.mcpServers.asitis;
@@ -279,7 +301,8 @@ describe("Cursor plugin", () => {
   test("the MCP server is pinned to this exact version, never @latest", () => {
     const s = mcp.mcpServers.asitis;
     expect(s.command).toBe("npx");
-    expect(s.args).toEqual(["-y", `@asitis/mcp@${pkg.version}`, "--root", "${workspaceFolder}"]);
+    // --prefix=~/ so npx never runs a node_modules/@asitis/mcp (or reads an .npmrc) committed to the opened repo.
+    expect(s.args).toEqual(["--prefix=~/", "-y", `@asitis/mcp@${pkg.version}`, "--root", "${workspaceFolder}"]);
     expect(JSON.stringify(mcp)).not.toMatch(/@latest/);
   });
   test("marketplace entry points at the plugin folder and the names match", () => {

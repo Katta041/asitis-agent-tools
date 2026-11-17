@@ -12,9 +12,18 @@ cli="$here/asitis.mjs"
 out="${GITHUB_OUTPUT:-/dev/null}"
 
 output() { printf '%s=%s\n' "$1" "$2" >> "$out"; }
+# Workflow command data: %, CR and LF escaped, so text from an input or a file stays inside one
+# annotation and cannot start a second workflow command on a new line.
+escape_data() {
+  local s="$1"
+  s="${s//%/%25}"
+  s="${s//$'\r'/%0D}"
+  s="${s//$'\n'/%0A}"
+  printf '%s' "$s"
+}
 fail() {
   # One line, as an error annotation, then exit with the given code.
-  printf '::error title=asitis::%s\n' "$2"
+  printf '::error title=asitis::%s\n' "$(escape_data "$2")"
   output exit-code "$1"
   exit "$1"
 }
@@ -102,17 +111,18 @@ fi
 
 # 3. The lint pass. Its stdout goes to the log, where --format github lines become annotations.
 # Its stderr (a one-line reason on exit 2 or 3, or "not linted" lines) is shown as annotations too,
-# with % escaped so the text stays data.
+# escaped so the text stays data. "--" ends the options, so a path named "--help" or
+# "--fail-on=never" is linted as a path and never read as an option.
 log="$(mktemp)"
 errlog="$(mktemp)"
-node "$cli" "${args[@]}" --format "$format" ${annotate[@]+"${annotate[@]}"} --fail-on "${INPUT_FAIL_ON:-error}" ${hidden[@]+"${hidden[@]}"} ${partial[@]+"${partial[@]}"} ${paths[@]+"${paths[@]}"} > "$log" 2> "$errlog"
+node "$cli" "${args[@]}" --format "$format" ${annotate[@]+"${annotate[@]}"} --fail-on "${INPUT_FAIL_ON:-error}" ${hidden[@]+"${hidden[@]}"} ${partial[@]+"${partial[@]}"} -- ${paths[@]+"${paths[@]}"} > "$log" 2> "$errlog"
 code=$?
 cat "$log"
 level=notice
 [ "$code" -eq 4 ] && level=warning
 [ "$code" -ge 2 ] && [ "$code" -ne 4 ] && level=error
 while IFS= read -r line; do
-  [ -n "$line" ] && printf '::%s title=asitis::%s\n' "$level" "$(printf '%s' "$line" | tr -d '\r' | sed 's/%/%25/g')"
+  [ -n "$line" ] && printf '::%s title=asitis::%s\n' "$level" "$(escape_data "$line")"
 done < "$errlog"
 rm -f "$errlog"
 if [ "$code" -ge 2 ] && [ "$code" -ne 4 ]; then
@@ -146,7 +156,7 @@ if [ -n "$sarif" ]; then
   if ! : > "$sarif" 2>/dev/null; then
     fail 2 "cannot write the SARIF file \"$sarif\"; set sarif-file to a path inside the workspace."
   fi
-  node "$cli" "${args[@]}" --format sarif --fail-on never ${partial[@]+"${partial[@]}"} ${paths[@]+"${paths[@]}"} > "$sarif"
+  node "$cli" "${args[@]}" --format sarif --fail-on never ${partial[@]+"${partial[@]}"} -- ${paths[@]+"${paths[@]}"} > "$sarif"
   scode=$?
   # 4: the same partial walk as the lint pass; the SARIF file holds what was found.
   if [ "$scode" -ne 0 ] && [ "$scode" -ne 4 ]; then

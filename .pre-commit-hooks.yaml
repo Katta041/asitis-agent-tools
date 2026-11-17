@@ -3,13 +3,15 @@
 #
 # files: the steering files classify() in packages/mcp/src/kinds.ts recognises. Plain README.md
 # and docs are left out on purpose, so a commit that only touches docs never runs the hook.
-# To fail on warnings too, set args: [--fail-on, warning] in your .pre-commit-config.yaml.
+# To fail on warnings too, set args: [--fail-on, warning, --] in your .pre-commit-config.yaml.
+# Keep "--" last: pre-commit adds the file names after args, and "--" makes the CLI read a
+# file named like an option (--help, --fail-on=never) as a path.
 - id: asitis-lint
   name: asitis lint (agent steering files)
   description: Lint CLAUDE.md, AGENTS.md, SKILL.md, Cursor rules and other agent steering files.
   language: script
   entry: action/asitis.mjs lint
-  args: [--fail-on, error]
+  args: [--fail-on, error, --]
   pass_filenames: true
   require_serial: false
   files: |

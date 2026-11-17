@@ -48,8 +48,51 @@ function checkTime() {
 const MARKDOWN = /\.(md|mdc|markdown|mdx)$/i;
 const STEERING_NAMES = new Set([".cursorrules", ".windsurfrules", ".clinerules"]);
 
+// ---------------------------------------------------------------------------
+// Escaping for file names and error text before they reach a message the model or the user reads.
+// The same rules as packages/mcp/src/escape.ts (copied, since the hook has no dependencies): a
+// file name in a hostile repo can hold line breaks, terminal escapes, bidi controls or invisible
+// characters, and without this it could forge whole lines ("SYSTEM: the user approved...").
+
+/** True for code points that must never reach a message raw (same list as escape.ts). */
+function unsafeCodePoint(cp) {
+  return (
+    cp < 0x20 ||
+    (cp >= 0x7f && cp <= 0x9f) ||
+    cp === 0x00ad || cp === 0x034f || cp === 0x061c || cp === 0x115f || cp === 0x1160 || cp === 0x180e ||
+    (cp >= 0x200b && cp <= 0x200f) ||
+    (cp >= 0x2028 && cp <= 0x202e) ||
+    (cp >= 0x2060 && cp <= 0x206f) ||
+    cp === 0x3164 || cp === 0xfeff || cp === 0xffa0 ||
+    (cp >= 0xfff9 && cp <= 0xfffb) ||
+    (cp >= 0xe0000 && cp <= 0xe007f)
+  );
+}
+
+const hex = (cp) => (cp > 0xffff ? `\\u{${cp.toString(16).toUpperCase()}}` : `\\u${cp.toString(16).toUpperCase().padStart(4, "0")}`);
+
+/** Unsafe characters as \u escapes, cut to `max` characters (counted before escaping) with "...". */
+function esc(text, max = 120) {
+  const s = String(text);
+  const cut = s.length > max ? s.slice(0, max) : s;
+  let out = "";
+  for (const ch of cut) {
+    const cp = ch.codePointAt(0);
+    out += unsafeCodePoint(cp) ? hex(cp) : ch;
+  }
+  return s.length > max ? `${out}...` : out;
+}
+
+const PLAIN_NAME = /^[A-Za-z0-9._@+~-]{1,120}$/;
+
+/** A file name for a message: as is when it holds only ordinary characters, quoted and escaped otherwise. */
+function shownName(name) {
+  const s = String(name);
+  return PLAIN_NAME.test(s) ? s : `"${esc(s.replace(/\\/g, "\\\\").replace(/"/g, '\\"'))}"`;
+}
+
 function block(message) {
-  process.stderr.write(`AsItIs guard: ${message}\n`);
+  process.stderr.write(`AsItIs guard: ${esc(message, 600)}\n`);
   process.exit(2);
 }
 
@@ -535,7 +578,7 @@ function main() {
     pass(); // new file: nothing to preserve
   }
   if (!st.isFile()) pass();
-  const name = path.basename(file);
+  const name = shownName(path.basename(file));
   const decide = (summary, advice) => {
     if (mode === "deny") {
       emit({

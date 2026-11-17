@@ -62,4 +62,4 @@ Security rules (category `security` and every `sec-*` id) are never suppressible
 
 ## Releasing
 
-Releases are cut by a maintainer with the manual `release` workflow, which publishes `@asitis/mcp` to npm with trusted publishing and provenance.
+Releases are cut by a maintainer with the manual `release` workflow, which publishes `@asitis/mcp` to npm with trusted publishing and provenance. It runs in two jobs: one installs, tests and packs with read-only permissions, and the other, in the protected `npm` environment, checks the tarball's SHA-256 and publishes that file without installing anything.

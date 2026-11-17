@@ -2,16 +2,17 @@
 
 Claude Code, Claude Desktop, Codex, Gemini CLI and VS Code are covered in the [README](../README.md#other-mcp-clients-claude-desktop-cursor-codex-gemini-cli). This page has the rest.
 
-Every config here starts the same server, `npx -y @asitis/mcp@0.4.4 --root <project>`. Versions before 0.4.2 need `npx -y -p @asitis/mcp@<version> asitis-mcp` instead, because a bare `npx @asitis/mcp` stops with "could not determine executable to run" there. Two more things matter everywhere:
+Every config here starts the same server, `npx --prefix=~/ -y @asitis/mcp@0.4.4 --root <project>`. Versions before 0.4.2 need `npx -y -p @asitis/mcp@<version> asitis-mcp` instead, because a bare `npx @asitis/mcp` stops with "could not determine executable to run" there. Two more things matter everywhere:
 
 - **Pin the version.** Never use `@latest` in an agent config.
+- **Keep `--prefix=~/`.** Many clients start the server inside the project, and there npx would run a `node_modules/@asitis/mcp` (or read an `.npmrc`) that the repo commits. `--prefix=~/` makes npx look in your home folder instead.
 - **Give `--root` the project folder as an absolute path**, unless the tool fills it in for you (Cursor does, with `${workspaceFolder}`). Most clients start servers from somewhere other than your project, and the server refuses your home folder and the filesystem root on purpose.
 
 If the server can't start, it prints one line saying why, for example `Refusing your home folder (/Users/you) as the allowed folder`. Your client's MCP log shows that line.
 
 ## Cursor
 
-[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=asitis&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBhc2l0aXMvbWNwQDAuNC40IiwiLS1yb290IiwiJHt3b3Jrc3BhY2VGb2xkZXJ9Il19)
+[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=asitis&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyItLXByZWZpeD1+LyIsIi15IiwiQGFzaXRpcy9tY3BAMC40LjQiLCItLXJvb3QiLCIke3dvcmtzcGFjZUZvbGRlcn0iXX0=)
 
 Or put this in `.cursor/mcp.json` in the project:
 
@@ -20,7 +21,7 @@ Or put this in `.cursor/mcp.json` in the project:
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "${workspaceFolder}"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -39,7 +40,7 @@ The Cursor plugin in [`plugins/asitis-cursor`](../plugins/asitis-cursor) adds th
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -56,7 +57,7 @@ In the Cline panel: MCP Servers, Configure, Configure MCP Servers. For the Cline
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"],
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"],
       "disabled": false,
       "autoApprove": []
     }
@@ -75,7 +76,7 @@ All seven tools only read, so you can list them in `autoApprove` if you'd rather
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -90,7 +91,7 @@ Settings, AI, MCP Servers, Add Local Server, or add it under `context_servers` i
   "context_servers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"],
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"],
       "env": {}
     }
   }
@@ -99,7 +100,7 @@ Settings, AI, MCP Servers, Add Local Server, or add it under `context_servers` i
 
 ## Goose
 
-`goose configure`, Add Extension, Command-line Extension, then paste `npx -y @asitis/mcp@0.4.4 --root /absolute/path/to/project` as the command. Or in `~/.config/goose/config.yaml`:
+`goose configure`, Add Extension, Command-line Extension, then paste `npx --prefix=~/ -y @asitis/mcp@0.4.4 --root /absolute/path/to/project` as the command. Or in `~/.config/goose/config.yaml`:
 
 ```yaml
 extensions:
@@ -107,7 +108,7 @@ extensions:
     name: asitis
     type: stdio
     cmd: npx
-    args: ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+    args: ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
     enabled: true
     timeout: 300
 ```
@@ -124,7 +125,7 @@ mcpServers:
   - name: asitis
     type: stdio
     command: npx
-    args: ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+    args: ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
 ```
 
 ## JetBrains AI Assistant
@@ -136,7 +137,7 @@ Settings, Tools, AI Assistant, Model Context Protocol (MCP), Add. Paste this JSO
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -168,4 +169,4 @@ In a client config, `command` is `docker` and the rest goes in `args`:
 
 ## Anything else
 
-Any client that can start a stdio MCP server works with `npx -y @asitis/mcp@0.4.4 --root /absolute/path/to/project`. The server is also in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.Katta041/asitis-mcp) as `io.github.Katta041/asitis-mcp`, which some clients browse directly.
+Any client that can start a stdio MCP server works with `npx --prefix=~/ -y @asitis/mcp@0.4.4 --root /absolute/path/to/project`. The server is also in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.Katta041/asitis-mcp) as `io.github.Katta041/asitis-mcp`, which some clients browse directly.
