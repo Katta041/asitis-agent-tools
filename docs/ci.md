@@ -85,8 +85,10 @@ Dangerous hidden content (invisible characters, and hidden comments that ask the
 
 ```yaml
       - id: asitis-lint
-        args: [--fail-on, warning]
+        args: [--fail-on, warning, --]
 ```
+
+Keep `--` at the end when you set `args`. pre-commit puts the file names after it, and `--` makes sure a file named like an option (`--fail-on=never`) is read as a file, not a flag.
 
 The hook uses `language: script` and the file's `#!/usr/bin/env node` line. pre-commit reads that line itself on Windows, so the same config works there; the self-test runs it on Windows to keep that true.
 
@@ -108,7 +110,7 @@ pre-commit:
   commands:
     asitis:
       glob: "{**/CLAUDE.md,**/CLAUDE.local.md,**/AGENTS.md,**/GEMINI.md,**/SKILL.md,**/MEMORY.md,**/.cursorrules,**/.windsurfrules,**/.clinerules,**/.claude/agents/**/*.md,**/.claude/commands/**/*.md,**/.claude/rules/**/*.md,**/.cursor/rules/**/*.mdc,**/.windsurf/rules/**/*.md,**/.clinerules/**/*.md,.github/copilot-instructions.md,**/.github/agents/**/*.md,**/*.instructions.md,**/*.prompt.md,**/*.agent.md,**/*.chatmode.md,memory/*.md}"
-      run: npx -y -p @asitis/mcp@0.4.4 asitis lint {staged_files}
+      run: npx -y -p @asitis/mcp@0.4.4 asitis lint -- {staged_files}
 ```
 
 husky (`.husky/pre-commit`). `--diff-filter=ACMR` keeps added, copied, modified and renamed files and leaves deleted ones out. `-z` with `xargs -0 -r` keeps a file name with spaces in one piece and runs nothing when no steering file is staged.
@@ -122,7 +124,7 @@ git diff --cached --name-only --diff-filter=ACMR -z -- \
   ':(glob)**/.clinerules/**/*.md' ':(glob).github/copilot-instructions.md' ':(glob)**/.github/agents/**/*.md' \
   ':(glob)**/*.instructions.md' ':(glob)**/*.prompt.md' ':(glob)**/*.agent.md' ':(glob)**/*.chatmode.md' \
   ':(glob)memory/*.md' \
-  | xargs -0 -r npx -y -p @asitis/mcp@0.4.4 asitis lint
+  | xargs -0 -r npx -y -p @asitis/mcp@0.4.4 asitis lint --
 ```
 
 ## GitLab CI
