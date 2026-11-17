@@ -1126,6 +1126,27 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
   const dir = path.dirname(doc.file.real);
   const links = extractLinks(doc.lines, doc.fence);
   const cache = new Map<string, { state: string; real?: string }>();
+  // What a missing target turned out to be. A 10 MB file can repeat one dead link 400,000 times,
+  // and each check below costs a few filesystem calls (slow on Windows).
+  const missingCache = new Map<string, "skip" | "from-root" | "broken">();
+  const missingVerdict = async (t: string): Promise<"skip" | "from-root" | "broken"> => {
+    const fromRoot = path.posix.normalize(path.posix.join(path.posix.dirname(doc.file.rel), t.replace(/\\/g, "/")));
+    // A link into a git submodule that is not checked out: a plain clone leaves the folder empty.
+    const subs = await submodulesOf(sandbox);
+    if (subs.some((m) => fromRoot === m || fromRoot.startsWith(m + "/"))) return "skip";
+    // Rendered at build time from a template next to it (references/x.md from references/x.md.j2).
+    if (await renderedFromTemplate(sandbox, t, dir)) return "skip";
+    // A GitHub page link written for an issue or PR comment ("../blob/main/CONTRIBUTING.md"):
+    // fine when the rest of the path exists from the repository root.
+    const web = GITHUB_WEB_PATH.exec(t.replace(/\\/g, "/"));
+    if (web && (await sandbox.probe(web[1]!, sandbox.primary.real)).state === "ok") return "skip";
+    // Written from the repository root instead of from this file ("docs/x.md" in .cursor/rules/a.mdc):
+    // an agent working from the root finds it, editors and Markdown viewers do not.
+    if (!/^\.\.?\//.test(t) && path.posix.dirname(doc.file.rel) !== ".") {
+      if ((await sandbox.probe(t, sandbox.primary.real)).state === "ok") return "from-root";
+    }
+    return "broken";
+  };
   const anchorCache = new Map<string, Set<string> | null>();
   let own: Set<string> | null = null;
   const missingAnchor = (anchors: Set<string>, frag: string): boolean => {
@@ -1169,26 +1190,16 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
     }
     const state = probe.state;
     if (state === "missing") {
-      const fromRoot = path.posix.normalize(path.posix.join(path.posix.dirname(doc.file.rel), t.replace(/\\/g, "/")));
-      // A link into a git submodule that is not checked out: a plain clone leaves the folder empty.
-      const subs = await submodulesOf(sandbox);
-      if (subs.some((m) => fromRoot === m || fromRoot.startsWith(m + "/"))) continue;
-      // Rendered at build time from a template next to it (references/x.md from references/x.md.j2).
-      if (await renderedFromTemplate(sandbox, t, dir)) continue;
-      // A GitHub page link written for an issue or PR comment ("../blob/main/CONTRIBUTING.md"):
-      // fine when the rest of the path exists from the repository root.
-      const web = GITHUB_WEB_PATH.exec(t.replace(/\\/g, "/"));
-      if (web && (await sandbox.probe(web[1]!, sandbox.primary.real)).state === "ok") continue;
-      // Written from the repository root instead of from this file ("docs/x.md" in .cursor/rules/a.mdc):
-      // an agent working from the root finds it, editors and Markdown viewers do not.
-      if (!/^\.\.?\//.test(t) && path.posix.dirname(doc.file.rel) !== ".") {
-        const rootProbe = await sandbox.probe(t, sandbox.primary.real);
-        if (rootProbe.state === "ok") {
-          c.add("info", "broken-link", `${q(l.target, 200)} is not found next to this file but exists from the repository root; agents working from the root find it, but editors and Markdown viewers do not, so write it relative to this file`, l.line);
-          continue;
-        }
+      let verdict = missingCache.get(t);
+      if (!verdict) {
+        verdict = await missingVerdict(t);
+        missingCache.set(t, verdict);
       }
-      c.add("warning", "broken-link", `Relative link target not found: ${q(l.target, 200)}. Fix the path or remove the link`, l.line);
+      if (verdict === "from-root") {
+        c.add("info", "broken-link", `${q(l.target, 200)} is not found next to this file but exists from the repository root; agents working from the root find it, but editors and Markdown viewers do not, so write it relative to this file`, l.line);
+      } else if (verdict === "broken") {
+        c.add("warning", "broken-link", `Relative link target not found: ${q(l.target, 200)}. Fix the path or remove the link`, l.line);
+      }
     }
     else if (state === "outside") c.add("info", "link-outside-root", `Link points outside the allowed folder and was not checked: ${q(l.target, 200)}`, l.line);
     else if (frag && probe.real && MARKDOWN_TARGET.test(t)) {
