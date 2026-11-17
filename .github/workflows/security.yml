@@ -30,7 +30,7 @@ jobs:
         with:
           persist-credentials: false
       # Fails on medium and above. The low findings left (self-repository syntax in
-      # action-selftest.yml, npm@11.5.1 install in release.yml) are style notes.
+      # action-selftest.yml) are style notes.
       - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
         with:
           version: "1.32.0"
