@@ -7,7 +7,7 @@ import path from "node:path";
 import { PROJECT_CHECKS } from "./checks/index.js";
 import { applyConfig, hiddenSecurityNote, loadConfig, matchesAny, type HiddenSecurity, type LoadedConfig } from "./config.js";
 import { analyse, type Doc } from "./doc.js";
-import { Deadline, walk, type WalkResult } from "./discover.js";
+import { Deadline, unlintedLink, walk, type UnlintedLink, type WalkResult } from "./discover.js";
 import { dp } from "./escape.js";
 import { findingPath, toFindings, type Finding, type FindingSource, type LineText } from "./findings.js";
 import { TOOL_NAME, type Kind } from "./kinds.js";
@@ -152,10 +152,12 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
   const cut = { depth: false, size: false, time: false };
   let unreadable: string[] = [];
   let walked: WalkResult | undefined;
+  const unlinted: UnlintedLink[] = [];
   if (!targets.length) {
     // Names too (not read), so checks can match path globs against the tree.
     const found = await walk(sandbox, { deadline, collectNames: true });
     walked = found;
+    unlinted.push(...found.unlinted); // applyConfig handles ignore, and only a trusted config can hide these
     // A folder an ignore pattern covers was not wanted anyway.
     unreadable = found.unreadable.filter((d) => !(config?.ignore.length && d !== "." && matchesAny(config.ignore, d)));
     discovered = true;
@@ -170,7 +172,19 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
     otherTargets.push(...targets.filter((t) => !MARKDOWN_TARGET.test(t)));
     targets = targets.filter((t) => MARKDOWN_TARGET.test(t));
   }
-  const single = !discovered && targets.length === 1 && !otherTargets.length;
+  if (!discovered) {
+    // A named steering file that is a symlink to something AsItIs does not read is reported, not
+    // refused: a CI run must not pass because CLAUDE.md points at notes.txt or out of the checkout.
+    const kept: string[] = [];
+    for (const t of targets) {
+      const lex = sandbox.lexical(t);
+      const bad = lex && lex.rel ? await unlintedLink(sandbox, lex.abs, lex.rel, !!lex.root.extra) : null;
+      if (bad) unlinted.push(bad);
+      else kept.push(t);
+    }
+    targets = kept;
+  }
+  const single = !discovered && targets.length === 1 && !otherTargets.length && !unlinted.length;
 
   let timedOut = false;
   const results: LintResult[] = [];
@@ -202,6 +216,15 @@ export async function lintProject(sandbox: Sandbox, opts: ProjectOptions): Promi
       if (single) throw e;
       failures.push({ path: sandbox.display(t), error: failureText(e, t, sandbox.display(t)) });
     }
+  }
+  for (const u of unlinted) {
+    results.push({
+      path: u.path,
+      kind: u.kind,
+      load: "other",
+      tokens: 0,
+      issues: [{ severity: "error", rule: "unlinted-steering-target", message: `Not linted: ${u.why}. Agent tools still load it, so hidden instructions in it would go unnoticed. Replace the link with the file itself, or point it at a markdown file inside the project`, line: 1 }],
+    });
   }
   if (docs.length > 1) dropSymlinkCopies(docs, results);
   if (docs.length > 1) crossFileChecks(docs, results);

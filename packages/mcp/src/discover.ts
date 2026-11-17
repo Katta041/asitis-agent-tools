@@ -5,6 +5,7 @@ import { promises as fsp } from "node:fs";
 import path from "node:path";
 import { classify, inMemoryFolder, isSteering } from "./kinds.js";
 import { CAPS } from "./limits.js";
+import { dp } from "./escape.js";
 import { policyRefusal, type Root, type Sandbox } from "./paths.js";
 
 // Dependency, build and cache folders: large, generated, and never where a project keeps its own
@@ -62,6 +63,41 @@ export interface WalkResult {
   names?: string[];
   /** With collectNames: folders under the primary root the walk did not enter (SKIP_DIRS, or past the depth limit), root-relative. */
   skippedDirs?: string[];
+  /**
+   * Steering files (by name) that are symlinks to something AsItIs does not read: a file outside the
+   * roots, or a file the read policy refuses (notes.txt, .env). The agent tools still load them, so
+   * the lint reports each one (unlinted-steering-target) instead of skipping it quietly.
+   */
+  unlinted: UnlintedLink[];
+}
+
+export interface UnlintedLink {
+  /** Display path of the link. */
+  path: string;
+  kind: import("./kinds.js").Kind;
+  /** Why it was not linted, as the end of a sentence. */
+  why: string;
+}
+
+/**
+ * For a steering file name that is a symlink: why the file it points to is not linted, or null when
+ * it is (or the link is broken: a missing file loads nothing). Never reads the target.
+ */
+export async function unlintedLink(sandbox: Sandbox, abs: string, rel: string, extraRoot: boolean): Promise<UnlintedLink | null> {
+  const c = classify(rel, inMemoryFolder(rel, extraRoot));
+  if (!isSteering(c.kind) || policyRefusal(rel)) return null;
+  const st = await fsp.lstat(abs).catch(() => null);
+  if (!st?.isSymbolicLink()) return null;
+  const probe = await sandbox.probe(abs, path.dirname(abs)).catch(() => null);
+  const shown = sandbox.display(abs);
+  if (probe?.state === "outside") return { path: shown, kind: c.kind, why: "it is a symlink to a file outside the project folder, which AsItIs does not read" };
+  if (probe?.state !== "ok" || probe.rel === undefined) return null;
+  const target = await fsp.stat(probe.real!).catch(() => null);
+  if (!target?.isFile()) return null;
+  const refused = policyRefusal(probe.rel);
+  if (!refused) return null;
+  const notMarkdown = refused.includes("is not a markdown file");
+  return { path: shown, kind: c.kind, why: `it is a symlink to ${dp(probe.rel)}, which AsItIs does not read (${notMarkdown ? "it only reads markdown" : "it never reads .env files, git internals, dependencies or settings"})` };
 }
 
 export class Deadline {
@@ -77,7 +113,7 @@ export class Deadline {
 /** Lists steering files (and, with includeAll, every readable markdown file) under the roots. */
 export async function walk(sandbox: Sandbox, opts: { maxDepth?: number; includeAll?: boolean; deadline?: Deadline; collectNames?: boolean } = {}): Promise<WalkResult> {
   const maxDepth = Math.min(opts.maxDepth ?? CAPS.walkMaxDepth, CAPS.walkMaxDepth);
-  const out: WalkResult = { files: [], skippedSymlinks: 0, truncated: false, cut: { depth: false, size: false, time: false }, entriesSeen: 0, unreadable: [] };
+  const out: WalkResult = { files: [], skippedSymlinks: 0, truncated: false, cut: { depth: false, size: false, time: false }, entriesSeen: 0, unreadable: [], unlinted: [] };
   const names: string[] | null = opts.collectNames ? (out.names = []) : null;
   const skippedDirs: string[] | null = opts.collectNames ? (out.skippedDirs = []) : null;
   for (const root of sandbox.roots) {
@@ -108,6 +144,14 @@ export async function walk(sandbox: Sandbox, opts: { maxDepth?: number; includeA
         const childRel = rel ? `${rel}/${e.name}` : e.name;
         let isDir = e.isDirectory();
         let isFile = e.isFile();
+        if (e.isSymbolicLink() && out.unlinted.length < 1000) {
+          const bad = await unlintedLink(sandbox, path.join(dir, e.name), childRel, !!root.extra);
+          if (bad) {
+            out.unlinted.push(bad);
+            out.skippedSymlinks++;
+            continue;
+          }
+        }
         if (e.isSymbolicLink()) {
           // Follow it only if it resolves inside a root; never count a folder twice (loops).
           const probe = await sandbox.probe(path.join(dir, e.name), dir).catch(() => null);

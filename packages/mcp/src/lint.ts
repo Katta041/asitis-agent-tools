@@ -1290,7 +1290,17 @@ async function checkImportChains(doc: Doc, tops: Array<{ im: ImportRef; real: st
     if (seen.has(real)) return;
     seen.add(real);
     const rel = sandbox.display(real);
-    if (policyRefusal(rel.replace(/\\/g, "/")) || ++opened > MAX_CHAIN_FILES) return;
+    const refused = policyRefusal(rel.replace(/\\/g, "/"));
+    if (refused) {
+      // Claude Code loads any text file through an import, but AsItIs reads only markdown, so say
+      // that this one went unchecked instead of passing it over (it could hide an instruction).
+      if (IMPORTED_TEXT.test(rel)) {
+        const why = refused.includes("is not a markdown file") ? "it only reads markdown" : "it never reads .env files, git internals, dependencies or settings";
+        c.add("warning", "unlinted-steering-target", `${q(chain.join(" -> "), 300)} loads a file AsItIs does not read (${why}), so it was not checked for hidden instructions or invisible characters. Review it by hand, or make it a .md file`, topLine);
+      }
+      return;
+    }
+    if (++opened > MAX_CHAIN_FILES) return;
     let child: Doc;
     try {
       const f = await sandbox.open(real);
