@@ -6,6 +6,7 @@ All notable changes to the AsItIs Claude Code plugin are documented here. The fo
 
 ### Security
 - `hooks/guard.mjs` escapes file names in `systemMessage`, `permissionDecisionReason` and `additionalContext`, and the text of its own error lines, with the rules in `packages/mcp/src/escape.ts`: control, bidi and invisible characters become `\u` escapes, a name with anything but plain path characters is quoted, and names are cut at 120 characters.
+- Codex: `codex.mcp.json` runs `npx --prefix=~/ -y @asitis/mcp@0.4.4`, so npx never runs a `node_modules/@asitis/mcp` or reads an `.npmrc` that the project commits. The Claude Code plugin is unchanged: it already runs the bundled server.
 
 ## [0.4.4] - 2026-11-17
 

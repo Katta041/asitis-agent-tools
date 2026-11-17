@@ -10,7 +10,7 @@ It gives your coding agent seven tools to read, outline, lint, budget and sugges
 
 ## Install
 
-Requires Node 22.13 or later. Always pin the version; never use `@latest` in an agent config. MCP clients start servers outside your project, so give `--root` as an absolute path.
+Requires Node 22.13 or later. Always pin the version; never use `@latest` in an agent config. MCP clients start servers outside your project, so give `--root` as an absolute path. The configs below pass `--prefix=~/` to npx: without it, npx started inside a project runs that project's `node_modules/@asitis/mcp` if the version matches, so a repo you open could ship its own copy.
 
 Check that it runs:
 
@@ -23,7 +23,7 @@ npx -y @asitis/mcp@0.4.4 --version
 Run this in your project folder:
 
 ```bash
-claude mcp add asitis -- npx -y @asitis/mcp@0.4.4 --root "$PWD"
+claude mcp add asitis -- npx --prefix=~/ -y @asitis/mcp@0.4.4 --root "$PWD"
 ```
 
 Or install the [Claude Code plugin](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/README.md), which adds a byte-clean editing skill, `/asitis:md-lint`, `/asitis:md-budget` and an optional guard hook, and runs this server under Node's permission model:
@@ -42,7 +42,7 @@ claude plugin install asitis@asitis
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
     }
   }
 }
@@ -57,7 +57,7 @@ claude plugin install asitis@asitis
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "${workspaceFolder}"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -75,7 +75,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
     "asitis": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "${workspaceFolder}"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -88,7 +88,7 @@ If your Cursor version does not expand `${workspaceFolder}`, use an absolute pat
 ```toml
 [mcp_servers.asitis]
 command = "npx"
-args = ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+args = ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
 ```
 
 ### Gemini CLI
@@ -100,7 +100,7 @@ args = ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
   "mcpServers": {
     "asitis": {
       "command": "npx",
-      "args": ["-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
+      "args": ["--prefix=~/", "-y", "@asitis/mcp@0.4.4", "--root", "/absolute/path/to/project"]
     }
   }
 }

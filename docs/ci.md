@@ -22,6 +22,8 @@ npx -y -p @asitis/mcp@0.4.4 asitis lint
 
 Keep the exact version in the command. `@latest` would let a new release change what your CI checks without a commit on your side.
 
+npx runs the copy in the repo's own `node_modules/@asitis/mcp` first when its version matches, and it reads the repo's `.npmrc`. If your pipeline runs on pull or merge requests from people you don't trust, they can commit both and run their own code in the job. Use the [GitHub Action](#github-actions) or the [pre-commit hook](#pre-commit) there: both run the CLI bundled in this repo and never look at the project's `node_modules`. Elsewhere, `npx --prefix=~/ -y -p @asitis/mcp@0.4.4 asitis lint` makes npx look in the home folder instead of the project.
+
 Useful variants:
 
 ```
@@ -100,7 +102,7 @@ pre-commit try-repo https://github.com/Katta041/asitis-agent-tools asitis-lint -
 
 ### lefthook and husky
 
-These run the npm package instead of the bundled file. `{staged_files}` in lefthook and `git diff --cached` in husky pass only what you are committing. Both lists below match the same files as the pre-commit hook's `files:` pattern.
+These run the npm package instead of the bundled file, so the `node_modules` note under [Plain npx](#plain-npx) applies. `{staged_files}` in lefthook and `git diff --cached` in husky pass only what you are committing. Both lists below match the same files as the pre-commit hook's `files:` pattern.
 
 lefthook (`lefthook.yml`). `glob_matcher: doublestar` matters: with lefthook's default matcher `**/CLAUDE.md` needs at least one folder, so a `CLAUDE.md` at the repo root would never be linted.
 
@@ -128,6 +130,8 @@ git diff --cached --name-only --diff-filter=ACMR -z -- \
 ```
 
 ## GitLab CI
+
+The npx lines below use the project's `node_modules/@asitis/mcp` if one is committed at the same version (see [Plain npx](#plain-npx)). For merge requests from forks, add `--prefix=~/` after `npx`.
 
 ```yaml
 asitis:

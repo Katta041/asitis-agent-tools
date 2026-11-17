@@ -9,6 +9,8 @@ All notable changes to this repository are documented here. The format follows [
 - GitHub Action: `action/run.sh` passes `--` before the `paths` input, so a file named `--help` or `--fail-on=never` is linted as a path instead of being read as a flag. Before, a path named `--help` printed the help and passed the job.
 - GitHub Action: error annotations built from inputs now escape `%`, CR and LF, the same as the CLI's own stderr lines. A `format` value with a line break could start a second workflow command.
 - pre-commit hook: the default `args` end with `--` for the same reason. If you set your own `args`, keep `--` as the last one (docs/ci.md shows it). The lefthook and husky recipes pass `--` before the file list too.
+- Codex and Cursor plugins: the server now starts with `npx --prefix=~/ -y @asitis/mcp@0.4.4`. Plain `npx -y` started in the project uses the project's own `node_modules/@asitis/mcp` when the version matches, and reads its `.npmrc`, so a repo you opened could commit a fake copy and have it run as the server. `--prefix=~/` moves that lookup to the home folder. Checked with npm 10.9 and 11.12 against a repo that commits such a copy.
+- The MCP configs in the README, `docs/install.md` and the package README, and the Add to Cursor and VS Code install links, use the same `--prefix=~/`. `docs/ci.md` says that npx in CI runs a committed `node_modules` copy too, and points pipelines that run untrusted pull requests at the Action or the pre-commit hook, which use the bundled CLI.
 
 ## [0.4.4] - 2026-11-17
 
