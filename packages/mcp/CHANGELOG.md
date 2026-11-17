@@ -2,7 +2,7 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.5] - 2026-11-17
 
 ### Added
 - `unlinted-steering-target` (security, error; `src/discover.ts`, `src/project.ts`, `src/lint.ts`): the walk and named targets report a steering file name that is a symlink to a file outside the roots or to one `policyRefusal` refuses, instead of skipping it or failing the read. Import chains report an `@import` of a text file the policy refuses (by `IMPORTED_TEXT`) as a warning. The target is never opened. A repo config can't hide it without trust, as with every security rule.

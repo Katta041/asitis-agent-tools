@@ -2,11 +2,11 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.5] - 2026-11-17
 
 ### Security
 - `hooks/guard.mjs` escapes file names in `systemMessage`, `permissionDecisionReason` and `additionalContext`, and the text of its own error lines, with the rules in `packages/mcp/src/escape.ts`: control, bidi and invisible characters become `\u` escapes, a name with anything but plain path characters is quoted, and names are cut at 120 characters.
-- Codex: `codex.mcp.json` runs `npx --prefix=~/ -y @asitis/mcp@0.4.4`, so npx never runs a `node_modules/@asitis/mcp` or reads an `.npmrc` that the project commits. The Claude Code plugin is unchanged: it already runs the bundled server.
+- Codex: `codex.mcp.json` runs `npx --prefix=~/ -y @asitis/mcp@0.4.5`, so npx never runs a `node_modules/@asitis/mcp` or reads an `.npmrc` that the project commits. The Claude Code plugin is unchanged: it already runs the bundled server.
 - `commands/md-fix.md`: `allowed-tools` lists `Read(**/*.md)`, `Edit(**/*.md)` and the same for `*.mdc`, `.cursorrules`, `.windsurfrules` and `.clinerules`, instead of bare `Read` and `Edit`. Checked with `claude -p` 2.1.325: the CLAUDE.md fixes applied, an Edit to `notes.txt` in the same session was denied (it went through with the old list).
 
 ## [0.4.4] - 2026-11-17

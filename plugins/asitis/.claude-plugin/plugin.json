@@ -2,7 +2,7 @@
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "asitis",
   "displayName": "AsItIs",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Read-only linter for CLAUDE.md, AGENTS.md, SKILL.md, rules and memory files. Shows what each agent loads at launch, what it costs in tokens, and where hidden or invisible text sits. /asitis:md-lint, /asitis:md-loads, /asitis:md-budget and /asitis:md-fix, a skill for minimal markdown edits, and an optional accident guard for Write and Edit. No network, no writes.",
   "author": {
     "name": "AsItIs",
