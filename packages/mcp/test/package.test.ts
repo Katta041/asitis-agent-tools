@@ -129,6 +129,33 @@ describe("npm package", () => {
   });
 });
 
+// packages/asitis is the unscoped `asitis` package, so `npx asitis lint` works. It holds no code
+// of its own: one file that imports the CLI bundle from @asitis/mcp at the same exact version.
+describe("asitis alias package", () => {
+  const ALIAS = path.join(REPO, "packages/asitis");
+  const alias = JSON.parse(read(path.join(ALIAS, "package.json")));
+
+  test("same version, pinned to exactly this @asitis/mcp, no install scripts", () => {
+    expect(alias.name).toBe("asitis");
+    expect(alias.version).toBe(pkg.version);
+    expect(alias.dependencies).toEqual({ "@asitis/mcp": pkg.version });
+    expect(alias.scripts ?? {}).toEqual({});
+    expect(alias.bin).toEqual({ asitis: "cli.mjs" });
+    expect(alias.files).toEqual(["cli.mjs", "README.md", "LICENSE"]);
+    expect(alias.engines).toEqual(pkg.engines);
+  });
+  test("its README pins this version", () => {
+    const pins = [...read(path.join(ALIAS, "README.md")).matchAll(/\basitis@(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+    expect(pins.length).toBeGreaterThan(0);
+    expect(pins.filter((v) => v !== pkg.version)).toEqual([]);
+  });
+  test("runs the CLI and passes arguments through", () => {
+    const r = spawnSync(process.execPath, [path.join(ALIAS, "cli.mjs"), "--version"], { encoding: "utf8" });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout.trim()).toBe(pkg.version);
+  });
+});
+
 describe("no write, exec or network code", () => {
   const FORBIDDEN_SRC = [
     /child_process/, /node:net\b/, /node:http/, /node:https/, /node:dns/, /node:tls/, /node:dgram/, /worker_threads/, /\bfetch\s*\(/,

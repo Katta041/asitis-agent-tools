@@ -1,0 +1,42 @@
+{
+  "name": "asitis",
+  "version": "0.4.5",
+  "description": "Short name for the asitis CLI in @asitis/mcp: npx asitis lint checks CLAUDE.md, AGENTS.md, SKILL.md and Cursor rules. Read-only.",
+  "keywords": [
+    "claude-md",
+    "agents-md",
+    "skill-md",
+    "cursor-rules",
+    "linter",
+    "lint",
+    "cli",
+    "steering-files"
+  ],
+  "homepage": "https://asitis.app",
+  "bugs": "https://github.com/Katta041/asitis-agent-tools/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Katta041/asitis-agent-tools.git",
+    "directory": "packages/asitis"
+  },
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "asitis": "cli.mjs"
+  },
+  "files": [
+    "cli.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@asitis/mcp": "0.4.5"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

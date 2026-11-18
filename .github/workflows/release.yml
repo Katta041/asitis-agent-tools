@@ -1,4 +1,5 @@
-# Publishes @asitis/mcp to npm with trusted publishing (OIDC) and provenance.
+# Publishes @asitis/mcp, then the asitis alias package (packages/asitis), to npm with trusted
+# publishing (OIDC) and provenance.
 # Manual trigger only. Before the first run, configure a Trusted Publisher for this
 # repository and workflow file on npmjs.com, and create the protected "npm"
 # environment with required reviewers in the repository settings.
@@ -33,6 +34,8 @@ jobs:
     outputs:
       tarball: ${{ steps.pack.outputs.tarball }}
       sha256: ${{ steps.pack.outputs.sha256 }}
+      alias_tarball: ${{ steps.pack-alias.outputs.tarball }}
+      alias_sha256: ${{ steps.pack-alias.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,7 +47,9 @@ jobs:
       - name: Version matches the input
         env:
           INPUT_VERSION: ${{ inputs.version }}
-        run: test "$(node -p "require('./packages/mcp/package.json').version")" = "$INPUT_VERSION"
+        run: |
+          test "$(node -p "require('./packages/mcp/package.json').version")" = "$INPUT_VERSION"
+          test "$(node -p "require('./packages/asitis/package.json').version")" = "$INPUT_VERSION"
       - run: npm ci --ignore-scripts
       - run: npm test
       - name: Pack and record the SHA-256
@@ -56,6 +61,19 @@ jobs:
           cd packages/mcp
           npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/release"
           tarball="asitis-mcp-${INPUT_VERSION}.tgz"
+          cd "$RUNNER_TEMP/release"
+          test -f "$tarball"
+          sha256sum "$tarball" | tee "$tarball.sha256"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(cut -d' ' -f1 "$tarball.sha256")" >> "$GITHUB_OUTPUT"
+      - name: Pack the asitis alias and record the SHA-256
+        id: pack-alias
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          cd packages/asitis
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/release"
+          tarball="asitis-${INPUT_VERSION}.tgz"
           cd "$RUNNER_TEMP/release"
           test -f "$tarball"
           sha256sum "$tarball" | tee "$tarball.sha256"
@@ -103,14 +121,34 @@ jobs:
         env:
           TARBALL: ${{ needs.build.outputs.tarball }}
           EXPECTED: ${{ needs.build.outputs.sha256 }}
+          ALIAS_TARBALL: ${{ needs.build.outputs.alias_tarball }}
+          ALIAS_EXPECTED: ${{ needs.build.outputs.alias_sha256 }}
         working-directory: ${{ runner.temp }}/release
         run: |
           actual="$(sha256sum "$TARBALL" | cut -d' ' -f1)"
           echo "expected $EXPECTED"
           echo "actual   $actual"
           test -n "$EXPECTED" && test "$actual" = "$EXPECTED"
+          alias_actual="$(sha256sum "$ALIAS_TARBALL" | cut -d' ' -f1)"
+          echo "alias expected $ALIAS_EXPECTED"
+          echo "alias actual   $alias_actual"
+          test -n "$ALIAS_EXPECTED" && test "$alias_actual" = "$ALIAS_EXPECTED"
       - name: Publish the tested tarball
         env:
           TARBALL: ${{ needs.build.outputs.tarball }}
         working-directory: ${{ runner.temp }}/release
         run: npm publish "./$TARBALL" --access public --provenance --ignore-scripts
+      # After @asitis/mcp, since the alias depends on that exact version. Skipped when this version is
+      # already on npm (the first asitis release was published by hand, before a Trusted Publisher
+      # could be set up for a package that didn't exist yet).
+      - name: Publish the tested asitis alias tarball
+        env:
+          TARBALL: ${{ needs.build.outputs.alias_tarball }}
+          INPUT_VERSION: ${{ inputs.version }}
+        working-directory: ${{ runner.temp }}/release
+        run: |
+          if npm view "asitis@$INPUT_VERSION" version >/dev/null 2>&1; then
+            echo "asitis@$INPUT_VERSION is already on npm, skipping"
+          else
+            npm publish "./$TARBALL" --access public --provenance --ignore-scripts
+          fi
