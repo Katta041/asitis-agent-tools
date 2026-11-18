@@ -227,9 +227,9 @@ export class InvisibleKeep {
       return "";
     }
     if (cp === 0x200b) {
-      const before = letterNear(s, at, -1);
-      const after = letterNear(s, at + units, 1);
-      return NO_SPACES.test(before) && NO_SPACES.test(after) && alone(s, at, units) ? "it marks a word break in a script written without spaces (Khmer, Thai, Lao, Myanmar and others)" : "";
+      // alone() first: it is two code point lookups, and a file of nothing but ZWSPs fails it at once.
+      if (!alone(s, at, units) || !NO_SPACES.test(letterNear(s, at, -1))) return "";
+      return NO_SPACES.test(letterNear(s, at + units, 1)) ? "it marks a word break in a script written without spaces (Khmer, Thai, Lao, Myanmar and others)" : "";
     }
     if (cp === 0x200e || cp === 0x200f || cp === 0x061c) {
       if (this.rtlLine !== lineStart) {
