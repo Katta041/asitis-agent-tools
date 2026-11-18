@@ -5,6 +5,7 @@
 [![npm](https://img.shields.io/npm/v/@asitis/mcp?color=007370)](https://www.npmjs.com/package/@asitis/mcp)
 [![License: MIT](https://img.shields.io/badge/license-MIT-007370)](LICENSE)
 [![CI](https://github.com/Katta041/asitis-agent-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/Katta041/asitis-agent-tools/actions/workflows/ci.yml)
+[![Glama](https://glama.ai/mcp/servers/Katta041/asitis-agent-tools/badges/score.svg)](https://glama.ai/mcp/servers/Katta041/asitis-agent-tools)
 
 Here is `asitis loads` on [`examples/monorepo`](examples/monorepo), a small made-up repo, run as its own git repo with 0.4.5. The footer about settings it can't see is trimmed:
 
