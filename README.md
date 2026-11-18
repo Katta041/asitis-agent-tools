@@ -10,7 +10,7 @@
 Here is `asitis loads` on [`examples/monorepo`](examples/monorepo), a small made-up repo, run as its own git repo with 0.4.5. The footer about settings it can't see is trimmed:
 
 ```text
-$ npx -y -p @asitis/mcp@0.4.5 asitis loads --tool claude-code
+$ npx -y asitis@0.4.5 loads --tool claude-code
 What loads when a session starts in the project root (local estimates, about 4 characters per token):
 
 Claude Code: about 37 tokens at launch from 2 files; 2 more files can load later (up to about 39 tokens); 2 not loaded
@@ -28,7 +28,7 @@ Claude Code: about 37 tokens at launch from 2 files; 2 more files can load later
     - Claude Code ignores AGENTS.md here: CLAUDE.local.md switches off the AGENTS.md fallback just as a CLAUDE.md would, and it does not import AGENTS.md. Add the line @AGENTS.md to CLAUDE.local.md, or set Project instructions to claude-md-and-agents-md
   How sure: 4 confirmed with a canary run.
 
-$ npx -y -p @asitis/mcp@0.4.5 asitis loads packages/api --tool codex
+$ npx -y asitis@0.4.5 loads packages/api --tool codex
 What loads when a session starts in packages/api (local estimates, about 4 characters per token):
 
 Codex: about 8.2k tokens at launch from 2 files; 1 file cut
@@ -52,7 +52,7 @@ One person's CLAUDE.local.md is enough to stop Claude Code reading the team's AG
 - Gemini CLI extension: `gemini extensions install https://github.com/Katta041/asitis-agent-tools`
 - Cursor: [Add to Cursor](https://cursor.com/en/install-mcp?name=asitis&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyItLXByZWZpeD1+LyIsIi15IiwiQGFzaXRpcy9tY3BAMC40LjUiLCItLXJvb3QiLCIke3dvcmtzcGFjZUZvbGRlcn0iXX0=) (adds the MCP server to your Cursor settings)
 - VS Code (Copilot agent mode): [add the MCP server](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522asitis%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522--prefix%253D~%252F%2522%252C%2522-y%2522%252C%2522%2540asitis%252Fmcp%25400.4.5%2522%252C%2522--root%2522%252C%2522%2524%257BworkspaceFolder%257D%2522%255D%257D)
-- Any terminal, nothing to install: `npx -y -p @asitis/mcp@0.4.5 asitis lint`
+- Any terminal, nothing to install: `npx -y asitis@0.4.5 lint`
 - Devin Desktop (Windsurf), Cline, Kiro, Zed, Goose, Continue, JetBrains and Docker: [docs/install.md](docs/install.md)
 
 ## Run it in CI
@@ -160,7 +160,7 @@ npx --prefix=~/ -y @asitis/mcp@0.4.5 --root /absolute/path/to/project
 **Terminal or CI**, nothing to install first:
 
 ```bash
-npx -y -p @asitis/mcp@0.4.5 asitis lint
+npx -y asitis@0.4.5 lint
 ```
 
 Exit code 1 means something at or above `--fail-on` (default `error`) was found. `--format sarif` and `--format github` are there for code scanning and pull request annotations; see [CLI and CI](#cli-and-ci) for the GitHub Action and the pre-commit hook.
@@ -236,7 +236,7 @@ The full list:
 - **Drift:** an AGENTS.md that Claude Code skips because a CLAUDE.md shadows it, mirrored files that disagree, Codex's shared 32 KiB budget down a folder chain.
 - **Skills and agent config (opt-in):** skill scripts that download and run code, decode payloads or read credentials, skill arguments pasted into shell commands; hooks, permissions and MCP servers in `.claude/settings.json` and `.mcp.json`, secrets saved into permission rules, local settings and session transcripts committed by mistake. Off unless you pass `include`.
 - **Fixes:** `/asitis:md-fix` (or `asitis lint --fix-preview`) shows mechanical fixes as a diff and applies only what you accept.
-- **CI:** `npx -y -p @asitis/mcp@0.4.5 asitis lint`, a GitHub Action and a pre-commit hook. See [CLI and CI](#cli-and-ci).
+- **CI:** `npx -y asitis@0.4.5 lint`, a GitHub Action and a pre-commit hook. See [CLI and CI](#cli-and-ci).
 - **Guard (optional, plugin only):** warns before Claude rewrites a whole markdown file or strips its line endings, trailing spaces or BOM. An accident guard, not a security boundary.
 - **Read-only:** no write tool, no network code, runs under Node's permission model in the plugin.
 
@@ -416,18 +416,18 @@ In a client config, `command` is `node` and every other word goes in `args`, in 
 The package also has an `asitis` command for scripts, CI and pre-commit. It lints the same way as `lint_steering` and exits 0 (clean), 1 (findings at or above `--fail-on`, default `error`), 2 (something you can fix, one line on stderr), 3 (a bug in asitis) or 4 (a partial run: the repo was too big to search in full, so only the files found were linted; `--allow-partial` gives 0 or 1 instead).
 
 ```bash
-npx -y -p @asitis/mcp@0.4.5 asitis lint                      # every steering file under the current folder
-npx -y -p @asitis/mcp@0.4.5 asitis lint CLAUDE.md AGENTS.md  # only these files
-npx -y -p @asitis/mcp@0.4.5 asitis lint --format sarif > asitis.sarif
-npx -y -p @asitis/mcp@0.4.5 asitis lint --fix-preview=safe | git apply   # apply the safe fixes yourself
-npx -y -p @asitis/mcp@0.4.5 asitis budget                    # tokens each agent loads every session
-npx -y -p @asitis/mcp@0.4.5 asitis loads packages/api        # what each agent loads when it starts in packages/api
+npx -y asitis@0.4.5 lint                      # every steering file under the current folder
+npx -y asitis@0.4.5 lint CLAUDE.md AGENTS.md  # only these files
+npx -y asitis@0.4.5 lint --format sarif > asitis.sarif
+npx -y asitis@0.4.5 lint --fix-preview=safe | git apply   # apply the safe fixes yourself
+npx -y asitis@0.4.5 budget                    # tokens each agent loads every session
+npx -y asitis@0.4.5 loads packages/api        # what each agent loads when it starts in packages/api
 ```
 
 Formats: `text`, `json`, `sarif` (the standard report format GitHub code scanning reads) and `github` (pull request annotations). With `github`, only errors and warnings become annotations; add `--annotate-notes` to annotate notes as well. It never writes a file; `--fix-preview` prints a diff and you decide whether to apply it. `asitis lint --help` and `asitis budget --help` list each command's options.
 
 ```text
-$ npx -y -p @asitis/mcp@0.4.5 asitis lint --include skills
+$ npx -y asitis@0.4.5 lint --include skills
 .claude/skills/release/SKILL.md:4:1 warning sec-skill-allowed-tools allowed-tools pre-approves "Bash" (any shell command), so during the turn that invokes this skill those calls go ahead without asking you; scope each entry to the commands it needs, for example Bash(git status *) or WebFetch(domain:docs.example.com)
 
 CLAUDE.md:7:1 warning duplicate-rule Same rule as line 5: "Run `pnpm test` before every commit". Duplicates cost context and drift apart when one is edited; keep one

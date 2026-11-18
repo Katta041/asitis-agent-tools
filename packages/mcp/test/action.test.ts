@@ -186,7 +186,7 @@ describe("versions in the CI docs agree", () => {
 
   test("docs/ci.md covers GitHub Actions, pre-commit, GitLab CI and plain npx", () => {
     for (const h of ["## Plain npx", "## GitHub Actions", "## pre-commit", "## GitLab CI"]) expect(ciDoc).toContain(h);
-    expect(ciDoc).toMatch(/npx -y -p @asitis\/mcp@\d+\.\d+\.\d+ asitis lint/);
+    expect(ciDoc).toMatch(/npx -y asitis@\d+\.\d+\.\d+ lint/);
   });
 });
 

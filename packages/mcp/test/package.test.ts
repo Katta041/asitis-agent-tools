@@ -92,6 +92,11 @@ describe("npm package", () => {
           // With -p the next word must name a bin; without it npx runs the "mcp" bin.
           if (m[1]) expect(Object.keys(pkg.bin), `${f}: ${line}`).toContain(m[3]);
         }
+        // The asitis alias package (packages/asitis) runs the CLI: npx -y asitis@<version> lint.
+        for (const m of line.matchAll(/npx (?:--prefix=~\/ )?-y asitis@(\S+)/g)) {
+          seen++;
+          expect(m[1], `${f}: ${line}`).toBe(pkg.version);
+        }
         for (const m of line.matchAll(/"-y", "(-p", ")?@asitis\/mcp@([^"]+)"/g)) {
           seen++;
           expect(m[2], `${f}: ${line}`).toBe(pkg.version);

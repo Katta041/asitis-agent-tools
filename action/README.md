@@ -116,7 +116,7 @@ The step fails on exit code 1, 2, 3 or 4. For 4, point `root` at a subfolder, li
 Write a baseline once and commit it. Old findings then show as suppressed, and only new ones fail the check.
 
 ```
-npx -y -p @asitis/mcp@0.4.5 asitis lint --format json --write-baseline > .asitis-baseline.json
+npx -y asitis@0.4.5 lint --format json --write-baseline > .asitis-baseline.json
 ```
 
 ```yaml
