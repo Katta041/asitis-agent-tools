@@ -133,11 +133,19 @@ jobs:
           echo "alias expected $ALIAS_EXPECTED"
           echo "alias actual   $alias_actual"
           test -n "$ALIAS_EXPECTED" && test "$alias_actual" = "$ALIAS_EXPECTED"
+      # Skipped when this version is already on npm, so a re-run after the alias step fails only
+      # publishes the alias (19 Nov: @asitis/mcp 0.4.6 went out, asitis had no Trusted Publisher yet).
       - name: Publish the tested tarball
         env:
           TARBALL: ${{ needs.build.outputs.tarball }}
+          INPUT_VERSION: ${{ inputs.version }}
         working-directory: ${{ runner.temp }}/release
-        run: npm publish "./$TARBALL" --access public --provenance --ignore-scripts
+        run: |
+          if npm view "@asitis/mcp@$INPUT_VERSION" version >/dev/null 2>&1; then
+            echo "@asitis/mcp@$INPUT_VERSION is already on npm, skipping"
+          else
+            npm publish "./$TARBALL" --access public --provenance --ignore-scripts
+          fi
       # After @asitis/mcp, since the alias depends on that exact version. Skipped when this version is
       # already on npm (the first asitis release was published by hand, before a Trusted Publisher
       # could be set up for a package that didn't exist yet).
