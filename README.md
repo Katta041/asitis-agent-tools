@@ -661,6 +661,8 @@ npm run sync-plugin   # rebuild the server and CLI and copy them, with their SHA
 
 If AsItIs caught something in your repo, a star helps other people find it.
 
+AsItIs is also a desktop markdown editor that saves only the lines you change. It's in development; there's a waitlist at [asitis.app/waitlist](https://asitis.app/waitlist).
+
 ## License
 
 [MIT](LICENSE). The bundled server includes open-source dependencies under their own licences, listed in [`plugins/asitis/server/THIRD_PARTY_NOTICES.md`](plugins/asitis/server/THIRD_PARTY_NOTICES.md).
