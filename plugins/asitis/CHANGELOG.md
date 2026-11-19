@@ -2,10 +2,12 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.7] - 2026-11-19
 
 ### Changed
 - `.mcp.json` no longer passes `${CLAUDE_PROJECT_DIR}`. `server/launch.mjs` reads the project folder from the `CLAUDE_PROJECT_DIR` environment variable that Claude Code sets (or the folder it was started in) and adds the same `--allow-fs-read` grant and `--root` as before. The server's command line is unchanged; the plugin directory only accepts `${CLAUDE_PLUGIN_ROOT}` in it.
+- README: a plain first paragraph, how to install from Claude's plugin directory (`asitis@synced`), and where the minified bundles come from.
+- The bundled server and CLI are `@asitis/mcp` 0.4.7, the same code as 0.4.6.
 
 ## [0.4.6] - 2026-11-18
 

@@ -2,6 +2,10 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.7] - 2026-11-19
+
+No changes to the server or CLI. Version bump to match the Claude Code plugin, whose launcher now passes the project folder itself (see [`plugins/asitis/CHANGELOG.md`](../../plugins/asitis/CHANGELOG.md)).
+
 ## [0.4.6] - 2026-11-18
 
 ### Fixed
