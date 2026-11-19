@@ -43,6 +43,7 @@ The same folder installs as a Codex plugin: `codex plugin marketplace add Katta0
 |---|---|
 | `asitis-mcp: AsItIs needs Node 22.13 or later; you have 20.18.0. ...` | Install a current Node from [nodejs.org](https://nodejs.org) and restart Claude Code. (Run without the plugin's launcher, older Node prints only `node: bad option: --permission`.) |
 | `asitis-mcp: Refusing your home folder ...` | Start Claude Code in a project folder, not in your home folder. |
+| `Linted 0 files` or `No steering files found` | The project is the folder Claude Code was started in. Start it at the repository root, or the CLAUDE.md and AGENTS.md files above that folder won't be found. |
 | `asitis-mcp: Node's permission model will not let the server read the root folder ...` | Only when you run the server by hand: list the project folder in `--allow-fs-read` and drop any folder inside it. The plugin does this for you. |
 
 ## Privacy
