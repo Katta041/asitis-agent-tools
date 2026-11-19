@@ -1,6 +1,8 @@
 # AsItIs for Claude Code
 
-**Keep markdown and agent steering files byte-clean.** From [AsItIs](https://asitis.app/?ref=claude-plugin), the markdown editor that never rewrites your file. Nothing changes unless you change it.
+A read-only linter for the files that steer coding agents: CLAUDE.md, AGENTS.md, SKILL.md, Cursor rules, Copilot instructions and memory files. It shows what each agent loads when a session starts in a folder, roughly what that costs in tokens, and where hidden comments or invisible characters sit. It doesn't write to your files and makes no network calls.
+
+It runs in Claude Code (and in Cowork sessions on your own computer), because the linter is a local MCP server started with `node`. In claude.ai chat that server doesn't run, so the commands have nothing to call there.
 
 | Part | What it does |
 |---|---|
@@ -18,6 +20,10 @@
 
 Requires Claude Code and Node 22.13 or later on your `PATH` (the server and hook run with `node`).
 
+If you're reading this in Claude's plugin directory, add it from there. It goes on your claude.ai account and Claude Code loads it as `asitis@synced` the next time you start it (signed in with that account). If you already installed `asitis@asitis` from GitHub, Claude Code keeps using that copy and skips the synced one.
+
+To install from GitHub instead:
+
 ```bash
 claude plugin marketplace add Katta041/asitis-agent-tools
 claude plugin install asitis@asitis
@@ -25,7 +31,7 @@ claude plugin install asitis@asitis
 
 Inside a session, `/plugin marketplace add Katta041/asitis-agent-tools` and `/plugin install asitis@asitis` do the same. Then start a new session and run `/asitis:md-lint` to lint the project's steering files, or `/asitis:md-budget` to see what they cost in tokens.
 
-To update, run `claude plugin marketplace update asitis`, then `claude plugin update asitis@asitis`, and restart Claude Code. To remove it, run `claude plugin uninstall asitis@asitis`.
+To update a GitHub install, run `claude plugin marketplace update asitis`, then `claude plugin update asitis@asitis`, and restart Claude Code. To remove it, run `claude plugin uninstall asitis@asitis`. A directory install updates by itself; to turn it off in Claude Code, run `claude plugin disable asitis@synced`.
 
 From a local clone of [the repository](https://github.com/Katta041/asitis-agent-tools), pass the clone's folder instead: `claude plugin marketplace add ./asitis-agent-tools`. To try it for one session without installing, run `claude --plugin-dir ./asitis-agent-tools/plugins/asitis`.
 
@@ -49,7 +55,7 @@ The same folder installs as a Codex plugin: `codex plugin marketplace add Katta0
 
 ## Pinned server
 
-The server is not fetched from npm at runtime. `server/asitis-mcp.mjs` is the exact `@asitis/mcp` build for this plugin version (one file, zero dependencies), `server/asitis.mjs` is the CLI from the same build, and `server/VERSION` records the version and both SHA-256 values. A test fails if the file differs from a fresh build or if the versions disagree. [`server/THIRD_PARTY_NOTICES.md`](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/server/THIRD_PARTY_NOTICES.md) lists the bundled open-source licences.
+The server is not fetched from npm at runtime. `server/asitis-mcp.mjs` is the exact `@asitis/mcp` build for this plugin version (one file, zero dependencies), `server/asitis.mjs` is the CLI from the same build, and `server/VERSION` records the version and both SHA-256 values. A test fails if the file differs from a fresh build or if the versions disagree. Both files are minified esbuild bundles; the readable TypeScript source is in [`packages/mcp/src`](https://github.com/Katta041/asitis-agent-tools/tree/main/packages/mcp/src), and `npm run sync-plugin` rebuilds them byte for byte. [`server/THIRD_PARTY_NOTICES.md`](https://github.com/Katta041/asitis-agent-tools/blob/main/plugins/asitis/server/THIRD_PARTY_NOTICES.md) lists the bundled open-source licences.
 
 ## Guard hook
 
@@ -104,9 +110,7 @@ The plugin works with no setup, so installing it asks nothing. To change a defau
 | Variable | Default | Effect |
 |---|---|---|
 | `ASITIS_GUARD_MODE` | `ask` | `ask`, `deny` or `off` for the guard hook. |
-| `ASITIS_MCP_FOOTER` | off | Set to `1` to end the first tool result of each session with one line linking to asitis.app. Before 0.2.5 this line was on by default. |
-
-Before 0.2.1 these were plugin options (`guard_mode`, `footer`) set with `/plugin configure`. Claude Code reports every plugin option the user has not saved as "not yet set" at install, even one with a default, so 0.2.1 reads environment variables instead. If you set either option, set the variable instead.
+| `ASITIS_MCP_FOOTER` | off | Set to `1` to end the first tool result of each session with one line linking to asitis.app. |
 
 ## Develop
 
