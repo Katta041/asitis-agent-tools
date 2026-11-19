@@ -8,8 +8,8 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { BUNDLE, FIXTURE_REPO, FOOTER, PLUGIN, toResult } from "./helpers.js";
 
-async function spawnClient(args: string[], nodeFlags: string[] = []): Promise<{ client: Client; stderr: () => string; close: () => Promise<void> }> {
-  const transport = new StdioClientTransport({ command: process.execPath, args: [...nodeFlags, ...args], stderr: "pipe" });
+async function spawnClient(args: string[], nodeFlags: string[] = [], env?: Record<string, string>): Promise<{ client: Client; stderr: () => string; close: () => Promise<void> }> {
+  const transport = new StdioClientTransport({ command: process.execPath, args: [...nodeFlags, ...args], stderr: "pipe", ...(env ? { env } : {}) });
   let err = "";
   transport.stderr?.on("data", (d: Buffer) => (err += d.toString()));
   const client = new Client({ name: "asitis-protocol-test", version: "0.0.0" });
@@ -85,11 +85,12 @@ describe("runs inside Node's permission model with no write, network or child-pr
   test("the plugin's .mcp.json command starts and serves every tool", async () => {
     const cfg = JSON.parse(readFileSync(path.join(PLUGIN, ".mcp.json"), "utf8")).mcpServers.asitis as { command: string; args: string[] };
     expect(cfg.command).toBe("node");
-    const sub = (a: string): string => a.replaceAll("${CLAUDE_PLUGIN_ROOT}", PLUGIN).replaceAll("${CLAUDE_PROJECT_DIR}", FIXTURE_REPO).replaceAll("${user_config.footer}", "true");
+    const sub = (a: string): string => a.replaceAll("${CLAUDE_PLUGIN_ROOT}", PLUGIN).replaceAll("${user_config.footer}", "true");
     const args = cfg.args.map(sub);
     expect(args).toContain("--permission");
     expect(args.some((a) => a.startsWith("--allow-fs-write") || a.startsWith("--allow-net") || a.startsWith("--allow-child"))).toBe(false);
-    const s = await spawnClient(args);
+    // Claude Code sets CLAUDE_PROJECT_DIR for the servers it starts; the launcher reads it.
+    const s = await spawnClient(args, [], { CLAUDE_PROJECT_DIR: FIXTURE_REPO });
     try {
       for (const [name, a] of [["find_steering_files", {}], ["lint_steering", {}], ["context_budget", {}], ["read_markdown", { path: "notes/hidden.md" }], ["outline", { path: "CLAUDE.md" }]] as const) {
         const r = await toResult(s.client, name, a as Record<string, unknown>);

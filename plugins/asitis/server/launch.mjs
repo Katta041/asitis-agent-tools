@@ -14,7 +14,13 @@
 //    server from starting when the plugin folder was inside the project, or when
 //    a session ran in the home folder. The read grant is unchanged: the outer
 //    folder already covers the nested one.
-// 3. Starts the bundled server (and only that file) under --permission, with
+// 3. Adds the project folder when .mcp.json does not pass --root: a read grant
+//    for it and --root for the server. The folder is CLAUDE_PROJECT_DIR, which
+//    Claude Code sets for the servers it starts, or else the working folder
+//    (Claude Code starts the server in the project folder). The plugin directory
+//    refuses any variable but CLAUDE_PLUGIN_ROOT in a server's command line, so
+//    .mcp.json can no longer pass the project folder itself.
+// 4. Starts the bundled server (and only that file) under --permission, with
 //    stdin, stdout and stderr passed straight through, and exits with its code.
 //
 // It reads no files and makes no network calls. Dependency-free, and written
@@ -43,6 +49,25 @@ export function nodeTooOld(version) {
     if ((v[i] || 0) < MIN[i]) return true;
   }
   return false;
+}
+
+/** The project folder: CLAUDE_PROJECT_DIR when Claude Code set it, else the working folder. */
+export function projectDir(env, cwd) {
+  const v = env.CLAUDE_PROJECT_DIR;
+  return typeof v === "string" && v.trim() !== "" ? v : cwd;
+}
+
+/**
+ * Without --root after the server path, grants read access to the project folder
+ * and passes it as --root. The grant goes before the other read grants (Node flags
+ * come before the server path) and --root goes last.
+ */
+export function withProject(args, project) {
+  const script = args.findIndex((a) => !a.startsWith("-"));
+  if (script < 0 || args.slice(script + 1).some((a) => a === "--root" || a.startsWith("--root="))) return args;
+  const first = args.findIndex((a, i) => i < script && a.startsWith("--allow-fs-read="));
+  const at = first < 0 ? script : first;
+  return [...args.slice(0, at), `--allow-fs-read=${project}`, ...args.slice(at), "--root", project];
 }
 
 const real = (p) => {
@@ -88,7 +113,7 @@ export function versionMessage(version) {
 function main() {
   const tooOld = versionMessage(process.versions.node);
   if (tooOld) fail(tooOld, 1);
-  const args = process.argv.slice(2);
+  const args = withProject(process.argv.slice(2), projectDir(process.env, process.cwd()));
   if (args[0] !== "--permission") fail("the launcher must be started with --permission as its first option (see the plugin's .mcp.json).", 2);
   const script = args.findIndex((a) => !a.startsWith("-"));
   if (script < 0 || real(args[script]) !== real(SERVER)) fail(`the launcher only starts ${SERVER}.`, 2);

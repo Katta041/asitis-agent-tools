@@ -24,10 +24,13 @@ const LAUNCHER = path.join(PLUGIN, "server/launch.mjs");
 const MCP_JSON = JSON.parse(readFileSync(path.join(PLUGIN, ".mcp.json"), "utf8")).mcpServers.asitis as { command: string; args: string[] };
 
 /** The .mcp.json command line with Claude Code's variables filled in. */
-function pluginArgs(pluginRoot: string, projectDir: string): string[] {
-  return MCP_JSON.args.map((a) =>
-    a.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginRoot).replaceAll("${CLAUDE_PROJECT_DIR}", projectDir).replaceAll("${user_config.footer}", "true"),
-  );
+function pluginArgs(pluginRoot: string): string[] {
+  return MCP_JSON.args.map((a) => a.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginRoot).replaceAll("${user_config.footer}", "true"));
+}
+
+/** The environment Claude Code gives the server: CLAUDE_PROJECT_DIR is the project folder. */
+function projectEnv(projectDir: string): Record<string, string> {
+  return { ...(process.env as Record<string, string>), CLAUDE_PROJECT_DIR: projectDir };
 }
 
 /** Copies the plugin's server folder (launcher, bundle, notices) to a new plugin root. */
@@ -38,8 +41,8 @@ function installPlugin(pluginRoot: string): void {
   }
 }
 
-async function spawnServer(args: string[]): Promise<{ call: (n: string, a?: Record<string, unknown>) => Promise<CallResult>; close: () => Promise<void>; stderr: () => string }> {
-  const transport = new StdioClientTransport({ command: process.execPath, args, stderr: "pipe" });
+async function spawnServer(args: string[], env?: Record<string, string>, cwd?: string): Promise<{ call: (n: string, a?: Record<string, unknown>) => Promise<CallResult>; close: () => Promise<void>; stderr: () => string }> {
+  const transport = new StdioClientTransport({ command: process.execPath, args, stderr: "pipe", ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
   let err = "";
   transport.stderr?.on("data", (d: Buffer) => (err += d.toString()));
   const client = new Client({ name: "asitis-review-test", version: "0.0.0" });
@@ -61,16 +64,20 @@ describe("B1: the plugin folder inside the project folder", () => {
   });
   afterAll(() => t.cleanup());
 
-  test(".mcp.json lists the project folder before the plugin folder and starts through the launcher", () => {
+  test(".mcp.json uses no variable but CLAUDE_PLUGIN_ROOT and starts through the launcher", () => {
+    // The plugin directory blocks any other variable in a server's command line.
     expect(MCP_JSON.command).toBe("node");
     expect(MCP_JSON.args[0]).toBe("${CLAUDE_PLUGIN_ROOT}/server/launch.mjs");
     expect(MCP_JSON.args[1]).toBe("--permission");
     const reads = MCP_JSON.args.filter((a) => a.startsWith("--allow-fs-read="));
-    expect(reads).toEqual(["--allow-fs-read=${CLAUDE_PROJECT_DIR}", "--allow-fs-read=${CLAUDE_PLUGIN_ROOT}"]);
+    expect(reads).toEqual(["--allow-fs-read=${CLAUDE_PLUGIN_ROOT}"]);
+    const vars = MCP_JSON.args.join(" ").match(/\$\{?[A-Za-z_][\w.]*\}?/g) ?? [];
+    expect(new Set(vars)).toEqual(new Set(["${CLAUDE_PLUGIN_ROOT}"]));
+    expect(MCP_JSON.args).not.toContain("--root");
   });
 
   test("the server starts under the plugin's real flags and reads the project, including its root folder", async () => {
-    const s = await spawnServer(pluginArgs(pluginRoot, project));
+    const s = await spawnServer(pluginArgs(pluginRoot), projectEnv(project));
     try {
       const found = await s.call("find_steering_files");
       expect(found.isError, found.text).toBe(false);
@@ -86,10 +93,10 @@ describe("B1: the plugin folder inside the project folder", () => {
 
   test("a session in the home folder gets the designed home-folder refusal, not a crash", () => {
     // Simulate ~ with the plugin cache inside it: the root is refused by name.
-    const r = spawnSync(process.execPath, pluginArgs(pluginRoot, project), {
+    const r = spawnSync(process.execPath, pluginArgs(pluginRoot), {
       input: "",
       encoding: "utf8",
-      env: { ...process.env, HOME: project, USERPROFILE: project },
+      env: { ...projectEnv(project), HOME: project, USERPROFILE: project },
       timeout: 20_000,
     });
     expect(r.stderr).toMatch(/Refusing your home folder/);
@@ -167,6 +174,47 @@ describe("launcher", () => {
     const ok = spawnSync(process.execPath, [LAUNCHER, "--permission", `--allow-fs-read=${PLUGIN}`, path.join(PLUGIN, "server/asitis-mcp.mjs"), "--version"], { encoding: "utf8" });
     expect(ok.status, ok.stderr).toBe(0);
     expect(ok.stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  test("the project folder comes from CLAUDE_PROJECT_DIR, else the working folder, and is added only without --root", () => {
+    expect(L.projectDir({ CLAUDE_PROJECT_DIR: "/proj" }, "/cwd")).toBe("/proj");
+    expect(L.projectDir({ CLAUDE_PROJECT_DIR: "" }, "/cwd")).toBe("/cwd");
+    expect(L.projectDir({}, "/cwd")).toBe("/cwd");
+    const server = "/p/server/asitis-mcp.mjs";
+    expect(L.withProject(["--permission", "--allow-fs-read=/p", server], "/proj")).toEqual(["--permission", "--allow-fs-read=/proj", "--allow-fs-read=/p", server, "--root", "/proj"]);
+    expect(L.withProject(["--permission", server], "/proj")).toEqual(["--permission", "--allow-fs-read=/proj", server, "--root", "/proj"]);
+    expect(L.withProject(["--permission", "--allow-fs-read=/p", server, "--root", "/x"], "/proj")).toEqual(["--permission", "--allow-fs-read=/p", server, "--root", "/x"]);
+    expect(L.withProject(["--permission", "--allow-fs-read=/p", server, "--root=/x"], "/proj")).toEqual(["--permission", "--allow-fs-read=/p", server, "--root=/x"]);
+  });
+
+  test("with no CLAUDE_PROJECT_DIR, the launcher serves the folder it was started in", async () => {
+    const env = { ...(process.env as Record<string, string>) };
+    delete env["CLAUDE_PROJECT_DIR"];
+    const s = await spawnServer(pluginArgs(PLUGIN), env, FIXTURES);
+    try {
+      const found = await s.call("find_steering_files");
+      expect(found.isError, found.text).toBe(false);
+      expect(found.text).toMatch(/CLAUDE\.md|AGENTS\.md|SKILL\.md/);
+    } finally {
+      await s.close();
+    }
+  });
+
+  test("a project folder with a * in its path is refused, not granted as a wildcard", () => {
+    const t = tempDir("asitis-star-");
+    try {
+      const star = path.join(t.dir, "a*b");
+      try {
+        mkdirSync(star);
+      } catch {
+        return; // file systems that refuse * in a name (Windows)
+      }
+      const r = spawnSync(process.execPath, pluginArgs(PLUGIN), { input: "", encoding: "utf8", env: projectEnv(star), timeout: 20_000 });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toMatch(/^asitis-mcp: refusing --allow-fs-read=.*a\*b: a "\*" in a read grant is a wildcard/);
+    } finally {
+      t.cleanup();
+    }
   });
 
   test("the launcher imports only child_process, fs, path and url, and spawns only this Node", () => {

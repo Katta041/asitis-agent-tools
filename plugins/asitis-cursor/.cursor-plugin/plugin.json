@@ -1,7 +1,7 @@
 {
   "name": "asitis",
   "displayName": "AsItIs",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Read-only linter for AGENTS.md, Cursor rules, CLAUDE.md and SKILL.md: what each agent loads, token budgets, broken imports, instructions hidden in comments or invisible characters. No network, no writes.",
   "author": {
     "name": "AsItIs",

@@ -257,11 +257,12 @@ describe("quiet install", () => {
 
   test("the plugin's own server command adds no asitis.app line unless ASITIS_MCP_FOOTER=1", async () => {
     const cfg = JSON.parse(mcpJson).mcpServers.asitis as { args: string[] };
-    const args = cfg.args.map((a) => a.replaceAll("${CLAUDE_PLUGIN_ROOT}", PLUGIN).replaceAll("${CLAUDE_PROJECT_DIR}", FIXTURE_REPO));
+    const args = cfg.args.map((a) => a.replaceAll("${CLAUDE_PLUGIN_ROOT}", PLUGIN));
     expect(cfg.args.join(" ")).not.toMatch(/footer/);
     for (const [value, shown] of [[undefined, false], ["0", false], ["1", true]] as const) {
       const env = { ...(process.env as Record<string, string>) };
       delete env["ASITIS_MCP_FOOTER"];
+      env["CLAUDE_PROJECT_DIR"] = FIXTURE_REPO;
       if (value !== undefined) env["ASITIS_MCP_FOOTER"] = value;
       const client = new Client({ name: "asitis-021", version: "0.0.0" });
       await client.connect(new StdioClientTransport({ command: process.execPath, args, env, stderr: "pipe" }));

@@ -2,6 +2,16 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.4.7] - 2026-11-19
+
+Getting the Claude Code plugin ready for Claude's plugin directory.
+
+### Changed
+- The plugin's `.mcp.json` no longer passes `${CLAUDE_PROJECT_DIR}` on the server's command line. The directory only accepts `${CLAUDE_PLUGIN_ROOT}` there, so `server/launch.mjs` now reads the project folder itself and adds the same read grant and `--root`. The server runs with exactly the same arguments as in 0.4.6.
+- The plugin README opens with a plain description, explains installing from the directory, and points to the readable source for the bundled server.
+
+The linter, its rules and its output are the same as 0.4.6. Details: [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#047---2026-11-19).
+
 ## [0.4.6] - 2026-11-18
 
 I ran 0.4.5 over the 300 most-starred GitHub repos that have a steering file and read a sample of every rule's findings by hand. These two rules were wrong most of the time, so this release fixes them.
