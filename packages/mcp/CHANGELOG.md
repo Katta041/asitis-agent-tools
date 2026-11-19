@@ -2,6 +2,12 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.6] - 2026-11-18
+
+### Fixed
+- `scan.ts` `InvisibleKeep`: keeps U+200B between two letters of a script written without spaces (`NO_SPACES`: Khmer, Thai, Lao, Myanmar, Tibetan, Tai Tham, New Tai Lue, Balinese, Javanese); keeps ZWJ and ZWNJ after a letter of a complex script when no letter follows (word end); keeps LRM, RLM and ALM on a line with no right-to-left text when the document has at least 200 right-to-left letters (`RTL_DOC_MIN`, counted once per document). All three need the character to stand alone (`alone`: neither neighbour is invisible), so runs are still reported. `fixes/invisible.ts` uses the same class, so the fixer keeps them too.
+- `scan.ts` English covert pattern: `COVERT` words need a `COVERT_ACT` verb within 60 characters in the same sentence, before or after, like `covert()` in `lang/hidden-phrases.ts`.
+
 ## [0.4.5] - 2026-11-17
 
 ### Added

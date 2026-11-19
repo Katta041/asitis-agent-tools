@@ -1,6 +1,6 @@
 {
   "name": "asitis",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "Short name for the asitis CLI in @asitis/mcp: npx asitis lint checks CLAUDE.md, AGENTS.md, SKILL.md and Cursor rules. Read-only.",
   "keywords": [
     "claude-md",
@@ -30,7 +30,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@asitis/mcp": "0.4.5"
+    "@asitis/mcp": "0.4.6"
   },
   "engines": {
     "node": ">=22.13"

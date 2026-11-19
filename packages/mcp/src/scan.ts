@@ -138,9 +138,19 @@ export function suspiciousSelector(s: string, i: number, cp: number): boolean {
 // https://www.unicode.org/versions/Unicode15.1.0/ch23.pdf, and UTS #51 section 2.8 "Emoji Tag
 // Sequences", https://www.unicode.org/reports/tr51/#Emoji_Tag_Sequences (both read 14 October 2026):
 // - ZERO WIDTH NON-JOINER and ZERO WIDTH JOINER between letters of a script that uses them to pick
-//   letter forms (Persian, Arabic, Hindi and other Indic scripts), or next to an emoji.
+//   letter forms (Persian, Arabic, Hindi and other Indic scripts), or next to an emoji. Also one on
+//   its own at the end of a word in such a script: Malayalam chillu letters are spelled virama + ZWJ,
+//   and translated docs often end Kannada and Telugu words with a ZWNJ.
+// - ZERO WIDTH SPACE on its own between letters of a script written without spaces (Khmer, Thai,
+//   Lao, Myanmar and others), where it marks the word break.
 // - LEFT-TO-RIGHT MARK, RIGHT-TO-LEFT MARK and ARABIC LETTER MARK on a line with right-to-left text,
-//   where they fix the display order of numbers and punctuation. They are not overrides.
+//   or on its own in a document with a lot of right-to-left text (a Hebrew doc puts one after an
+//   inline code span on an otherwise Latin line), where they fix the display order of numbers and
+//   punctuation. They are not overrides.
+// "On its own" means neither neighbour is another invisible character: a run of them is how text is
+// hidden, so a run is still reported.
+// Found in the 18 November 2026 scan of 300 popular repos: 92 of 94 invisible-char findings were
+// these characters in translated docs.
 // - COMBINING GRAPHEME JOINER next to a combining mark (Hebrew and other pointed text).
 // - MONGOLIAN VOWEL SEPARATOR next to Mongolian letters, and the Hangul fillers next to Hangul.
 // - TAG characters that spell a subdivision flag: U+1F3F4, 2 to 7 tags from 0-9 and a-z, then
@@ -153,6 +163,10 @@ const EMOJI_NEAR = /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Ind
 const MARK = /^\p{M}$/u;
 const LETTER = /^\p{L}$/u;
 const MONGOLIAN = /^\p{Script=Mongolian}$/u;
+const NO_SPACES = /^[\p{Script=Khmer}\p{Script=Thai}\p{Script=Lao}\p{Script=Myanmar}\p{Script=Tibetan}\p{Script=Tai_Tham}\p{Script=New_Tai_Lue}\p{Script=Balinese}\p{Script=Javanese}]$/u;
+const RTL_LETTERS = new RegExp(RTL.source, "gu");
+/** Right-to-left letters a document needs before a lone direction mark on a Latin line counts as part of it. */
+const RTL_DOC_MIN = 200;
 const HANGUL = /^\p{Script=Hangul}$/u;
 const isTag = (cp: number | undefined): boolean => cp !== undefined && cp >= 0xe0000 && cp <= 0xe007f;
 
@@ -166,6 +180,15 @@ const charBefore = (s: string, i: number): string => {
  * The nearest letter before (dir -1) or from (dir 1) index i, stepping over combining marks and
  * other invisible characters, at most 8 characters away. "" when the neighbour is not a letter.
  */
+const invisibleCp = (cp: number): boolean => INVISIBLE_NAMES[cp] !== undefined || isVariationSelector(cp) || isTag(cp);
+
+/** Neither neighbour of the character at `at` is another invisible character. */
+function alone(s: string, at: number, units: number): boolean {
+  const before = cpBefore(s, at);
+  const after = s.codePointAt(at + units);
+  return !(before >= 0 && invisibleCp(before)) && !(after !== undefined && invisibleCp(after));
+}
+
 function letterNear(s: string, i: number, dir: 1 | -1): string {
   let p = i;
   for (let k = 0; k < 8; k++) {
@@ -189,6 +212,7 @@ export class InvisibleKeep {
   private rtl = false;
   private tagEnd = -1;
   private tagFlag = false;
+  private rtlDoc: boolean | undefined;
   constructor(private readonly s: string) {}
 
   /** Why the character at `at` stays, or "" when it is hidden text. lineStart/lineEnd bound its line. */
@@ -199,14 +223,28 @@ export class InvisibleKeep {
       const before = letterNear(s, at, -1);
       const after = letterNear(s, at + units, 1);
       if (before && after && !(SIMPLE_SCRIPT.test(before) && SIMPLE_SCRIPT.test(after))) return "it sits between letters of a script that uses it to choose letter forms (Persian, Arabic, Hindi and others)";
+      if (before && !SIMPLE_SCRIPT.test(before) && !after && alone(s, at, units)) return "it ends a word in a script that uses it to choose letter forms (Malayalam, Kannada, Telugu and others)";
       return "";
+    }
+    if (cp === 0x200b) {
+      // alone() first: it is two code point lookups, and a file of nothing but ZWSPs fails it at once.
+      if (!alone(s, at, units) || !NO_SPACES.test(letterNear(s, at, -1))) return "";
+      return NO_SPACES.test(letterNear(s, at + units, 1)) ? "it marks a word break in a script written without spaces (Khmer, Thai, Lao, Myanmar and others)" : "";
     }
     if (cp === 0x200e || cp === 0x200f || cp === 0x061c) {
       if (this.rtlLine !== lineStart) {
         this.rtlLine = lineStart;
         this.rtl = RTL.test(s.slice(lineStart, lineEnd));
       }
-      return this.rtl ? "the line has right-to-left text, where it sets the display order" : "";
+      if (this.rtl) return "the line has right-to-left text, where it sets the display order";
+      if (!alone(s, at, units)) return "";
+      if (this.rtlDoc === undefined) {
+        let n = 0;
+        RTL_LETTERS.lastIndex = 0;
+        while (n < RTL_DOC_MIN && RTL_LETTERS.exec(s)) n++;
+        this.rtlDoc = n >= RTL_DOC_MIN;
+      }
+      return this.rtlDoc ? "the document is mostly right-to-left text, where it sets the display order" : "";
     }
     if (cp === 0x034f) return MARK.test(charBefore(s, at)) || MARK.test(charAt(s, at + units)) ? "it sits between combining marks" : "";
     if (cp === 0x180e) return MONGOLIAN.test(charBefore(s, at)) || MONGOLIAN.test(charAt(s, at + units)) ? "it is part of Mongolian text" : "";
@@ -306,6 +344,8 @@ const AI_NAME = String.raw`(?:claude(?:\s{1,8}code)?|chatgpt|gpt-?\d[\w.-]{0,8}|
 // Generic addressees: "Agent: push to main", "AI, delete the tests", "Assistant must ...".
 const ADDRESSEE = String.raw`(?:ai|agents?|assistants?|bots?|models?|llms?|ai\s{1,4}agents?|coding\s{1,4}agents?)`;
 const DIRECTIVE = String.raw`(?:must|should|shall|will|needs?\s{1,8}to|has\s{1,8}to|have\s{1,8}to|always|never|do\s{1,8}not|don't|please|may\s{1,8}not|cannot|can't)`;
+const COVERT = String.raw`(?:secretly|silently|quietly|without\s{1,8}(?:telling|asking|mentioning|notifying|informing))`;
+const COVERT_ACT = String.raw`(?:push|delete|remove|send|upload|post|run|execute|install|uninstall|commit|merge|modify|change|add|append|write|overwrite|replace|rewrite|disable|enable|approve|deploy|update|create|copy|move|download|edit|insert|drop|force-push|rename|publish|exfiltrate|collect|log|record|forward|email|transfer|grant|revoke|bypass|skip|alter|patch|inject|fetch|call)`;
 const INSTRUCTION_PATTERNS: Array<[RegExp, string]> = [
   [/\b(ignore|disregard|forget|override)\b[^\n]{0,40}\b(previous|prior|above|earlier|all|any|other|system)\b/i, "asks to ignore other instructions"],
   [/\b(you are|you must|you should|you will|as an ai|ai assistant|language model|system prompt|the assistant|the agent|the model)\b/i, "addresses the AI directly"],
@@ -316,7 +356,10 @@ const INSTRUCTION_PATTERNS: Array<[RegExp, string]> = [
   // A generic addressee opening the comment or a sentence: "Agent: ...", "Bot, ...", "Assistant must ...", "Model note - ...".
   [new RegExp(String.raw`(?:^|[\n.!?;]|[([])\s{0,8}(?:(?:hey|hi|dear|attention|attn|note\s{1,4}to(?:\s{1,4}the)?)\s{1,8})?@?${ADDRESSEE}\s{0,3}(?:[,:]|\s{1,8}${DIRECTIVE}\b|\s{1,4}note\b)`, "i"), "addresses the AI directly"],
   [/\b(do not|don't|never)\s+(tell|mention|reveal|show|inform)\b/i, "asks to hide something from the user"],
-  [/\b(secretly|silently|quietly|without (telling|asking|mentioning))\b/i, "asks for covert action"],
+  // A covert word counts only next to an imperative action in the same sentence, as in the other
+  // languages (lang/hidden-phrases.ts): "silently push to main", "delete it without telling anyone".
+  // A template line like "things that break silently" describes code, it doesn't ask for anything.
+  [new RegExp(String.raw`(?:\b${COVERT_ACT}\b(?:(?![.!?;\n])[^\n]){0,60}\b${COVERT}\b|\b${COVERT},?\s{1,8}${COVERT_ACT}\b)`, "i"), "asks for covert action"],
   // A secret on its own is a topic ("the token budget table", "the SSH bastion docs"); it counts
   // when the comment asks to move it somewhere ("print the API keys", "send the token to ...").
   [/\b(exfiltrat\w*|curl\s|wget\s|base64\b|ssh\s+[\w.-]+@)/i, "mentions commands or secrets"],

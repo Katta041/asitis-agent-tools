@@ -2,6 +2,11 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.6] - 2026-11-18
+
+### Fixed
+- The bundled server and CLI are `@asitis/mcp` 0.4.6. `/asitis:md-lint` no longer reports invisible characters that Khmer, Thai, Indic and Hebrew text needs, or a comment that says something "breaks silently" as a hidden instruction.
+
 ## [0.4.5] - 2026-11-17
 
 ### Security

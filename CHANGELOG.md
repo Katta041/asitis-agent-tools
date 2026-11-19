@@ -2,6 +2,17 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.4.6] - 2026-11-18
+
+I ran 0.4.5 over the 300 most-starred GitHub repos that have a steering file and read a sample of every rule's findings by hand. These two rules were wrong most of the time, so this release fixes them.
+
+### Fixed
+- `invisible-char` no longer reports characters that translated docs need. 92 of its 94 findings in that scan were these: a zero-width space between Khmer or Thai words (those scripts don't use spaces), a ZWJ or ZWNJ at the end of a Malayalam, Kannada or Telugu word, and a right-to-left mark after a code span on a Latin line of a Hebrew doc. Each is kept when it stands alone. Two or more in a row are still reported, since that's how text gets hidden, and so is any of them between Latin letters.
+- `hidden-instruction`: "secretly", "silently", "quietly" and "without telling" (or asking, mentioning, notifying, informing) count only next to an action in the same sentence, such as "silently push to main". The other nine languages already worked this way. A template comment like `<!-- Non-obvious behaviors, common mistakes, things that break silently -->` was reported as an error in five CLAUDE.md files of one large repo.
+
+### Added
+- `asitis` on npm (published 18 November): `npx -y asitis lint` runs the CLI without the `-p @asitis/mcp` part. It's one file that imports the CLI from `@asitis/mcp` at the same version. The release workflow now publishes both.
+
 ## [0.4.5] - 2026-11-17
 
 ### Security
