@@ -2,7 +2,7 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.8] - 2026-11-24
 
 ### Fixed
 - `@import` in an HTML block (`scan.ts` `htmlBlockMask`, used by `importsOf` for Claude Code only). Claude Code 2.1.328 does not expand an `@path` on a line inside a CommonMark HTML block, so in `<role>` / `@./a.md` (no blank line between) a.md never loads (anthropics/claude-code#110857). `loads`, `budget` and the import checks now leave those imports out, and `broken-import` warns on one whose file exists, naming the tag line. I checked 14 layouts against Claude Code with a canary file (tag line, closing tag, attributes, `<div>` after paragraph text, a comment, `<details>` plus a blank line, and others); the tests mirror each result. Consecutive `@import` lines (anthropics/claude-code#111064) loaded fine in a project CLAUDE.md on macOS with LF and CRLF, so nothing changed for them. GEMINI.md imports are unchanged.
