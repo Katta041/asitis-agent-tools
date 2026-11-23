@@ -10,6 +10,7 @@ All notable changes to `@asitis/mcp` are documented here. The format follows [Ke
 - A project reached through a symlinked folder. `paths.ts` `logicalCwd`: the CLI's current folder and the server's default root use `$PWD` when it names the same folder as `process.cwd()` (which is always the real path), so absolute paths built from `$PWD` by a shell, editor or hook are inside the root. `Sandbox.throughLinks`: a path the CLI is given (`lint <file>`, `loads <dir>`) that is outside the root as written but whose real path is inside it is accepted, so `--root` as the real folder and a file through the link (or the other way round) work. A link that leads out of the root is still refused.
 
 ### Changed
+- `package.json` `homepage` is `https://asitis.app` (was `/claude-code`). The site home leads with the linter since 19 Nov, and npm showed the plugin page as the package's homepage. `repository` and `bugs` were already right for both packages; a test now pins all three for `@asitis/mcp` and `asitis`.
 - Bundled `@modelcontextprotocol/sdk` 1.32.2 (was 1.32.1): `Transport` optional properties are typed `| undefined`, and registering a tool after `connect()` works when the capability was declared. The server registers everything before it connects, so nothing changes for it. Dev dependencies: `@types/node` 26.6.6, `vitest` 5.1.0. This replaces Dependabot PR #51, which bumped the pin without rebuilding the vendored bundles.
 
 ## [0.4.7] - 2026-11-19

@@ -52,7 +52,7 @@
     "markdown",
     "steering-files"
   ],
-  "homepage": "https://asitis.app/claude-code",
+  "homepage": "https://asitis.app",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Katta041/asitis-agent-tools.git",
