@@ -2,6 +2,11 @@
 
 All notable changes to the AsItIs Claude Code plugin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- The server did not start when `CLAUDE_PROJECT_DIR` was a symlink (for example `~/code/app` pointing at a folder on another disk). Node's permission model checks a read against the folder as granted and does not follow the link, so the server could not even read its root. `server/launch.mjs` now grants the folder the link points to as well, and keeps `--root` as Claude Code gave it, so paths in either form work. Nothing outside the project becomes readable.
+
 ## [0.4.7] - 2026-11-19
 
 ### Changed
