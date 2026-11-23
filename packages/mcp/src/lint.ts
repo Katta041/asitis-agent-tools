@@ -7,7 +7,8 @@ import { isSteering, type Kind } from "./kinds.js";
 import { CAPS, VENDOR } from "./limits.js";
 import { policyRefusal, type Sandbox } from "./paths.js";
 import { esc, hasUnsafe, q } from "./escape.js";
-import { extractImports, extractLinks, importIntent, importIsSurelyFile, importTarget, isExternalTarget, type ImportRef, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
+import { extractImports, extractLinks, htmlBlockMask, importIntent, importIsSurelyFile, importTarget, isExternalTarget, type ImportRef, scanComments, scanHiddenStyles, scanInvisible, scanRefComments } from "./scan.js";
+import { importsOf } from "./load/files.js";
 import { findSecrets } from "./redact.js";
 import { looksLikeSuppression } from "./suppress.js";
 import { lineOfByte } from "./text.js";
@@ -1219,11 +1220,11 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
     }
   }
   if (!IMPORT_KINDS.includes(doc.kind.kind) && !(doc.kind.kind === "agents-md" && (await claudeReadsAgentsMd(doc, sandbox)))) return;
-  const imports = extractImports(doc.lines, doc.fence, doc.frontmatter.present ? doc.frontmatter.endLine : -1);
+  const tool = doc.kind.kind === "gemini-md" ? "gemini" : "claude";
+  const imports = importsOf(doc, tool);
   // AGENTS.md is also read by Codex and others, where @ is plain text (@user, @next/rspack-core,
   // @transaction()). There, only an @path naming a file with an extension is treated as an import.
   const agents = doc.kind.kind === "agents-md";
-  const tool = doc.kind.kind === "gemini-md" ? "gemini" : "claude";
   const loaded: Array<{ im: ImportRef; real: string }> = [];
   for (const im of imports) {
     if (agents && !(importIsSurelyFile(im) && /\.[A-Za-z0-9]{1,10}$/.test(im.path))) continue;
@@ -1258,6 +1259,29 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
     }
   }
   if (loaded.length) await checkImportChains(doc, loaded, tool, sandbox, c);
+  if (tool === "claude") await importsInHtmlBlocks(doc, agents, dir, sandbox, c);
+}
+
+/**
+ * An @import Claude Code leaves as plain text because it sits in an HTML block: the line above it
+ * holds only a tag such as <role> (or a block tag such as <div>), and no blank line comes between.
+ * Checked with Claude Code 2.1.328 (anthropics/claude-code#110857). Reported only for an @path that
+ * is surely a file and exists, since that is an import the author expects to load.
+ */
+async function importsInHtmlBlocks(doc: Doc, agents: boolean, dir: string, sandbox: Sandbox, c: Collector): Promise<void> {
+  const skip = doc.frontmatter.present ? doc.frontmatter.endLine : -1;
+  const html = htmlBlockMask(doc.lines, doc.fence, skip);
+  if (!html.includes(1)) return;
+  for (const im of extractImports(doc.lines, doc.fence, skip)) {
+    if (!html[im.line - 1] || !importIsSurelyFile(im) || (agents && !/\.[A-Za-z0-9]{1,10}$/.test(im.path))) continue;
+    if (/[<>{}]/.test(im.path) || im.path.startsWith("~")) continue;
+    const want = importIntent(im, "claude");
+    if (!want || (await sandbox.probe(want, dir)).state !== "ok") continue;
+    let top = im.line - 1;
+    while (top > 0 && html[top - 1]) top--;
+    const tag = doc.lines.line(top).trim().slice(0, 40);
+    c.add("warning", "broken-import", `${q("@" + im.raw, 200)} is not loaded: Claude Code does not expand an @import inside an HTML block, and ${q(tag, 60)} on line ${top + 1} starts one. A tag line's block runs to the next blank line, so put a blank line after line ${top + 1} or move the import out of the block`, im.line);
+  }
 }
 
 const TOOL_NAME = { claude: "Claude Code", gemini: "Gemini CLI" } as const;
@@ -1321,7 +1345,7 @@ async function checkImportChains(doc: Doc, tops: Array<{ im: ImportRef; real: st
     }
     if (IMPORT_KINDS.includes(child.kind.kind)) return;
     const childDir = path.dirname(child.file.real);
-    for (const im of extractImports(child.lines, child.fence, child.frontmatter.present ? child.frontmatter.endLine : -1)) {
+    for (const im of importsOf(child, tool)) {
       if (!importIsSurelyFile(im) || !IMPORTED_TEXT.test(im.path) || IMPORT_PLACEHOLDER.test(im.path) || im.path.startsWith("~")) continue;
       const want = importIntent(im, tool);
       if (!want) continue;

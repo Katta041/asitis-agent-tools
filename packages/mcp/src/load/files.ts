@@ -8,7 +8,7 @@ import { analyse, type Doc } from "../doc.js";
 import type { Deadline } from "../discover.js";
 import { CAPS, VENDOR } from "../limits.js";
 import { policyRefusal, UserError, type OpenedFile, type Sandbox } from "../paths.js";
-import { commentClose, extractImports, importIntent, importIsSurelyFile, importTarget, type ImportRef } from "../scan.js";
+import { commentClose, extractImports, htmlBlockMask, importIntent, importIsSurelyFile, importTarget, type ImportRef } from "../scan.js";
 import { approxTokens, tokensFromBytes } from "../tokens.js";
 
 export const dirOf = (rel: string): string => {
@@ -177,9 +177,13 @@ export function bodyTokens(doc: Doc, stripComments: boolean): number {
   return approxTokens(stripComments ? stripBlockComments(doc) : doc.text);
 }
 
-/** The @imports of a file. One place, so import parsing fixes in scan.ts reach every caller. */
-export function importsOf(doc: Doc): ImportRef[] {
-  return extractImports(doc.lines, doc.fence, doc.frontmatter.present ? doc.frontmatter.endLine : -1);
+/**
+ * The @imports of a file. One place, so import parsing fixes in scan.ts reach every caller. For
+ * Claude Code, an @ inside an HTML block (a <role> line just above it) is not expanded.
+ */
+export function importsOf(doc: Doc, tool: "claude" | "gemini" = "claude"): ImportRef[] {
+  const skip = doc.frontmatter.present ? doc.frontmatter.endLine : -1;
+  return extractImports(doc.lines, doc.fence, skip, tool === "claude" ? htmlBlockMask(doc.lines, doc.fence, skip) : undefined);
 }
 
 export interface ImportHit {
@@ -209,7 +213,7 @@ export async function expandImports(sandbox: Sandbox, doc: Doc, seen: Set<string
   if (depth > maxHops) return [];
   const out: ImportHit[] = [];
   const dir = path.dirname(doc.file.real);
-  const imports = importsOf(doc);
+  const imports = importsOf(doc, tool);
   const shown = (p: string): string => (p.length > 200 ? `${p.slice(0, 200)}...` : p);
   let listed = 0;
   for (const im of imports) {
