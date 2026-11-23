@@ -2,6 +2,11 @@
 
 All notable changes to `@asitis/mcp` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Bundled `@modelcontextprotocol/sdk` 1.32.2 (was 1.32.1): `Transport` optional properties are typed `| undefined`, and registering a tool after `connect()` works when the capability was declared. The server registers everything before it connects, so nothing changes for it. Dev dependencies: `@types/node` 26.6.6, `vitest` 5.1.0. This replaces Dependabot PR #51, which bumped the pin without rebuilding the vendored bundles.
+
 ## [0.4.7] - 2026-11-19
 
 No changes to the server or CLI. Version bump to match the Claude Code plugin, whose launcher now passes the project folder itself (see [`plugins/asitis/CHANGELOG.md`](../../plugins/asitis/CHANGELOG.md)).
