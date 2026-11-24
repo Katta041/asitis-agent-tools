@@ -840,10 +840,15 @@ class QuoteCounter {
   }
 }
 
-/** CommonMark HTML block start conditions 1 to 5, with the text that ends each block. */
-const HTML_RAW_START: Array<[RegExp, RegExp]> = [
+/** Ends a block when the line contains its closing text. */
+type BlockEnd = { test(line: string): boolean };
+/**
+ * CommonMark HTML block start conditions 1 to 5, with the text that ends each block. This models how
+ * markdown is parsed, not how a browser reads HTML: CommonMark ends a comment block at "-->" only.
+ */
+const HTML_RAW_START: Array<[RegExp, BlockEnd]> = [
   [/^<(?:pre|script|style|textarea)(?:[\s>]|$)/i, /<\/(?:pre|script|style|textarea)>/i],
-  [/^<!--/, /-->/],
+  [/^<!--/, { test: (line) => line.includes("-->") }],
   [/^<\?/, /\?>/],
   [/^<![A-Za-z]/, />/],
   [/^<!\[CDATA\[/, /\]\]>/],
@@ -864,7 +869,7 @@ const RAW_TAG = /^<\/?(?:pre|script|style|textarea)\b/i;
 export function htmlBlockMask(lines: LineIndex, fence: Uint8Array, skipUntilLine = -1): Uint8Array {
   const mask = new Uint8Array(lines.count);
   const s = lines.text;
-  let open: RegExp | "blank" | null = null;
+  let open: BlockEnd | "blank" | null = null;
   let paragraph = false;
   for (let i = 0; i < lines.count; i++) {
     if (i <= skipUntilLine || fence[i]) { open = null; paragraph = false; continue; }
