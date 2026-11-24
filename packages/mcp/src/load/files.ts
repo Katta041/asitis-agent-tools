@@ -183,7 +183,11 @@ export function bodyTokens(doc: Doc, stripComments: boolean): number {
  */
 export function importsOf(doc: Doc, tool: "claude" | "gemini" = "claude"): ImportRef[] {
   const skip = doc.frontmatter.present ? doc.frontmatter.endLine : -1;
-  return extractImports(doc.lines, doc.fence, skip, tool === "claude" ? htmlBlockMask(doc.lines, doc.fence, skip) : undefined);
+  const all = extractImports(doc.lines, doc.fence, skip);
+  // The mask walks every line, so it is built only when there is an @import to test against it.
+  if (tool !== "claude" || !all.length) return all;
+  const html = htmlBlockMask(doc.lines, doc.fence, skip);
+  return all.filter((im) => !html[im.line - 1]);
 }
 
 export interface ImportHit {

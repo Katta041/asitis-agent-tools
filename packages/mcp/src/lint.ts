@@ -1270,9 +1270,11 @@ async function checkLinks(doc: Doc, sandbox: Sandbox, c: Collector): Promise<voi
  */
 async function importsInHtmlBlocks(doc: Doc, agents: boolean, dir: string, sandbox: Sandbox, c: Collector): Promise<void> {
   const skip = doc.frontmatter.present ? doc.frontmatter.endLine : -1;
+  const imports = extractImports(doc.lines, doc.fence, skip);
+  if (!imports.length) return;
   const html = htmlBlockMask(doc.lines, doc.fence, skip);
   if (!html.includes(1)) return;
-  for (const im of extractImports(doc.lines, doc.fence, skip)) {
+  for (const im of imports) {
     if (!html[im.line - 1] || !importIsSurelyFile(im) || (agents && !/\.[A-Za-z0-9]{1,10}$/.test(im.path))) continue;
     if (/[<>{}]/.test(im.path) || im.path.startsWith("~")) continue;
     const want = importIntent(im, "claude");

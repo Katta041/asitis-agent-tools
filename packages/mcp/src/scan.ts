@@ -874,20 +874,24 @@ export function htmlBlockMask(lines: LineIndex, fence: Uint8Array, skipUntilLine
     if (i === 0 && s.charCodeAt(p) === 0xfeff) p++;
     let indent = 0;
     while (p < e && s.charCodeAt(p) === 32 && indent < 4) { p++; indent++; }
-    const rest = s.slice(p, Math.min(e, p + 2000));
-    const blank = rest.trim() === "";
+    // Blank test and slice without building a string for every line: files can have millions.
+    let q = p;
+    while (q < e) { const ch = s.charCodeAt(q); if (ch !== 32 && ch !== 9 && ch !== 13 && ch !== 12 && ch !== 11) break; q++; }
+    const blank = q >= e;
     if (open) {
       if (open === "blank") {
         if (blank) { open = null; continue; }
         mask[i] = 1;
       } else {
         mask[i] = 1;
-        if (open.test(rest)) open = null;
+        if (open.test(s.slice(p, Math.min(e, p + 2000)))) open = null;
       }
       paragraph = false;
       continue;
     }
-    if (indent < 4 && rest.charCodeAt(0) === 60) {
+    const first = s.charCodeAt(p);
+    if (indent < 4 && first === 60) {
+      const rest = s.slice(p, Math.min(e, p + 2000));
       let started = false;
       for (const [start, end] of HTML_RAW_START) {
         if (!start.test(rest)) continue;
@@ -904,7 +908,9 @@ export function htmlBlockMask(lines: LineIndex, fence: Uint8Array, skipUntilLine
     }
     if (blank) { paragraph = false; continue; }
     // ATX headings and thematic breaks end a paragraph; so does a setext underline.
-    paragraph = !(indent < 4 && (/^#{1,6}(?:\s|$)/.test(rest) || /^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,}|=+\s*)$/.test(rest)));
+    if (indent >= 4 || (first !== 35 && first !== 42 && first !== 45 && first !== 95 && first !== 61)) { paragraph = true; continue; }
+    const rest = s.slice(p, Math.min(e, p + 2000));
+    paragraph = !(/^#{1,6}(?:\s|$)/.test(rest) || /^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,}|=+\s*)$/.test(rest));
   }
   return mask;
 }

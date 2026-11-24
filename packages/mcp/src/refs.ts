@@ -358,23 +358,28 @@ async function checkStalePaths(doc: Doc, sandbox: Sandbox, out: Sink, submodules
   // Sections (runs of lines under one heading, fences included) that say their paths are elsewhere:
   // a repository named in a code span whose owner is not a folder here, "not available locally",
   // or a dependency's docs under node_modules/.
-  const sectionOf = new Int32Array(doc.lines.count).fill(0);
+  // Built on first use: it walks every line, and most files never reach a path worth checking.
+  let sectionOf: Int32Array | null = null;
   const elsewhereSections = new Set<number>();
-  for (let i = start, sec = 0; i < doc.lines.count; i++) {
-    const l = doc.lines.line(i);
-    if (!doc.fence[i] && HEADING.test(l)) sec++;
-    sectionOf[i] = sec;
-    if (elsewhereSections.has(sec) || l.length > 4000) continue;
-    if (ELSEWHERE_SECTION.test(l)) { elsewhereSections.add(sec); continue; }
-    if (doc.fence[i]) continue;
-    for (const [a, b] of codeSpans(l)) {
-      const span = l.slice(a, b).trim();
-      if (REPO_REF.test(span) && !FILE_EXT.test(span) && /\bfrom\s*$/i.test(l.slice(Math.max(0, a - 40), Math.max(0, a - 1))) && (await look(span.split("/")[0]!, sandbox.primary.real)) !== "exact") {
-        elsewhereSections.add(sec);
-        break;
+  const buildSections = async (): Promise<Int32Array> => {
+    const of = new Int32Array(doc.lines.count);
+    for (let i = start, sec = 0; i < doc.lines.count; i++) {
+      const l = doc.lines.line(i);
+      if (!doc.fence[i] && HEADING.test(l)) sec++;
+      of[i] = sec;
+      if (elsewhereSections.has(sec) || l.length > 4000) continue;
+      if (ELSEWHERE_SECTION.test(l)) { elsewhereSections.add(sec); continue; }
+      if (doc.fence[i]) continue;
+      for (const [a, b] of codeSpans(l)) {
+        const span = l.slice(a, b).trim();
+        if (REPO_REF.test(span) && !FILE_EXT.test(span) && /\bfrom\s*$/i.test(l.slice(Math.max(0, a - 40), Math.max(0, a - 1))) && (await look(span.split("/")[0]!, sandbox.primary.real)) !== "exact") {
+          elsewhereSections.add(sec);
+          break;
+        }
       }
     }
-  }
+    return of;
+  };
   /** The nearest non-blank line above i within two lines, when it introduces what follows ("For example:", "例如："). */
   const leadIn = (i: number): string => {
     for (let k = i - 1; k >= Math.max(start, i - 2); k--) {
@@ -398,7 +403,9 @@ async function checkStalePaths(doc: Doc, sandbox: Sandbox, out: Sink, submodules
       if (!exampleLevel && EXAMPLE_HEADING.test(h[1]!)) exampleLevel = level;
       continue;
     }
-    if (exampleLevel || line.length > 4000 || !line.includes("`") || CONTEXT_SKIP.test(line) || PATH_CONTEXT_SKIP.test(line) || elsewhereSections.has(sectionOf[i]!)) continue;
+    if (exampleLevel || line.length > 4000 || !line.includes("`") || CONTEXT_SKIP.test(line) || PATH_CONTEXT_SKIP.test(line)) continue;
+    sectionOf ??= await buildSections();
+    if (elsewhereSections.has(sectionOf[i]!)) continue;
     const lead = leadIn(i);
     if (CONTEXT_SKIP.test(lead) || PATH_CONTEXT_SKIP.test(lead)) continue;
     const before = (a: number): string => {
