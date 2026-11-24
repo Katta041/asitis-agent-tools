@@ -13,6 +13,7 @@ An `@path` import in a CLAUDE.md, a `.claude/rules/` file, a GEMINI.md, or an AG
 Also reported:
 
 - An import whose file exists but which still loads nothing. Claude Code and Gemini CLI take the whole word after `@`, punctuation included, so `See @guide.md: for details` asks for a file named `guide.md:`. The same goes for `@guide.md.` at the end of a sentence, `(see @guide.md)`, and `(@guide.md)`, where the `@` does not follow a space. Bold (`**@guide.md**`) and a `#section` anchor are fine in Claude Code.
+- An import Claude Code leaves as plain text because it sits in an HTML block: the line above it holds only a tag such as `<role>` or `</role>` (or a block tag such as `<div>`), with no blank line in between. CommonMark runs such a block to the next blank line, and Claude Code does not expand an `@path` inside it ([anthropics/claude-code#110857](https://github.com/anthropics/claude-code/issues/110857), checked with Claude Code 2.1.328). `asitis loads` leaves those files out too. Gemini CLI is not affected.
 - A broken import inside an imported file, reported on the import that starts the chain (`"@docs/a.md -> @b.md -> @missing.md"`). Claude Code follows imports 4 hops deep and Gemini CLI 5, so a file further down is reported as not loaded unless a shorter chain reaches it.
 
 ## Why it matters

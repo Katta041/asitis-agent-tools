@@ -20,7 +20,7 @@ import { formatGithub } from "../format/github.js";
 import { formatJson } from "../format/json.js";
 import { formatSarif } from "../format/sarif.js";
 import { formatText } from "../format/text.js";
-import { Sandbox, UserError } from "../paths.js";
+import { logicalCwd, Sandbox, UserError } from "../paths.js";
 import { lintProject } from "../project.js";
 import { VERSION } from "../version.js";
 import { parse, type BudgetArgs, type FailOn, type LintArgs, type LoadsArgs } from "./args.js";
@@ -146,7 +146,7 @@ export function processIO(): CliIO {
   return {
     out: (t) => void process.stdout.write(t),
     err: (t) => void process.stderr.write(t),
-    cwd: process.cwd(),
+    cwd: logicalCwd(),
     nodeVersion: process.versions.node,
     debug: process.env["ASITIS_DEBUG"] === "1",
   };
@@ -229,7 +229,9 @@ async function openSandbox(root: string | undefined, io: CliIO, opts: { allowBro
  */
 async function namedFile(sandbox: Sandbox, given: string, io: CliIO, flag = ""): Promise<string> {
   if (!given.trim()) throw usage(`${flag ? `${flag} got` : "got"} an empty path; pass a file inside the root${flag ? "" : ", or leave paths out to lint every steering file"}`);
-  const abs = path.resolve(io.cwd, given);
+  // A path through a symlinked project folder counts when its real path is inside the root.
+  const typed = path.resolve(io.cwd, given);
+  const abs = sandbox.throughLinks(typed) ?? typed;
   // An absolute path is shown relative to the current folder, so no error line carries one.
   const display = relativeShown(given, io);
   const label = flag ? `${flag} ${shown(display)}` : shown(display);
@@ -402,9 +404,10 @@ async function loads(a: LoadsArgs, io: CliIO): Promise<number> {
   if (a.dir !== undefined) {
     const display = shown(relativeShown(a.dir, io));
     if (!a.dir.trim()) throw usage("got an empty folder; pass the folder a session starts in, or leave it out for the root");
-    if (!sandbox.lexical(path.resolve(io.cwd, a.dir))) throw usage(`${display}: outside the root folder; pass a folder inside it, or change --root`);
+    const dir = sandbox.throughLinks(path.resolve(io.cwd, a.dir));
+    if (!dir) throw usage(`${display}: outside the root folder; pass a folder inside it, or change --root`);
     try {
-      start = await resolveCwd(sandbox, path.resolve(io.cwd, a.dir));
+      start = await resolveCwd(sandbox, dir);
     } catch (e) {
       if (!(e instanceof UserError)) throw e;
       if (/^Folder not found/.test(e.message)) throw usage(`${display}: folder not found`);

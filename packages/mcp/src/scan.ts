@@ -840,7 +840,91 @@ class QuoteCounter {
   }
 }
 
-export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLine = -1): ImportRef[] {
+/** Ends a block when the line contains its closing text. */
+type BlockEnd = { test(line: string): boolean };
+/**
+ * CommonMark HTML block start conditions 1 to 5, with the text that ends each block. This models how
+ * markdown is parsed, not how a browser reads HTML: CommonMark ends a comment block at "-->" only.
+ */
+const HTML_RAW_START: Array<[RegExp, BlockEnd]> = [
+  [/^<(?:pre|script|style|textarea)(?:[\s>]|$)/i, /<\/(?:pre|script|style|textarea)>/i],
+  [/^<!--/, { test: (line) => line.includes("-->") }],
+  [/^<\?/, /\?>/],
+  [/^<![A-Za-z]/, />/],
+  [/^<!\[CDATA\[/, /\]\]>/],
+];
+/** Start condition 6: a block-level tag name. The block runs to the next blank line and may interrupt a paragraph. */
+const HTML_BLOCK_TAG = /^<\/?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:[\s/>]|$)/i;
+/** Start condition 7: a line holding only one complete open or closing tag (<role>, </role>, <task id="x">). */
+const HTML_LONE_TAG = /^(?:<[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^'\n]*'|"[^"\n]*"))?)*\s*\/?>|<\/[A-Za-z][A-Za-z0-9-]*\s*>)\s*$/;
+const RAW_TAG = /^<\/?(?:pre|script|style|textarea)\b/i;
+
+/**
+ * Lines inside a CommonMark HTML block (outside fences). Claude Code does not expand an @import on
+ * such a line: checked with Claude Code 2.1.328 (anthropics/claude-code#110857). A line holding only
+ * <role> starts a block that runs to the next blank line, unless it would interrupt a paragraph; a
+ * block-level tag such as <div> starts one even right after paragraph text; a comment, <pre> or
+ * <script> block ends on the line that closes it. Lines in lists and quotes are not considered.
+ */
+export function htmlBlockMask(lines: LineIndex, fence: Uint8Array, skipUntilLine = -1): Uint8Array {
+  const mask = new Uint8Array(lines.count);
+  const s = lines.text;
+  let open: BlockEnd | "blank" | null = null;
+  let paragraph = false;
+  for (let i = 0; i < lines.count; i++) {
+    if (i <= skipUntilLine || fence[i]) { open = null; paragraph = false; continue; }
+    const a = lines.start(i);
+    const e = lines.end(i);
+    let p = a;
+    if (i === 0 && s.charCodeAt(p) === 0xfeff) p++;
+    let indent = 0;
+    while (p < e && s.charCodeAt(p) === 32 && indent < 4) { p++; indent++; }
+    // Blank test and slice without building a string for every line: files can have millions.
+    let q = p;
+    while (q < e) { const ch = s.charCodeAt(q); if (ch !== 32 && ch !== 9 && ch !== 13 && ch !== 12 && ch !== 11) break; q++; }
+    const blank = q >= e;
+    if (open) {
+      if (open === "blank") {
+        if (blank) { open = null; continue; }
+        mask[i] = 1;
+      } else {
+        mask[i] = 1;
+        if (open.test(s.slice(p, Math.min(e, p + 2000)))) open = null;
+      }
+      paragraph = false;
+      continue;
+    }
+    const first = s.charCodeAt(p);
+    if (indent < 4 && first === 60) {
+      const rest = s.slice(p, Math.min(e, p + 2000));
+      let started = false;
+      for (const [start, end] of HTML_RAW_START) {
+        if (!start.test(rest)) continue;
+        started = true;
+        // The end may overlap the start: "<!-->" is a whole comment, as in CommonMark.
+        if (!end.test(rest)) open = end;
+        break;
+      }
+      if (!started && (HTML_BLOCK_TAG.test(rest) || (!paragraph && !RAW_TAG.test(rest) && HTML_LONE_TAG.test(rest)))) {
+        started = true;
+        open = "blank";
+      }
+      if (started) { mask[i] = 1; paragraph = false; continue; }
+    }
+    if (blank) { paragraph = false; continue; }
+    // ATX headings and thematic breaks end a paragraph; so does a setext underline.
+    if (indent >= 4 || (first !== 35 && first !== 42 && first !== 45 && first !== 95 && first !== 61)) { paragraph = true; continue; }
+    const rest = s.slice(p, Math.min(e, p + 2000));
+    paragraph = !(/^#{1,6}(?:\s|$)/.test(rest) || /^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,}|=+\s*)$/.test(rest));
+  }
+  return mask;
+}
+
+/**
+ * The @imports of a file. With html (from htmlBlockMask, Claude Code only), an @ on a line inside an
+ * HTML block is not an import: Claude Code leaves it as plain text.
+ */
+export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLine = -1, html?: Uint8Array): ImportRef[] {
   const s = lines.text;
   const out: ImportRef[] = [];
   const spans = new CodeSpanTracker(lines);
@@ -872,7 +956,7 @@ export function extractImports(lines: LineIndex, fence: Uint8Array, skipUntilLin
     const prev = at === 0 ? 32 : s.charCodeAt(at - 1);
     if (!(prev === 32 || prev === 9 || prev === 10 || prev === 13 || prev === 40 || prev === 0xfeff)) continue;
     const li = lines.lineOf(at);
-    if (li <= skipUntilLine || fence[li] || spans.inCode(li, at) || inComment(at)) continue;
+    if (li <= skipUntilLine || fence[li] || html?.[li] || spans.inCode(li, at) || inComment(at)) continue;
     const lineEnd = lines.end(li);
     const stop = Math.min(lineEnd, at + 1 + CAPS.maxTargetChars);
     let q = at + 1;

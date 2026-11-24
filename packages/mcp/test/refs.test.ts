@@ -76,6 +76,13 @@ describe("pathCandidate", () => {
     ["next/navigation", "import specifier without an extension"],
     ["tools/list", "RPC method"],
     ["routes.ts", "a single name"],
+    ["docs/changelog/YYYY-MM-DD-topic.mdx", "date placeholder"],
+    ["scripts/pr-status/results/thread-N.md", "counter placeholder"],
+    ["releases/vYYYY.M.P/notes.md", "version placeholder"],
+    ["packages/ui/src/elements/ComponentName/", "PascalCase name placeholder"],
+    ["benchmarking/compare/.results/report.txt", "dot folder deeper down"],
+    [".github/aw/patterns.md", "gh-aw prompt fetched from upstream"],
+    [".github/copilot-instructions.md", "conventional file name"],
     ["github.com/acme/sdk/", "host"],
     [".claude/worktrees/", "tool state folder"],
     ["npm run build", "a command"],
@@ -189,6 +196,70 @@ describe("stale-path", () => {
       }),
     );
     expect(at(fs, "stale-path")).toEqual([[".claude/skills/deploy/SKILL.md", 6]]);
+  });
+
+  test("0.4.8: lines and sections that say a path is elsewhere, optional, local or run output", async () => {
+    const fs = await lint(
+      project({
+        ...BASE,
+        "src/skills/": "",
+        "CLAUDE.md": [
+          "# Project",
+          "",
+          "- If `src/api/overrides.ts` exists, read it first.",
+          "- `src/api/legacy.ts` is gone; do not look for it.",
+          "- Defaults in `src/api/routes.ts`, overrides in `src/conf/custom.ini`.",
+          "- Committed skills in `src/skills/`, local ones in `src/custom/`.",
+          "- Test failures save screenshots to `src/e2e/screenshots/`.",
+          "",
+          "例如：",
+          "",
+          "`src/api/sample.ts` 对应 `src/test/sample.test.ts`。",
+          "",
+          "## Upstream prompts",
+          "",
+          "Load these files from `github/gh-aw` (they are not available locally).",
+          "",
+          "- `src/aw/patterns.md`",
+          "",
+          "## Package docs",
+          "",
+          "```",
+          "node_modules/chat/docs/",
+          "```",
+          "",
+          "- `src/docs/getting-started.mdx`",
+          "",
+          "## 完整开发示例",
+          "",
+          "### 场景",
+          "",
+          "Schema in `src/openapi/user/api.ts`.",
+          "",
+        ].join("\n"),
+      }),
+    );
+    expect(at(fs, "stale-path")).toEqual([]);
+  });
+
+  test("0.4.8: a real moved file next to those skips is still reported", async () => {
+    const fs = await lint(
+      project({
+        ...BASE,
+        "CLAUDE.md": "# Project\n\n## Layout\n\n- Access control: `src/rbac/access_control.py`.\n- Credentials: `src/api/credential_auth_type.py`.\n\n## Next\n\nRoutes: `src/server/routes.ts`.\n",
+      }),
+    );
+    expect(at(fs, "stale-path")).toEqual([
+      ["CLAUDE.md", 5],
+      ["CLAUDE.md", 6],
+      ["CLAUDE.md", 10],
+    ]);
+  });
+
+  test("0.4.8: *.instructions.md outside .github/instructions/ is a collection file and not checked", async () => {
+    const body = "---\napplyTo: '**'\n---\n\nHooks live in `src/hooks/`.\n";
+    const fs = await lint(project({ ...BASE, "instructions/hooks.instructions.md": body, ".github/instructions/hooks.instructions.md": body }));
+    expect(at(fs, "stale-path")).toEqual([[".github/instructions/hooks.instructions.md", 5]]);
   });
 
   test("the same path is reported once per file", async () => {
@@ -349,11 +420,9 @@ describe("project-files read class", () => {
     try {
       const fs = await lintConfig(root);
       expect(of(fs, "dead-command").map((f) => f.line)).toEqual([3, 3]);
-      // With .gitignore read, the run-output guess is not needed: src/results/ is not ignored here.
-      expect(at(fs, "stale-path")).toEqual([
-        ["CLAUDE.md", 3],
-        ["CLAUDE.md", 5],
-      ]);
+      // Since 0.4.8 run-output folders are skipped with .gitignore read too: nested ignore files and
+      // folders a script creates were the most common false positive on the corpus.
+      expect(at(fs, "stale-path")).toEqual([["CLAUDE.md", 3]]);
       const opened = spy2.mock.calls.map((c) => path.basename(String(c[0])));
       expect(opened).toEqual(expect.arrayContaining(["package.json", "Makefile", ".gitignore"]));
     } finally {

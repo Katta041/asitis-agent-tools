@@ -28,6 +28,11 @@
 //   script defined in any package.json up to three folders deep counts as present.
 // - make is checked only when a Makefile with no include and no pattern rule sits in the file's
 //   folder or above it.
+// - 0.4.8, from hand-labelling all 114 findings of 0.4.7 on the 71-repo corpus (17 were real): dot
+//   folders at any depth, date and counter placeholders (YYYY, -N), PascalCase ...Name folders,
+//   per-developer files (custom.ini, *.local.*), run-output folders even when .gitignore was read,
+//   lines that say a path may be absent, "例如" lead-ins, sections whose files come from another repo
+//   or from node_modules, and *.instructions.md outside .github/ (a collection, not loaded here).
 // Skills, commands and agents are checked only inside the project's own tool folders (.claude/,
 // .github/, .agents/, ...): a skill published for other repos talks about their paths.
 // Only node:path and the sandbox are used: nothing is written, run or fetched.
@@ -63,14 +68,22 @@ export function refsInScope(doc: Doc): boolean {
   const rel = doc.file.rel;
   if (inTestTree(rel) || inNotProjectFolder(rel)) return false;
   const k = doc.kind.kind;
+  // Copilot reads *.instructions.md only under .github/instructions/; elsewhere (a collection's
+  // instructions/ folder) the file is written for other repos and talks about their paths.
+  if (k === "copilot-scoped" && !rel.startsWith(".github/")) return false;
   if (PROJECT_KINDS.has(k)) return true;
   return OWN_INVOKED_KINDS.has(k) && OWN_DIR.test(rel);
 }
 
 /** A line that describes a path rather than pointing at an existing one: an example, a file to create, one that was moved. */
 const CONTEXT_SKIP = /\b(?:e\.g\.|eg\.|i\.e\.|for example|for instance|such as|example|examples|sample|placeholder|template|create[sd]?|creating|generates?|generated|generating|new|will be|would be|output|outputs|writes?|written|produces?|rename[sd]?|renaming|moved?|removed?|deleted?|deprecated|legacy|formerly|previously|no longer|used to|old|instead of|replaced|migrat\w*|do not|don't|never|avoid|not|if exists|if present|installed)\b/i;
+/**
+ * stale-path only: a line that says the path may be absent ("if it exists", "is gone", "missing"),
+ * and Chinese example words (例如, 比如, 示例). dead-command keeps CONTEXT_SKIP alone.
+ */
+const PATH_CONTEXT_SKIP = /\b(?:gone|isn't|aren't|missing)\b|\bif\b[^.;]{0,100}\bexists?\b|例如|比如|示例|例子|假设/i;
 /** A section that holds examples or templates, not facts about this repo. */
-const EXAMPLE_HEADING = /\b(?:examples?|samples?|templates?|scaffold\w*|placeholders?|illustrat\w*|hypothetical|format|output)\b/i;
+const EXAMPLE_HEADING = /\b(?:examples?|samples?|templates?|scaffold\w*|placeholders?|illustrat\w*|hypothetical|format|output)\b|示例|例子|范例|样例|模板|サンプル/i;
 const HEADING = /^ {0,3}#{1,6}\s+(.*)$/;
 
 /** Inline code spans on one line, as [start, end) of their content. Linear in the line length. */
@@ -105,6 +118,12 @@ export function codeSpans(s: string): Array<[number, number]> {
 
 /** A segment that stands for a name the reader fills in. */
 const PLACEHOLDER_SEGMENT = /^(?:path|to|foo|bar|baz|qux|xxx+|x+|y+|n+|your[-_.].*|my[-_.].*|some[-_.].*|example[-_.]?.*|sample[-_.]?.*|.*[-_]name|name|file(?:name)?|dir(?:name)?|folder|module|component|feature|thing|whatever|tbd|todo)(?:\.[A-Za-z0-9]{1,8})?$/i;
+/**
+ * Placeholder parts inside a segment: dates and counters (docs/changelog/YYYY-MM-DD-topic.mdx,
+ * results/thread-N.md, releases/vYYYY.M.P/) and PascalCase names ending in Name (ComponentName/).
+ */
+const PLACEHOLDER_TOKEN = /(?:^|[-_.v])(?:YYYY|YY|MM|DD|HH|N|X|M\.P)(?=[-_.]|$)/;
+const PASCAL_NAME = /^[A-Z][a-z]+(?:[A-Z][a-z]+)*Name$/;
 /** An all-caps word (NAME, FEATURE_ID) that is not one of the usual all-caps files. */
 const CAPS_SEGMENT = /^[A-Z][A-Z0-9_]{1,}$/;
 const CAPS_FILES = /^(?:README|LICENSE|LICENCE|CHANGELOG|CONTRIBUTING|SECURITY|NOTICE|AUTHORS|CODEOWNERS|AGENTS|CLAUDE|GEMINI|MEMORY|SKILL|TODO|VERSION|API|CLI|UI|SDK|DB)$/;
@@ -133,7 +152,7 @@ export function pathCandidate(raw: string): string | null {
   const firstReal = segs.findIndex((s) => s !== "..");
   if (firstReal < 0 || segs.length - firstReal < 2 || segs.slice(firstReal).includes("..")) return null;
   for (const s of segs.slice(firstReal)) {
-    if (PLACEHOLDER_SEGMENT.test(s)) return null;
+    if (PLACEHOLDER_SEGMENT.test(s) || PLACEHOLDER_TOKEN.test(s) || PASCAL_NAME.test(s.replace(FILE_EXT, ""))) return null;
     const stem = s.replace(FILE_EXT, "");
     if (CAPS_SEGMENT.test(stem) && !CAPS_FILES.test(stem)) return null;
     if (SKIP_DIRS.has(s)) return null;
@@ -144,6 +163,11 @@ export function pathCandidate(raw: string): string | null {
   // Dot folders other than .github hold tool state that tools create at run time (.claude/worktrees/,
   // symlinked .cursor/skills/, .agents/specs/), so a missing one is not stale.
   if (first.startsWith(".") && first !== ".github") return null;
+  // The same deeper down: benchmarking/compare/.results/, apps/cli/.lobehub-dev/ hold run-time state.
+  if (segs.slice(firstReal + 1).some((s) => s.startsWith(".") && s !== ".github")) return null;
+  // Files GitHub tools fetch or read by convention, often listed without being in the repo:
+  // gh-aw's .github/aw/ prompts, and the list of instruction files a tool looks for.
+  if (/^\.github\/(?:aw\/|copilot-instructions\.md$)/.test(segs.slice(firstReal).join("/") + (dir ? "/" : ""))) return null;
   if (/^[\w-]+(?:\.[\w-]+)+$/.test(first) && !first.startsWith(".")) return null;
   return t;
 }
@@ -229,7 +253,12 @@ const ignoresBySandbox = new WeakMap<Sandbox, Ignores>();
  * A folder name that usually holds files a script or a run writes (scripts/pr-status/results/).
  * Without include "config" no .gitignore is read, so these paths are skipped instead.
  */
-const RUNTIME_SEGMENT = /^(?:results?|outputs?|tmp|temp|cache|logs?|generated|artifacts?|snapshots?|reports?)$/i;
+const RUNTIME_SEGMENT = /^(?:results?|outputs?|tmp|temp|cache|logs?|generated|artifacts?|snapshots?|reports?|screenshots?|traces?|coverage|recordings?|downloads?|dumps?)$/i;
+/**
+ * A file or folder each developer creates for themselves and git ignores: conf/custom.ini,
+ * settings.local.json, skills/custom/, credentials.json. Missing from a clone by design.
+ */
+const LOCAL_NAME = /^(?:local|custom|overrides?|secrets?|credentials?|private)$|[._-](?:local|overrides?)$|^local[._-]/i;
 
 /** Root-relative POSIX path of base joined with t, or null when it leaves the root. */
 function rootRel(sandbox: Sandbox, base: string, t: string): string | null {
@@ -240,11 +269,13 @@ function rootRel(sandbox: Sandbox, base: string, t: string): string | null {
 /** Distinct paths, and commands, checked in one file: each costs a few filesystem lookups. */
 const MAX_CHECKED = 300;
 /** "the compiler's `docs/x.md`": a path that belongs to something else. */
-const POSSESSIVE_BEFORE = /\b[\w.-]+['\u2019]s\s*(?:`[^`\n]{1,300}`\s*(?:,|and|or)?\s*){0,4}$/;
+const POSSESSIVE_BEFORE = /\b[\w.-]+['\u2019]s\s*(?:`[^`\n]{1,300}`\s*(?:,|and|or|\+|&|\/)?\s*){0,4}$/;
 /** "`Owner/repo`": a GitHub repository named on the line, so its paths may be in that repository. */
 const REPO_REF = /^[A-Za-z0-9][\w.-]*\/[\w.-]+$/;
 /** "the charts repo", "in the SDK repository": another repository named in words. */
-const OTHER_REPO_WORDS = /\b(?!(?:this|the|our|same|main|whole|a|an|your|each|every|its|mono)\b)[\w-]+\s+repo(?:sitory)?\b/i;
+const OTHER_REPO_WORDS = /\b(?!(?:this|the|our|same|main|whole|a|an|your|each|every|its|mono)\b)[\w-]+`?\s+repo(?:sitory)?\b/i;
+/** A section that says its paths are somewhere else: "Load these files from `github/gh-aw` (they are not available locally)", or a dependency's own docs under node_modules/. */
+const ELSEWHERE_SECTION = /not (?:available|present|checked out) locally|\bnode_modules\/[\w@.-]/i;
 
 async function checkStalePaths(doc: Doc, sandbox: Sandbox, out: Sink, submodules: string[], grants: ReadonlySet<string>): Promise<void> {
   const fileDir = path.dirname(doc.file.real);
@@ -324,7 +355,42 @@ async function checkStalePaths(doc: Doc, sandbox: Sandbox, out: Sink, submodules
     foreignCache.set(block, v);
     return v;
   };
-  let exampleSection = false;
+  // Sections (runs of lines under one heading, fences included) that say their paths are elsewhere:
+  // a repository named in a code span whose owner is not a folder here, "not available locally",
+  // or a dependency's docs under node_modules/.
+  // Built on first use: it walks every line, and most files never reach a path worth checking.
+  let sectionOf: Int32Array | null = null;
+  const elsewhereSections = new Set<number>();
+  const buildSections = async (): Promise<Int32Array> => {
+    const of = new Int32Array(doc.lines.count);
+    for (let i = start, sec = 0; i < doc.lines.count; i++) {
+      const l = doc.lines.line(i);
+      if (!doc.fence[i] && HEADING.test(l)) sec++;
+      of[i] = sec;
+      if (elsewhereSections.has(sec) || l.length > 4000) continue;
+      if (ELSEWHERE_SECTION.test(l)) { elsewhereSections.add(sec); continue; }
+      if (doc.fence[i]) continue;
+      for (const [a, b] of codeSpans(l)) {
+        const span = l.slice(a, b).trim();
+        if (REPO_REF.test(span) && !FILE_EXT.test(span) && /\bfrom\s*$/i.test(l.slice(Math.max(0, a - 40), Math.max(0, a - 1))) && (await look(span.split("/")[0]!, sandbox.primary.real)) !== "exact") {
+          elsewhereSections.add(sec);
+          break;
+        }
+      }
+    }
+    return of;
+  };
+  /** The nearest non-blank line above i within two lines, when it introduces what follows ("For example:", "例如："). */
+  const leadIn = (i: number): string => {
+    for (let k = i - 1; k >= Math.max(start, i - 2); k--) {
+      const l = doc.lines.line(k).trim();
+      if (l === "") continue;
+      return /[:\uff1a]$/.test(l) ? l : "";
+    }
+    return "";
+  };
+  // The level of the Example or Template heading we are under; its subheadings stay examples.
+  let exampleLevel = 0;
   const reported = new Set<string>();
   const checked = new Set<string>();
   for (let i = start; i < doc.lines.count; i++) {
@@ -332,10 +398,16 @@ async function checkStalePaths(doc: Doc, sandbox: Sandbox, out: Sink, submodules
     const line = doc.lines.line(i);
     const h = HEADING.exec(line);
     if (h) {
-      exampleSection = EXAMPLE_HEADING.test(h[1]!);
+      const level = /^ {0,3}(#+)/.exec(line)![1]!.length;
+      if (exampleLevel && level <= exampleLevel) exampleLevel = 0;
+      if (!exampleLevel && EXAMPLE_HEADING.test(h[1]!)) exampleLevel = level;
       continue;
     }
-    if (exampleSection || line.length > 4000 || !line.includes("`") || CONTEXT_SKIP.test(line)) continue;
+    if (exampleLevel || line.length > 4000 || !line.includes("`") || CONTEXT_SKIP.test(line) || PATH_CONTEXT_SKIP.test(line)) continue;
+    sectionOf ??= await buildSections();
+    if (elsewhereSections.has(sectionOf[i]!)) continue;
+    const lead = leadIn(i);
+    if (CONTEXT_SKIP.test(lead) || PATH_CONTEXT_SKIP.test(lead)) continue;
     const before = (a: number): string => {
       const own = line.slice(Math.max(0, a - 400), Math.max(0, a - 1));
       return i > 0 && blockOf[i - 1] === blockOf[i] ? `${doc.lines.line(i - 1).slice(-300)} ${own}` : own;
@@ -361,7 +433,12 @@ async function checkStalePaths(doc: Doc, sandbox: Sandbox, out: Sink, submodules
         const relParts = rel.split("/");
         for (let d = 0; d < relParts.length; d++) await ignores.load(relParts.slice(0, d).join("/"));
         if (ignores.tree.ignored(rel.replace(/\/$/, ""), t.endsWith("/"))) continue;
-      } else if (segs.slice(0, -1).some((x) => RUNTIME_SEGMENT.test(x))) continue;
+      }
+      // Run output and per-developer files are missing from a clone by design, .gitignore or not
+      // (the rule may not read it, and nested ignores are easy to miss). A folder path counts its last part.
+      const folders = t.endsWith("/") ? segs : segs.slice(0, -1);
+      if (folders.some((x) => RUNTIME_SEGMENT.test(x))) continue;
+      if (LOCAL_NAME.test(segs[segs.length - 1]!.replace(FILE_EXT, ""))) continue;
       const idx = await repoIndex(sandbox);
       if (!idx.complete || existsSomewhere(idx, t)) continue;
       if (blockOf[i]! >= 0 && (await foreign(blockOf[i]!))) continue;

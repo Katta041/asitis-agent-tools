@@ -241,6 +241,21 @@ function deniedRootMessage(root: string): string {
   return `Node's permission model will not let the server read the root folder ${root}. Add --allow-fs-read=${root} (use the folder's real path if a parent folder is a symlink).`;
 }
 
+/**
+ * The current folder as the shell spells it. process.cwd() is always the real path, so in a
+ * project reached through a symlinked folder it disagrees with $PWD, and with every absolute
+ * path a shell, editor or hook builds from $PWD. $PWD wins only when it names the same folder;
+ * a stale or unreadable $PWD falls back to process.cwd().
+ */
+export function logicalCwd(cwd: string = process.cwd(), pwd: string | undefined = process.env["PWD"]): string {
+  if (!pwd || !path.isAbsolute(pwd) || pwd === cwd) return cwd;
+  try {
+    return realpathSync(pwd) === realpathSync(cwd) ? path.normalize(pwd) : cwd;
+  } catch {
+    return cwd;
+  }
+}
+
 export interface SandboxOptions {
   allowBroadRoot?: boolean;
   maxFileBytes?: number;
@@ -313,6 +328,28 @@ export class Sandbox {
       }
     }
     return null;
+  }
+
+  /**
+   * Like lexical(), for an absolute path typed on a command line. When the path is outside every
+   * root as written but its real path is inside one (the root was given as the real folder and the
+   * path goes through a symlink to it, or the other way round), returns the real path instead.
+   * A missing file resolves through its folder, so the caller can still say "file not found".
+   * Returns null when the path is outside the roots either way.
+   */
+  throughLinks(abs: string): string | null {
+    if (this.lexical(abs)) return abs;
+    let real: string;
+    try {
+      real = realpathSync(abs);
+    } catch {
+      try {
+        real = path.join(realpathSync(path.dirname(abs)), path.basename(abs));
+      } catch {
+        return null;
+      }
+    }
+    return this.lexical(real) ? real : null;
   }
 
   /**

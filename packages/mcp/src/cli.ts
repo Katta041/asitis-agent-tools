@@ -4,7 +4,7 @@
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { Sandbox, UserError, wildcardGrant } from "./paths.js";
+import { logicalCwd, Sandbox, UserError, wildcardGrant } from "./paths.js";
 import { createServer } from "./server.js";
 import { VERSION } from "./version.js";
 
@@ -84,7 +84,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
   const roots = [...(values.root ?? []), ...positionals];
   if (!roots.length && process.env["ASITIS_MCP_ROOT"]) roots.push(...process.env["ASITIS_MCP_ROOT"].split(path.delimiter).filter(Boolean));
-  if (!roots.length) roots.push(process.cwd());
+  if (!roots.length) roots.push(logicalCwd());
   // An unexpanded placeholder means the host did not substitute its variable.
   for (const r of roots) if (/\$\{[^}]*\}/.test(r)) fail(`root "${r}" contains an unexpanded variable; pass a real folder with --root.`);
 

@@ -58,9 +58,17 @@ describe("npm package", () => {
   });
   test("every dev dependency is pinned to an exact version, SDK included", () => {
     for (const [name, v] of Object.entries(pkg.devDependencies as Record<string, string>)) expect(v, name).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(pkg.devDependencies["@modelcontextprotocol/sdk"]).toBe("1.32.1");
+    expect(pkg.devDependencies["@modelcontextprotocol/sdk"]).toBe("1.32.2");
   });
   test("version constant matches package.json", () => expect(VERSION).toBe(pkg.version));
+  test("npm links: the site home, the repo folder of each package, and the issue tracker", () => {
+    const alias = JSON.parse(read(path.join(PKG, "../asitis/package.json")));
+    for (const [p, dir] of [[pkg, "packages/mcp"], [alias, "packages/asitis"]] as const) {
+      expect(p.homepage).toBe("https://asitis.app");
+      expect(p.repository).toEqual({ type: "git", url: "git+https://github.com/Katta041/asitis-agent-tools.git", directory: dir });
+      expect(typeof p.bugs === "string" ? p.bugs : p.bugs.url).toBe("https://github.com/Katta041/asitis-agent-tools/issues");
+    }
+  });
   test("MCP Registry metadata: server.json matches package.json (validated with mcp-publisher validate)", () => {
     const server = JSON.parse(read(path.join(PKG, "server.json")));
     // GitHub auth grants io.github.<login>/*, matched case-sensitively, and the login is Katta041.

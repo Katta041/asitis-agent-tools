@@ -16,7 +16,7 @@ import { lintDoc, readsAsRule, type Issue, type LintResult } from "./lint.js";
 import { UserError, type Sandbox } from "./paths.js";
 import { categoryOf } from "./rules/registry.js";
 import { redact } from "./redact.js";
-import { extractImports } from "./scan.js";
+import { importsOf } from "./load/files.js";
 
 /** Opt-in scans. config-local also reads .claude/settings.local.json and implies config. */
 // Include, INCLUDE_VALUES and findingPath live in findings.ts so config.ts can use them without an
@@ -420,7 +420,7 @@ function crossFileChecks(docs: Doc[], results: LintResult[]): void {
   for (const d of docs) {
     if (groups.get(d) !== "claude-code" || d.kind.kind !== "claude-md") continue;
     const dir = path.posix.dirname(d.file.rel);
-    for (const im of extractImports(d.lines, d.fence, d.frontmatter.present ? d.frontmatter.endLine : -1)) {
+    for (const im of importsOf(d, "claude")) {
       const target = byRel.get(path.posix.normalize(path.posix.join(dir === "." ? "" : dir, im.path)));
       if (target && !groups.has(target)) groups.set(target, "claude-code");
     }

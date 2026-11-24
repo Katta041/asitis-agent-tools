@@ -2,6 +2,21 @@
 
 All notable changes to this repository are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the projects use [Semantic Versioning](https://semver.org/). Per-part detail: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md).
 
+## [0.4.8] - 2026-11-24
+
+Fewer false alarms, and two cases where the linter and Claude Code disagreed about what loads.
+
+### Fixed
+- `stale-path`: I hand-labelled every finding 0.4.7 gives on the 71-repo evalset corpus. 17 of 114 were real moved or deleted files. 0.4.8 keeps those 17 and drops 93 of the other 94 (run output, per-developer config, placeholders like `YYYY-MM-DD-topic.mdx`, files loaded from another repo, lines that say the file may be missing, Copilot collection files).
+- An `@import` on the line right after a tag line such as `<role>` is not loaded by Claude Code (anthropics/claude-code#110857). `loads` and `budget` now leave it out, and `broken-import` warns about it.
+- The plugin's server failed to start when the project folder was a symlink, and the CLI refused absolute paths through a symlinked project folder.
+
+### Changed
+- MCP SDK 1.32.2 in the bundled server (replaces Dependabot #51).
+- npm `homepage` for `@asitis/mcp` is https://asitis.app.
+
+Details: [`packages/mcp/CHANGELOG.md`](packages/mcp/CHANGELOG.md#048---2026-11-24) and [`plugins/asitis/CHANGELOG.md`](plugins/asitis/CHANGELOG.md#048---2026-11-24).
+
 ## [0.4.7] - 2026-11-19
 
 Getting the Claude Code plugin ready for Claude's plugin directory.

@@ -19,7 +19,10 @@
 //    Claude Code sets for the servers it starts, or else the working folder
 //    (Claude Code starts the server in the project folder). The plugin directory
 //    refuses any variable but CLAUDE_PLUGIN_ROOT in a server's command line, so
-//    .mcp.json can no longer pass the project folder itself.
+//    .mcp.json can no longer pass the project folder itself. When the project
+//    folder is reached through a symlink, its real path is granted too: Node
+//    checks a read against the path as granted and does not follow the link, so
+//    a grant for the link alone let the server read nothing.
 // 4. Starts the bundled server (and only that file) under --permission, with
 //    stdin, stdout and stderr passed straight through, and exits with its code.
 //
@@ -57,19 +60,6 @@ export function projectDir(env, cwd) {
   return typeof v === "string" && v.trim() !== "" ? v : cwd;
 }
 
-/**
- * Without --root after the server path, grants read access to the project folder
- * and passes it as --root. The grant goes before the other read grants (Node flags
- * come before the server path) and --root goes last.
- */
-export function withProject(args, project) {
-  const script = args.findIndex((a) => !a.startsWith("-"));
-  if (script < 0 || args.slice(script + 1).some((a) => a === "--root" || a.startsWith("--root="))) return args;
-  const first = args.findIndex((a, i) => i < script && a.startsWith("--allow-fs-read="));
-  const at = first < 0 ? script : first;
-  return [...args.slice(0, at), `--allow-fs-read=${project}`, ...args.slice(at), "--root", project];
-}
-
 const real = (p) => {
   try {
     return realpathSync(p);
@@ -77,6 +67,23 @@ const real = (p) => {
     return path.resolve(p);
   }
 };
+
+/**
+ * Without --root after the server path, grants read access to the project folder
+ * and passes it as --root. The grant goes before the other read grants (Node flags
+ * come before the server path) and --root goes last. When the folder resolves
+ * somewhere else (it is, or sits under, a symlink), the real path is granted as
+ * well, and --root stays as given so paths in either form map to the project.
+ */
+export function withProject(args, project, resolved = real(project)) {
+  const script = args.findIndex((a) => !a.startsWith("-"));
+  if (script < 0 || args.slice(script + 1).some((a) => a === "--root" || a.startsWith("--root="))) return args;
+  const first = args.findIndex((a, i) => i < script && a.startsWith("--allow-fs-read="));
+  const at = first < 0 ? script : first;
+  const grants = [`--allow-fs-read=${project}`];
+  if (path.resolve(resolved) !== path.resolve(project)) grants.push(`--allow-fs-read=${resolved}`);
+  return [...args.slice(0, at), ...grants, ...args.slice(at), "--root", project];
+}
 
 function inside(outer, inner) {
   const rel = path.relative(outer, inner);
@@ -88,12 +95,14 @@ export function dedupeReadGrants(args) {
   const PREFIX = "--allow-fs-read=";
   const grants = [];
   args.forEach((a, index) => {
-    if (a.startsWith(PREFIX)) grants.push({ index, real: real(a.slice(PREFIX.length)) });
+    if (a.startsWith(PREFIX)) grants.push({ index, given: path.resolve(a.slice(PREFIX.length)), real: real(a.slice(PREFIX.length)) });
   });
   const drop = new Set();
   for (const g of grants) {
     for (const h of grants) {
       if (g === h || drop.has(h.index)) continue;
+      // A symlink and the folder it points to are both needed: Node matches grants as written.
+      if (h.real === g.real && h.given !== g.given) continue;
       // g is covered by h: drop g. Of two equal paths, keep the first one.
       if (inside(h.real, g.real) && (h.real !== g.real || h.index < g.index)) {
         drop.add(g.index);
